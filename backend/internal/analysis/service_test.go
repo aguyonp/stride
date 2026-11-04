@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
+	"stride/internal/config"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
 )
 
 type stubReporter struct{}

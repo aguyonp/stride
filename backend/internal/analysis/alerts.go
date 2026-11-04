@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"patella/internal/config"
-	"patella/internal/frfmt"
+	"stride/internal/config"
+	"stride/internal/frfmt"
 )
 
 // alertInput regroupe ce qui sert à évaluer les alertes (§5 du contrat).

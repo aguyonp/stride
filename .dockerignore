@@ -21,4 +21,4 @@ bin/
 .DS_Store
 docs/
 Makefile
-docker-compose.yml
+compose.yml

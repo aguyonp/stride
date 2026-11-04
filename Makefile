@@ -1,6 +1,6 @@
-# Patella — raccourcis de développement
+# Stride — raccourcis de développement
 VERSION ?= 1.0.0
-BIN     ?= bin/patella
+BIN     ?= bin/stride
 LDFLAGS := -s -w -X main.version=$(VERSION)
 # .env local chargé par le backend en dev (le binaire lit .env du CWD, ici backend/)
 ENV_FILE_ARG := $(if $(wildcard .env),ENV_FILE=../.env,)
@@ -16,7 +16,7 @@ help:
 	@echo "make docker-logs   suivre les logs du conteneur"
 
 dev-backend:
-	cd backend && $(ENV_FILE_ARG) DATA_DIR=../data LOG_LEVEL=$${LOG_LEVEL:-debug} go run ./cmd/server
+	cd backend && $(ENV_FILE_ARG) DATA_DIR=../data LOG_LEVEL=$${LOG_LEVEL:-debug} go run ./cmd/stride
 
 dev-frontend:
 	cd frontend && npm run dev
@@ -29,7 +29,7 @@ build: frontend-build
 	rm -rf .build && mkdir -p .build bin
 	cp -R backend .build/backend
 	rm -rf .build/backend/internal/web/dist && cp -R frontend/dist .build/backend/internal/web/dist
-	cd .build/backend && CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o ../../$(BIN) ./cmd/server
+	cd .build/backend && CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o ../../$(BIN) ./cmd/stride
 	rm -rf .build
 	@echo "✅ $(BIN) ($(VERSION))"
 
@@ -39,13 +39,13 @@ test:
 
 docker-up:
 	mkdir -p data
-	PATELLA_UID=$$(id -u) PATELLA_GID=$$(id -g) PATELLA_VERSION=$(VERSION) docker compose up -d --build
+	STRIDE_UID=$$(id -u) STRIDE_GID=$$(id -g) STRIDE_VERSION=$(VERSION) docker compose up -d --build
 
 docker-down:
 	docker compose down
 
 docker-logs:
-	docker compose logs -f --tail=200 patella
+	docker compose logs -f --tail=200 stride
 
 clean:
 	rm -rf bin .build

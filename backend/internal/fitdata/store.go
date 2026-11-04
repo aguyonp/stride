@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"patella/internal/garmin"
-	"patella/internal/logx"
+	"stride/internal/garmin"
+	"stride/internal/logx"
 )
 
 // Store télécharge (via le cache disque du client) et décode les FIT,

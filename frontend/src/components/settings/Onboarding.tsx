@@ -1,6 +1,6 @@
 import { KeyRound, RefreshCw, ShieldCheck } from 'lucide-react'
 import type { ApiError } from '../../api/client'
-import { PatellaMark } from '../ui/icons'
+import { StrideMark } from '../ui/icons'
 
 interface OnboardingProps {
   error: ApiError
@@ -14,13 +14,13 @@ export function Onboarding({ error, onOpenSettings, onRetry }: OnboardingProps) 
   const steps = [
     { t: 'Ouvre Garmin Connect sur le web', d: 'connect.garmin.com, depuis un ordinateur.' },
     { t: 'Va dans « Personal API Key »', d: 'Menu du profil → Paramètres → Personal API Key.' },
-    { t: 'Clique « Créer » et copie la clé', d: 'Colle-la ensuite dans les paramètres de Patella.' },
+    { t: 'Clique « Créer » et copie la clé', d: 'Colle-la ensuite dans les paramètres de Stride.' },
   ]
   return (
     <section className="glass animate-in mx-auto max-w-2xl overflow-hidden p-0" aria-labelledby="onboarding-title">
       <div className="relative px-5 pt-7 pb-5 text-center sm:px-8">
         <div className="mx-auto mb-4 grid size-16 place-items-center rounded-[22px] bg-gradient-to-br from-accent/25 to-accent-2/10 ring-1 ring-accent/30 ring-inset">
-          <PatellaMark className="size-10" />
+          <StrideMark className="size-10" />
         </div>
         <h2 id="onboarding-title" className="text-xl font-semibold tracking-tight sm:text-2xl">
           {rejected ? 'Ta clé Garmin a été refusée' : 'Connecte tes données Garmin'}
@@ -28,7 +28,7 @@ export function Onboarding({ error, onOpenSettings, onRetry }: OnboardingProps) 
         <p className="mx-auto mt-2 max-w-md text-sm text-ink-2">
           {rejected
             ? 'Garmin n’accepte plus la clé actuelle (révoquée ou expirée). Crée une nouvelle clé personnelle pour reprendre le suivi.'
-            : 'Patella lit tes séances, ton sommeil et ta VFC via l’API personnelle de Garmin Connect. Il suffit d’une clé, créée en 30 secondes.'}
+            : 'Stride lit tes séances, ton sommeil et ta VFC via l’API personnelle de Garmin Connect. Il suffit d’une clé, créée en 30 secondes.'}
         </p>
       </div>
       <ol className="space-y-2 px-4 sm:px-8">
@@ -54,7 +54,7 @@ export function Onboarding({ error, onOpenSettings, onRetry }: OnboardingProps) 
       </div>
       <p className="flex items-center justify-center gap-1.5 border-t border-line px-4 py-3 text-center text-xs text-ink-3">
         <ShieldCheck className="size-3.5 flex-none" aria-hidden="true" />
-        La clé est envoyée une seule fois au serveur Patella ; elle n’est jamais stockée dans le navigateur.
+        La clé est envoyée une seule fois au serveur Stride ; elle n’est jamais stockée dans le navigateur.
       </p>
       <p className="sr-only" role="status">
         {error.message}

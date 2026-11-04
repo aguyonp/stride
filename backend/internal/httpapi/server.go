@@ -16,9 +16,9 @@ import (
 
 	"github.com/klauspost/compress/gzhttp"
 
-	"patella/internal/analysis"
-	"patella/internal/config"
-	"patella/internal/garmin"
+	"stride/internal/analysis"
+	"stride/internal/config"
+	"stride/internal/garmin"
 )
 
 // Server regroupe les dépendances HTTP.

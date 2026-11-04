@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"patella/internal/garmin"
+	"stride/internal/garmin"
 )
 
 // wellness regroupe les données bien-être récupérées pour une date J.

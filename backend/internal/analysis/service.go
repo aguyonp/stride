@@ -12,10 +12,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
-	"patella/internal/logx"
+	"stride/internal/config"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
+	"stride/internal/logx"
 )
 
 // MaxHistoryDays borne le paramètre history.

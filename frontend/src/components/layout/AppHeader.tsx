@@ -2,7 +2,7 @@ import { Moon, Settings, Sun } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { IS_MOCK } from '../../api/client'
 import type { Theme } from '../../hooks/useTheme'
-import { PatellaMark } from '../ui/icons'
+import { StrideMark } from '../ui/icons'
 
 interface AppHeaderProps {
   theme: Theme
@@ -16,12 +16,12 @@ export function AppHeader({ theme, onToggleTheme, onOpenSettings, center }: AppH
     <header className="header-fade z-30 lg:sticky lg:top-0 lg:-mt-3 lg:pt-3">
       <div className="lg:glass-bar lg:rounded-[22px]">
       <div className="flex h-14 items-center gap-3 lg:h-16 lg:px-4">
-        <a href="./" className="flex min-w-0 items-center gap-2.5 rounded-xl" aria-label="Patella — accueil">
+        <a href="./" className="flex min-w-0 items-center gap-2.5 rounded-xl" aria-label="Stride — accueil">
           <span className="grid size-9 flex-none place-items-center rounded-xl bg-gradient-to-br from-accent/20 to-accent-2/5 ring-1 ring-accent/25 ring-inset">
-            <PatellaMark className="size-6" />
+            <StrideMark className="size-6" />
           </span>
           <span className="min-w-0">
-            <span className="block text-[1.05rem] leading-tight font-semibold tracking-tight">Patella</span>
+            <span className="block text-[1.05rem] leading-tight font-semibold tracking-tight">Stride</span>
             <span className="hidden truncate text-[11px] leading-tight text-ink-3 sm:block">
               Données Garmin Connect{IS_MOCK && ' · démo'}
             </span>

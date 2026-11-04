@@ -1,8 +1,8 @@
 import { Activity, Bike, Dumbbell, Footprints, Mountain, PersonStanding, Waves, type LucideProps } from 'lucide-react'
 import type { ComponentType, SVGProps } from 'react'
 
-/** Marque Patella : rotule stylisée (forme abstraite) au-dessus de la trochlée. */
-export function PatellaMark({ className, title }: { className?: string; title?: string }) {
+/** Marque Stride : rotule stylisée (forme abstraite) au-dessus de la trochlée. */
+export function StrideMark({ className, title }: { className?: string; title?: string }) {
   return (
     <svg viewBox="0 0 64 64" className={className} role={title ? 'img' : undefined} aria-hidden={title ? undefined : true} aria-label={title}>
       <defs>

@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"patella/internal/analysis"
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
-	"patella/internal/report"
-	"patella/internal/web"
+	"stride/internal/analysis"
+	"stride/internal/config"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
+	"stride/internal/report"
+	"stride/internal/web"
 )
 
 func newServer(t *testing.T, cfg config.Config) http.Handler {

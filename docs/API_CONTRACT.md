@@ -1,4 +1,4 @@
-# Patella — Contrat d'API & faits Garmin
+# Stride — Contrat d'API & faits Garmin
 
 Document de référence partagé entre le backend (Go, `backend/`) et le frontend (React, `frontend/`).
 Toute réponse JSON utilise **camelCase**. Les valeurs absentes/indisponibles sont `null` (jamais 0 inventé).
@@ -10,7 +10,7 @@ Unités dans le nom du champ (`…S` secondes, `…M` mètres, `…Ms` milliseco
 
 ```
 garmin-api-extractor/
-├── backend/            Go module (module path: patella) — sert /api/* ET le SPA embarqué
+├── backend/            Go module (module path: stride) — sert /api/* ET le SPA embarqué
 │   ├── cmd/server/     main.go (+ sous-commande `healthcheck` pour Docker)
 │   └── internal/
 │       ├── config/     env + settings persistés (/data/settings.json)
@@ -72,7 +72,7 @@ garmin-api-extractor/
 - Laps : auto-lap distance (1 km) `Intensity=interval`, `LapTrigger=distance`.
 - Splits : `SplitType` ∈ `interval_active`, `rwd_run`, `rwd_walk`, `rwd_stand` (+ `interval_rest|warmup|cooldown|recovery`) avec `StartTime`, `EndTime`, `TotalTimerTime`, `TotalDistance`, `AvgSpeed` → détection course/marche = **source des blocs**. Pas de FC/cadence/puissance dans Split : les recalculer depuis les Records de la fenêtre.
 - Conversions : cadence FIT en strides/min → **spm = 2 × (cadence + fractional_cadence)** ; `VerticalOscillationScaled()` en mm → /10 = cm ; `StepLengthScaled()` en mm → /1000 = m ; `StanceTimeScaled()` en ms ; `StanceTimeBalanceScaled()` = % **jambe gauche** ; `VerticalRatioScaled()` en %. Les getters `…Scaled()` renvoient `NaN` si invalide ; les entiers invalides valent le max du type (0xFF, 0xFFFF…).
-- `fit v0.28.5` impose `go 1.26.0` dans son go.mod → la directive du module `patella` est `go 1.26.0` (et non 1.24) ; build Docker en `golang:1.27-alpine`.
+- `fit v0.28.5` impose `go 1.26.0` dans son go.mod → la directive du module `stride` est `go 1.26.0` (et non 1.24) ; build Docker en `golang:1.27-alpine`.
 
 ### Compléments vérifiés par le backend (sonde structurelle du 2026-11-03)
 

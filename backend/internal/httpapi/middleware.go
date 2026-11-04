@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"patella/internal/logx"
+	"stride/internal/logx"
 )
 
 // statusWriter capture le statut et la taille de la réponse.
@@ -102,7 +102,7 @@ func withBasicAuth(user, pass string, next http.Handler) http.Handler {
 		uOK := subtle.ConstantTimeCompare(gu[:], uh[:])
 		pOK := subtle.ConstantTimeCompare(gp[:], ph[:])
 		if !ok || uOK&pOK != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Patella", charset="UTF-8"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="Stride", charset="UTF-8"`)
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentification requise.")
 			return
 		}

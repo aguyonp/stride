@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Patella — image unique : SPA (Vite) embarqué dans le binaire Go, runtime distroless non-root.
+# Stride — image unique : SPA (Vite) embarqué dans le binaire Go, runtime distroless non-root.
 
 ARG VERSION=1.0.0
 
@@ -26,12 +26,12 @@ RUN rm -rf internal/web/dist
 COPY --from=frontend /src/frontend/dist/ ./internal/web/dist/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/patella ./cmd/server \
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stride ./cmd/stride \
  && mkdir -p /out/data
 
 # ---------- 3) Runtime (distroless static, non-root, tzdata embarqué dans le binaire) ----------
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=backend /out/patella /app/patella
+COPY --from=backend /out/stride /app/stride
 COPY --from=backend --chown=65532:65532 /out/data /data
 ENV DATA_DIR=/data \
     TZ=Europe/Paris \
@@ -41,5 +41,5 @@ VOLUME ["/data"]
 EXPOSE 8080
 USER nonroot:nonroot
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/app/patella", "healthcheck"]
-ENTRYPOINT ["/app/patella"]
+    CMD ["/app/stride", "healthcheck"]
+ENTRYPOINT ["/app/stride"]

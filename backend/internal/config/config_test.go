@@ -28,17 +28,17 @@ func TestParseDotEnv(t *testing.T) {
 func TestLoadDotEnvDoesNotOverride(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, ".env")
-	if err := os.WriteFile(p, []byte("PATELLA_TEST_X=fichier\nPATELLA_TEST_Y=fichier\n"), 0o600); err != nil {
+	if err := os.WriteFile(p, []byte("STRIDE_TEST_X=fichier\nSTRIDE_TEST_Y=fichier\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATELLA_TEST_X", "env")
-	os.Unsetenv("PATELLA_TEST_Y")
-	t.Cleanup(func() { os.Unsetenv("PATELLA_TEST_Y") })
+	t.Setenv("STRIDE_TEST_X", "env")
+	os.Unsetenv("STRIDE_TEST_Y")
+	t.Cleanup(func() { os.Unsetenv("STRIDE_TEST_Y") })
 	n, err := LoadDotEnv(p)
 	if err != nil || n != 1 {
 		t.Fatalf("n=%d err=%v", n, err)
 	}
-	if os.Getenv("PATELLA_TEST_X") != "env" || os.Getenv("PATELLA_TEST_Y") != "fichier" {
+	if os.Getenv("STRIDE_TEST_X") != "env" || os.Getenv("STRIDE_TEST_Y") != "fichier" {
 		t.Error("priorité env/fichier incorrecte")
 	}
 }

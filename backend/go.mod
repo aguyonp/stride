@@ -1,4 +1,4 @@
-module patella
+module stride
 
 go 1.26.0
 

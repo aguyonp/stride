@@ -1,4 +1,4 @@
-// Commande server : API Patella + SPA embarqué.
+// Commande server : API Stride + SPA embarqué.
 //
 //	server              démarre le serveur HTTP
 //	server healthcheck  GET http://127.0.0.1:$PORT/api/health → exit 0/1 (HEALTHCHECK Docker)
@@ -20,14 +20,14 @@ import (
 	"time"
 	_ "time/tzdata" // fuseaux embarqués (image distroless sans tzdata)
 
-	"patella/internal/analysis"
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
-	"patella/internal/httpapi"
-	"patella/internal/logx"
-	"patella/internal/report"
-	"patella/internal/web"
+	"stride/internal/analysis"
+	"stride/internal/config"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
+	"stride/internal/httpapi"
+	"stride/internal/logx"
+	"stride/internal/report"
+	"stride/internal/web"
 )
 
 // version est injectée au build : -ldflags "-X main.version=1.0.0".
@@ -137,7 +137,7 @@ func run() error {
 		envFile = fmt.Sprintf("%s (%d variables)", cfg.EnvFileLoaded, cfg.EnvFileVars)
 	}
 	absData, _ := filepath.Abs(cfg.DataDir)
-	log.Info(fmt.Sprintf("🚀 Patella %s démarré sur :%d", appVersion(), cfg.Port),
+	log.Info(fmt.Sprintf("🚀 Stride %s démarré sur :%d", appVersion(), cfg.Port),
 		"dataDir", absData, "cléGarmin", keyDesc, "auth", auth, "tz", settings.Timezone(),
 		"envFile", envFile, "frontend", web.HasFrontend())
 	if keySrc == "none" {

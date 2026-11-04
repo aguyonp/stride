@@ -1,7 +1,7 @@
 package analysis
 
 import (
-	"patella/internal/fitdata"
+	"stride/internal/fitdata"
 )
 
 const maxSeriesPoints = 400

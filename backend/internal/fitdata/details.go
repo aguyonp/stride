@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"patella/internal/garmin"
+	"stride/internal/garmin"
 )
 
 // FromDetails construit une Activity (records uniquement, sans laps ni splits) depuis

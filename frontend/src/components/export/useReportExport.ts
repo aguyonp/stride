@@ -6,7 +6,7 @@ import { useToast } from '../ui/Toast'
 export interface ReportPayload {
   report: string
   tokens: number
-  filename: string // patella-YYYY-MM-DD-mode.md
+  filename: string // stride-YYYY-MM-DD-mode.md
   title: string
 }
 

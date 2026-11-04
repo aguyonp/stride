@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"patella/internal/analysis"
-	"patella/internal/config"
+	"stride/internal/analysis"
+	"stride/internal/config"
 )
 
 func fp(v float64) *float64 { return &v }

@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"patella/internal/fitdata"
+	"stride/internal/fitdata"
 )
 
 const minSegmentS = 20.0

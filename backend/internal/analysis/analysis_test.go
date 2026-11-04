@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
+	"stride/internal/config"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
 )
 
 func fp(v float64) *float64 { return &v }

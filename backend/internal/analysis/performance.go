@@ -3,9 +3,9 @@ package analysis
 import (
 	"strings"
 
-	"patella/internal/config"
-	"patella/internal/frfmt"
-	"patella/internal/garmin"
+	"stride/internal/config"
+	"stride/internal/frfmt"
+	"stride/internal/garmin"
 )
 
 // rangeLabel : "3:35–3:40".

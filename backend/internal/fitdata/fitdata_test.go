@@ -11,7 +11,7 @@ import (
 	"github.com/muktihari/fit/profile/mesgdef"
 	"github.com/muktihari/fit/profile/typedef"
 
-	"patella/internal/garmin"
+	"stride/internal/garmin"
 )
 
 // buildFIT encode un FIT d'activité synthétique (aucune position GPS).

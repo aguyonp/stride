@@ -4,9 +4,9 @@ import (
 	"math"
 	"sort"
 
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
+	"stride/internal/config"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
 )
 
 // Seuils de détection course vs marche/arrêt.

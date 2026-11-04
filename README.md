@@ -1,4 +1,4 @@
-# Patella
+# Stride
 
 Extracteur Garmin Connect (Personal API) orienté rééducation fémoro-patellaire : sélection d'une séance, analyse selon 3 modes, et export en un clic d'un rapport markdown compact à coller dans un chat IA.
 
@@ -34,13 +34,13 @@ Les seuils (cadence, OV, D−, écart G/D, FC repos, allures cibles, côté bles
 |---|---|---|
 | `GARMIN_API_TOKEN` | — | Clé Personal API (alias acceptés : `GARMIN_PERSONAL_API_KEY`, `GARMIN_API_KEY`) |
 | `APP_AUTH_USER` / `APP_AUTH_PASSWORD` | vides | Active le Basic Auth sur toute l'app (sauf `/api/health`) |
-| `PATELLA_BIND` | `127.0.0.1` | Interface d'écoute publiée par compose |
-| `PATELLA_PORT` | `8080` | Port publié |
+| `STRIDE_BIND` | `127.0.0.1` | Interface d'écoute publiée par compose |
+| `STRIDE_PORT` | `8080` | Port publié |
 | `LOG_LEVEL` | `info` | `debug` affiche les hits/miss du cache |
 | `LOG_FORMAT` | `pretty` | `json` pour la prod |
 | `TZ` | `Europe/Paris` | Fuseau horaire |
 
-**Accès depuis le téléphone** : définir `PATELLA_BIND=0.0.0.0` **et** `APP_AUTH_USER`/`APP_AUTH_PASSWORD`. Sans cela, n'importe qui sur le réseau peut lire les données de santé et changer la clé.
+**Accès depuis le téléphone** : définir `STRIDE_BIND=0.0.0.0` **et** `APP_AUTH_USER`/`APP_AUTH_PASSWORD`. Sans cela, n'importe qui sur le réseau peut lire les données de santé et changer la clé.
 
 ## API (pour scripts / V2)
 

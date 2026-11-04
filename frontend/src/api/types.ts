@@ -1,4 +1,4 @@
-// Contrat d'API Patella — transcription à l'identique de docs/API_CONTRACT.md (§3).
+// Contrat d'API Stride — transcription à l'identique de docs/API_CONTRACT.md (§3).
 // Toute réponse JSON est en camelCase ; les valeurs absentes sont `null` (jamais 0 inventé).
 
 /* ------------------------------------------------------------------ */

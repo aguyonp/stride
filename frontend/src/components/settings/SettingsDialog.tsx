@@ -59,7 +59,7 @@ export function SettingsDialog({ open, onClose, focusApiKey, themePref, onThemeP
           />
         </Section>
         <p className="text-center text-[11px] text-ink-3">
-          Patella {health.data?.version ? `v${health.data.version}` : ''} · Données Garmin Connect{IS_MOCK ? ' · mode démo (fixtures)' : ''}
+          Stride {health.data?.version ? `v${health.data.version}` : ''} · Données Garmin Connect{IS_MOCK ? ' · mode démo (fixtures)' : ''}
         </p>
       </div>
     </Dialog>
@@ -196,7 +196,7 @@ function ApiKeySection({ settings }: { settings: Settings }) {
           </button>
         </div>
         <p id="api-key-help" className="mt-1.5 text-xs text-ink-3">
-          Envoyée une seule fois au serveur Patella, qui la valide auprès de Garmin et la conserve côté serveur. Elle n’est jamais stockée dans ce navigateur.
+          Envoyée une seule fois au serveur Stride, qui la valide auprès de Garmin et la conserve côté serveur. Elle n’est jamais stockée dans ce navigateur.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="submit" className="btn btn-primary" disabled={!key.trim() || update.isPending}>

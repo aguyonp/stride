@@ -22,7 +22,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"patella/internal/logx"
+	"stride/internal/logx"
 )
 
 // BaseURL est l'URL de la Garmin Personal API.
@@ -30,7 +30,7 @@ const BaseURL = "https://personal.connectapi.garmin.com"
 
 const (
 	tokenPath      = "/personalapitoken-service/personal-api/personal-api-key/token"
-	userAgent      = "patella/1.0"
+	userAgent      = "stride/1.0"
 	requestTimeout = 30 * time.Second
 	renewBefore    = time.Hour
 	maxRetries     = 2 // nouvelles tentatives max sur 429/5xx/erreur réseau

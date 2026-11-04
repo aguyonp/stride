@@ -3,7 +3,7 @@ package analysis
 import (
 	"strings"
 
-	"patella/internal/garmin"
+	"stride/internal/garmin"
 )
 
 var typeLabels = map[string]string{

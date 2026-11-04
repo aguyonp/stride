@@ -99,18 +99,18 @@ export default function App() {
     if (subject === 'day') {
       const d = dayAnalysis.data
       if (!d || d.date !== day) return null
-      return { report: d.report, tokens: d.reportTokensEstimate, filename: `patella-${d.date}-recovery.md`, title: `Patella · bilan du ${fmtDateShort(d.date)}` }
+      return { report: d.report, tokens: d.reportTokensEstimate, filename: `stride-${d.date}-recovery.md`, title: `Stride · bilan du ${fmtDateShort(d.date)}` }
     }
     const a = analysis.data
     if (!a || a.activity.id !== analysisId || a.mode !== mode) return null
-    return { report: a.report, tokens: a.reportTokensEstimate, filename: `patella-${a.activity.date}-${a.mode}.md`, title: `Patella · ${a.activity.name}` }
+    return { report: a.report, tokens: a.reportTokensEstimate, filename: `stride-${a.activity.date}-${a.mode}.md`, title: `Stride · ${a.activity.name}` }
   }, [subject, dayAnalysis.data, day, analysis.data, analysisId, mode])
 
   const exportLoading = current.isFetching && (!payload || current.isPlaceholderData)
   const exporter = useReportExport(exportLoading ? null : payload, () => setPreviewOpen(true))
 
   useEffect(() => {
-    const base = 'Patella'
+    const base = 'Stride'
     if (subject === 'day') document.title = `${base} · Bilan du ${fmtDateShort(day)}`
     else if (summary) document.title = `${base} · ${summary.name} · ${MODE_LABEL[mode]}`
     else document.title = base

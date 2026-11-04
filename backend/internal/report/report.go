@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"patella/internal/analysis"
-	"patella/internal/config"
-	f "patella/internal/frfmt"
+	"stride/internal/analysis"
+	"stride/internal/config"
+	f "stride/internal/frfmt"
 )
 
 // Reporter implémente analysis.Reporter.

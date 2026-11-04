@@ -54,7 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
     })
   } catch {
-    throw new ApiError('Serveur Patella injoignable. Vérifie que le backend tourne.', 0, null)
+    throw new ApiError('Serveur Stride injoignable. Vérifie que le backend tourne.', 0, null)
   }
 
   const text = await res.text()
@@ -69,7 +69,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     if (isErrorBody(body)) throw new ApiError(body.error, res.status, body.code ?? null)
-    throw new ApiError(`Erreur ${res.status} du serveur Patella.`, res.status, null)
+    throw new ApiError(`Erreur ${res.status} du serveur Stride.`, res.status, null)
   }
   return body as T
 }

@@ -19,7 +19,7 @@ export function writeStored(key: string, value: string | null) {
 }
 
 export const STORAGE_KEYS = {
-  mode: 'patella.mode',
-  theme: 'patella.theme',
-  history: 'patella.history14',
+  mode: 'stride.mode',
+  theme: 'stride.theme',
+  history: 'stride.history14',
 } as const
