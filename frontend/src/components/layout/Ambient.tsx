@@ -1,0 +1,12 @@
+/** Fond : dégradé profond + blobs flous animés lentement (figés si reduced-motion). */
+export function Ambient() {
+  return (
+    <div className="ambient" aria-hidden="true">
+      <div className="blob blob-1" />
+      <div className="blob blob-2" />
+      <div className="blob blob-3" />
+      <div className="blob blob-4" />
+      <div className="noise" />
+    </div>
+  )
+}

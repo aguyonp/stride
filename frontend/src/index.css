@@ -1,0 +1,754 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ */
+/* Thème : variantes & tokens Tailwind (adossés aux variables CSS)     */
+/* ------------------------------------------------------------------ */
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-on-accent: var(--on-accent);
+  --color-ink: var(--text-1);
+  --color-ink-2: var(--text-2);
+  --color-ink-3: var(--text-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-track: var(--track);
+  --color-surface: var(--surface);
+  --color-ok: var(--ok);
+  --color-info: var(--info);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --radius-glass: 22px;
+  --ease-out-soft: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Couleurs animables : la transition d'ambiance entre modes est fluide. */
+@property --accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2dd4bf;
+}
+@property --accent-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #22d3ee;
+}
+@property --blob-1 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --blob-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --blob-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --blob-4 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tokens — sombre (défaut)                                           */
+/* ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: dark;
+  --bg: #070a13;
+  --bg-2: #0c1226;
+  --surface: #111729; /* fond opaque (tooltips, repli sans backdrop-filter) */
+  --text-1: #eef2f8;
+  --text-2: #c0c9d8;
+  --text-3: #a0abbf;
+  --line: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.16);
+  --track: rgb(255 255 255 / 0.08);
+  /* Verre teinté marine : laisse passer la lueur des blobs tout en garantissant le contraste AA. */
+  --glass-top: rgb(30 38 62 / 0.62);
+  --glass-bottom: rgb(16 22 38 / 0.56);
+  --glass-border: rgb(255 255 255 / 0.11);
+  --glass-sheen: rgb(255 255 255 / 0.14);
+  --glass-bar: rgb(10 14 27 / 0.62);
+  --glass-dialog: rgb(14 19 34 / 0.82);
+  --shadow-1: rgb(0 0 0 / 0.42);
+  --shadow-2: rgb(0 0 0 / 0.25);
+  --skeleton-1: rgb(255 255 255 / 0.05);
+  --skeleton-2: rgb(255 255 255 / 0.11);
+  --noise-opacity: 0.05;
+
+  --ok: #34d399;
+  --info: #60a5fa;
+  --warn: #fbbf24;
+  --danger: #f87171;
+
+  /* séries de graphiques */
+  --c-hr: #e0628f;
+  --c-power: #9085e9;
+  --c-elev: #a0abbf;
+  --c-pace: #60a5fa;
+  /* phases de sommeil (palette validée CVD, fond sombre) */
+  --sleep-deep: #6a5ce0;
+  --sleep-light: #2b9bd0;
+  --sleep-rem: #d55181;
+  --sleep-awake: #c98500;
+
+  /* accents par mode */
+  --sfp-a: #2dd4bf;
+  --sfp-b: #22d3ee;
+  --rec-a: #a78bfa;
+  --rec-b: #818cf8;
+  --perf-a: #fb923c;
+  --perf-b: #fbbf24;
+  --on-accent: #04131a;
+
+  --blob-sfp-1: rgb(45 212 191 / 0.3);
+  --blob-sfp-2: rgb(34 211 238 / 0.24);
+  --blob-sfp-3: rgb(59 130 246 / 0.22);
+  --blob-sfp-4: rgb(16 185 129 / 0.18);
+  --blob-rec-1: rgb(167 139 250 / 0.3);
+  --blob-rec-2: rgb(99 102 241 / 0.28);
+  --blob-rec-3: rgb(217 70 239 / 0.16);
+  --blob-rec-4: rgb(56 189 248 / 0.14);
+  --blob-perf-1: rgb(251 146 60 / 0.3);
+  --blob-perf-2: rgb(251 191 36 / 0.2);
+  --blob-perf-3: rgb(244 63 94 / 0.2);
+  --blob-perf-4: rgb(234 88 12 / 0.18);
+}
+
+/* Clair — préférence système (si aucun choix explicite) ou choix explicite. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --bg: #eaeff7;
+    --bg-2: #f6f8fc;
+    --surface: #ffffff;
+    --text-1: #0b1220;
+    --text-2: #354056;
+    --text-3: #566278;
+    --line: rgb(15 23 42 / 0.09);
+    --line-strong: rgb(15 23 42 / 0.16);
+    --track: rgb(15 23 42 / 0.08);
+    --glass-top: rgb(255 255 255 / 0.8);
+    --glass-bottom: rgb(255 255 255 / 0.56);
+    --glass-border: rgb(255 255 255 / 0.85);
+    --glass-sheen: rgb(255 255 255 / 0.95);
+    --glass-bar: rgb(246 248 252 / 0.72);
+    --glass-dialog: rgb(250 251 254 / 0.9);
+    --shadow-1: rgb(30 41 59 / 0.14);
+    --shadow-2: rgb(30 41 59 / 0.08);
+    --skeleton-1: rgb(15 23 42 / 0.05);
+    --skeleton-2: rgb(15 23 42 / 0.1);
+    --noise-opacity: 0.035;
+    --ok: #047857;
+    --info: #1d4ed8;
+    --warn: #9a4708;
+    --danger: #b91c1c;
+    --c-hr: #c8336c;
+    --c-power: #6250d6;
+    --c-elev: #64748b;
+    --c-pace: #2563eb;
+    --sleep-deep: #5546d0;
+    --sleep-light: #2386c0;
+    --sleep-rem: #d0457c;
+    --sleep-awake: #c98500;
+    --sfp-a: #0f766e;
+    --sfp-b: #0e7490;
+    --rec-a: #6d28d9;
+    --rec-b: #4338ca;
+    --perf-a: #c2410c;
+    --perf-b: #b45309;
+    --on-accent: #ffffff;
+    --blob-sfp-1: rgb(45 212 191 / 0.36);
+    --blob-sfp-2: rgb(56 189 248 / 0.3);
+    --blob-sfp-3: rgb(129 140 248 / 0.18);
+    --blob-sfp-4: rgb(52 211 153 / 0.22);
+    --blob-rec-1: rgb(167 139 250 / 0.36);
+    --blob-rec-2: rgb(129 140 248 / 0.3);
+    --blob-rec-3: rgb(244 114 182 / 0.2);
+    --blob-rec-4: rgb(56 189 248 / 0.16);
+    --blob-perf-1: rgb(251 146 60 / 0.34);
+    --blob-perf-2: rgb(252 211 77 / 0.32);
+    --blob-perf-3: rgb(251 113 133 / 0.2);
+    --blob-perf-4: rgb(249 115 22 / 0.16);
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #eaeff7;
+  --bg-2: #f6f8fc;
+  --surface: #ffffff;
+  --text-1: #0b1220;
+  --text-2: #354056;
+  --text-3: #566278;
+  --line: rgb(15 23 42 / 0.09);
+  --line-strong: rgb(15 23 42 / 0.16);
+  --track: rgb(15 23 42 / 0.08);
+  --glass-top: rgb(255 255 255 / 0.8);
+  --glass-bottom: rgb(255 255 255 / 0.56);
+  --glass-border: rgb(255 255 255 / 0.85);
+  --glass-sheen: rgb(255 255 255 / 0.95);
+  --glass-bar: rgb(246 248 252 / 0.72);
+  --glass-dialog: rgb(250 251 254 / 0.9);
+  --shadow-1: rgb(30 41 59 / 0.14);
+  --shadow-2: rgb(30 41 59 / 0.08);
+  --skeleton-1: rgb(15 23 42 / 0.05);
+  --skeleton-2: rgb(15 23 42 / 0.1);
+  --noise-opacity: 0.035;
+  --ok: #047857;
+  --info: #1d4ed8;
+  --warn: #9a4708;
+  --danger: #b91c1c;
+  --c-hr: #c8336c;
+  --c-power: #6250d6;
+  --c-elev: #64748b;
+  --c-pace: #2563eb;
+  --sleep-deep: #5546d0;
+  --sleep-light: #2386c0;
+  --sleep-rem: #d0457c;
+  --sleep-awake: #c98500;
+  --sfp-a: #0f766e;
+  --sfp-b: #0e7490;
+  --rec-a: #6d28d9;
+  --rec-b: #4338ca;
+  --perf-a: #c2410c;
+  --perf-b: #b45309;
+  --on-accent: #ffffff;
+  --blob-sfp-1: rgb(45 212 191 / 0.36);
+  --blob-sfp-2: rgb(56 189 248 / 0.3);
+  --blob-sfp-3: rgb(129 140 248 / 0.18);
+  --blob-sfp-4: rgb(52 211 153 / 0.22);
+  --blob-rec-1: rgb(167 139 250 / 0.36);
+  --blob-rec-2: rgb(129 140 248 / 0.3);
+  --blob-rec-3: rgb(244 114 182 / 0.2);
+  --blob-rec-4: rgb(56 189 248 / 0.16);
+  --blob-perf-1: rgb(251 146 60 / 0.34);
+  --blob-perf-2: rgb(252 211 77 / 0.32);
+  --blob-perf-3: rgb(251 113 133 / 0.2);
+  --blob-perf-4: rgb(249 115 22 / 0.16);
+}
+
+/* Accent courant selon le mode (transition fluide via @property). */
+:root,
+:root[data-mode='sfp'] {
+  --accent: var(--sfp-a);
+  --accent-2: var(--sfp-b);
+  --blob-1: var(--blob-sfp-1);
+  --blob-2: var(--blob-sfp-2);
+  --blob-3: var(--blob-sfp-3);
+  --blob-4: var(--blob-sfp-4);
+}
+:root[data-mode='recovery'] {
+  --accent: var(--rec-a);
+  --accent-2: var(--rec-b);
+  --blob-1: var(--blob-rec-1);
+  --blob-2: var(--blob-rec-2);
+  --blob-3: var(--blob-rec-3);
+  --blob-4: var(--blob-rec-4);
+}
+:root[data-mode='performance'] {
+  --accent: var(--perf-a);
+  --accent-2: var(--perf-b);
+  --blob-1: var(--blob-perf-1);
+  --blob-2: var(--blob-perf-2);
+  --blob-3: var(--blob-perf-3);
+  --blob-4: var(--blob-perf-4);
+}
+:root {
+  transition:
+    --accent 0.7s ease,
+    --accent-2 0.7s ease,
+    --blob-1 1.1s ease,
+    --blob-2 1.1s ease,
+    --blob-3 1.1s ease,
+    --blob-4 1.1s ease;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                               */
+/* ------------------------------------------------------------------ */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--text-1);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv11', 'ss01';
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 35%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 10px;
+  }
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Ambiance : dégradé + blobs flous                                   */
+/* ------------------------------------------------------------------ */
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in oklab, var(--accent) 10%, transparent) 0%, transparent 60%),
+    linear-gradient(165deg, var(--bg-2) 0%, var(--bg) 55%, var(--bg) 100%);
+}
+.ambient .blob {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+}
+.ambient .blob-1 {
+  width: 62vmax;
+  height: 62vmax;
+  left: -18vmax;
+  top: -22vmax;
+  background: radial-gradient(circle at center, var(--blob-1) 0%, transparent 66%);
+  animation: drift-1 38s ease-in-out infinite alternate;
+}
+.ambient .blob-2 {
+  width: 54vmax;
+  height: 54vmax;
+  right: -20vmax;
+  top: 8vmax;
+  background: radial-gradient(circle at center, var(--blob-2) 0%, transparent 66%);
+  animation: drift-2 46s ease-in-out infinite alternate;
+}
+.ambient .blob-3 {
+  width: 48vmax;
+  height: 48vmax;
+  left: 18vmax;
+  bottom: -26vmax;
+  background: radial-gradient(circle at center, var(--blob-3) 0%, transparent 66%);
+  animation: drift-3 52s ease-in-out infinite alternate;
+}
+.ambient .blob-4 {
+  width: 34vmax;
+  height: 34vmax;
+  left: 42vmax;
+  top: 28vh;
+  background: radial-gradient(circle at center, var(--blob-4) 0%, transparent 66%);
+  animation: drift-4 44s ease-in-out infinite alternate;
+}
+.ambient .noise {
+  position: absolute;
+  inset: 0;
+  opacity: var(--noise-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+@keyframes drift-1 {
+  to {
+    transform: translate3d(14vmax, 10vmax, 0) scale(1.12);
+  }
+}
+@keyframes drift-2 {
+  to {
+    transform: translate3d(-12vmax, 14vmax, 0) scale(0.92);
+  }
+}
+@keyframes drift-3 {
+  to {
+    transform: translate3d(10vmax, -12vmax, 0) scale(1.08);
+  }
+}
+@keyframes drift-4 {
+  to {
+    transform: translate3d(-16vmax, -8vmax, 0) scale(1.2);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Verre                                                              */
+/* ------------------------------------------------------------------ */
+
+@utility glass {
+  position: relative;
+  border-radius: var(--radius-glass);
+  background: linear-gradient(180deg, var(--glass-top) 0%, var(--glass-bottom) 42%, var(--glass-bottom) 100%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-sheen),
+    0 18px 40px -22px var(--shadow-1),
+    0 2px 8px -2px var(--shadow-2);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
+}
+
+@utility glass-bar {
+  background: var(--glass-bar);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-sheen),
+    0 10px 30px -18px var(--shadow-1);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+@utility glass-inset {
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--text-1) 4%, transparent);
+  border: 1px solid var(--line);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .glass-bar {
+    background: var(--surface);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-bar {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Chiffres tabulaires pour toutes les métriques. */
+@utility num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum', 'cv11';
+}
+
+@utility text-gradient-accent {
+  background: linear-gradient(100deg, var(--accent) 0%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Contrôles                                                          */
+/* ------------------------------------------------------------------ */
+
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition:
+    transform 0.15s var(--ease-out-soft),
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+@utility btn-primary {
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.3),
+    0 8px 24px -10px color-mix(in oklab, var(--accent) 70%, transparent);
+  &:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      0 10px 30px -10px color-mix(in oklab, var(--accent) 85%, transparent);
+  }
+}
+
+@utility btn-ghost {
+  color: var(--text-1);
+  background: color-mix(in oklab, var(--text-1) 6%, transparent);
+  border: 1px solid var(--line);
+  &:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--text-1) 10%, transparent);
+  }
+}
+
+@utility btn-danger {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 30%, transparent);
+  &:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--danger) 16%, transparent);
+  }
+}
+
+@utility icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: 9999px;
+  color: var(--text-1);
+  background: color-mix(in oklab, var(--text-1) 6%, transparent);
+  border: 1px solid var(--line);
+  transition:
+    background-color 0.2s ease,
+    transform 0.15s var(--ease-out-soft);
+  &:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--text-1) 11%, transparent);
+  }
+  &:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+  &:disabled {
+    opacity: 0.45;
+  }
+}
+
+@utility field {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--text-1) 5%, transparent);
+  border: 1px solid var(--line-strong);
+  color: var(--text-1);
+  font-size: 16px; /* évite le zoom iOS */
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+  &::placeholder {
+    color: var(--text-3);
+  }
+  &:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
+  }
+  &[aria-invalid='true'] {
+    border-color: var(--danger);
+  }
+}
+
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.625rem;
+  padding: 0 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@utility label-caps {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Animations                                                         */
+/* ------------------------------------------------------------------ */
+
+@utility skeleton {
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--skeleton-1) 0%, var(--skeleton-2) 45%, var(--skeleton-1) 90%);
+  background-size: 220% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@utility animate-in {
+  animation: fade-up 0.45s var(--ease-out-soft) both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    opacity: 0.4;
+    transform: translate3d(0, 40px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slide-left {
+  from {
+    opacity: 0.4;
+    transform: translate3d(40px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Ancienne donnée affichée pendant un rechargement (keepPreviousData). */
+.is-refetching {
+  opacity: 0.6;
+  filter: saturate(0.85);
+  transition: opacity 0.25s ease;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dialogs natifs                                                     */
+/* ------------------------------------------------------------------ */
+
+dialog.sheet {
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  max-width: 100vw;
+  max-height: 100dvh;
+  overflow: visible;
+}
+dialog.sheet::backdrop {
+  background: rgb(3 6 14 / 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: fade-in 0.2s ease both;
+}
+dialog.sheet[data-closing]::backdrop {
+  animation: fade-in 0.16s ease reverse both;
+}
+.sheet-panel {
+  background: var(--glass-dialog);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-sheen),
+    0 30px 80px -20px rgb(0 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  backdrop-filter: blur(28px) saturate(150%);
+}
+
+/* Barres de défilement discrètes */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* En-tête collant (desktop) : voile dégradé au-dessus pour masquer le contenu qui défile. */
+@media (min-width: 1024px) {
+  .header-fade {
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--bg) 92%, transparent) 0%, color-mix(in oklab, var(--bg) 70%, transparent) 40%, transparent 100%);
+  }
+}
+
+/* Bande de sécurité iOS pour la barre d'action. */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .ambient .blob {
+    animation: none !important;
+  }
+}

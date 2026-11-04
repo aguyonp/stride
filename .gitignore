@@ -1,0 +1,18 @@
+# Secrets et données personnelles (jeton, cache FIT avec GPS, réglages)
+.env
+data/
+*.fit
+
+# Dépendances et builds
+node_modules/
+frontend/dist/
+backend/internal/web/dist/*
+!backend/internal/web/dist/index.html
+bin/
+.build/
+
+# Outils / OS
+.code-review-graph/
+.DS_Store
+.idea/
+.vscode/

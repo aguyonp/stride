@@ -1,0 +1,24 @@
+# Secrets et données locales : jamais dans le contexte de build
+.env
+.env.*
+!.env.example
+data/
+*.fit
+
+# Artefacts / dépendances reconstruits dans l'image
+**/node_modules
+frontend/dist
+backend/internal/web/dist
+bin/
+.build/
+
+# Divers
+.git
+.gitignore
+.code-review-graph
+.vscode
+.idea
+.DS_Store
+docs/
+Makefile
+docker-compose.yml
