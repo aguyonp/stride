@@ -1,5 +1,7 @@
 # Stride — Contrat d'API & faits Garmin
 
+> **V1 document.** Superseded by [V2_SPEC.md](V2_SPEC.md) except §2 (verified Garmin Personal API facts and FIT conversions), which remains the reference.
+
 Document de référence partagé entre le backend (Go, `backend/`) et le frontend (React, `frontend/`).
 Toute réponse JSON utilise **camelCase**. Les valeurs absentes/indisponibles sont `null` (jamais 0 inventé).
 Unités dans le nom du champ (`…S` secondes, `…M` mètres, `…Ms` millisecondes, `…Cm`, `…Spm`, `…Pct`, `…Bpm`).
