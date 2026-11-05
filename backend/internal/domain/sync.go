@@ -66,6 +66,11 @@ func (s *Services) Sync(ctx context.Context, uid int64) (*view.SyncStatus, error
 	if st.Running || st.CooldownUntil != nil {
 		return st, nil
 	}
+	if st.LastSyncAt != nil {
+		if last, err := time.Parse(time.RFC3339, *st.LastSyncAt); err == nil && s.now().Before(last.Add(lazyCooldown)) {
+			return st, nil
+		}
+	}
 	if st.Providers.Garmin == nil && st.Providers.Strava == nil {
 		return st, nil
 	}
@@ -98,13 +103,14 @@ func (s *Services) SyncStatus(ctx context.Context, uid int64) (*view.SyncStatus,
 		lastLive = max(lastLive, cn.LastLiveAt.Int64)
 	}
 	st.LastSyncAt, st.LastLiveAt = rfc3339(lastSync), rfc3339(lastLive)
-	until := time.Unix(lastSync, 0).Add(lazyCooldown)
+	// cooldownUntil only reports provider rate limiting, not the lazy-sync debounce.
+	var until time.Time
 	for _, ps := range s.deps.Meter.Snapshot().Providers {
 		if ps.CooldownUntil != nil && ps.CooldownUntil.After(until) && (ps.Provider == apimeter.Garmin || ps.Provider == apimeter.Strava) {
 			until = *ps.CooldownUntil
 		}
 	}
-	if lastSync > 0 && until.After(s.now()) {
+	if until.After(s.now()) {
 		u := until.UTC().Format(time.RFC3339)
 		st.CooldownUntil = &u
 	}

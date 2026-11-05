@@ -333,6 +333,12 @@ func TestDomainEndToEnd(t *testing.T) {
 		t.Fatalf("bad key: %d %s", code, body)
 	}
 
+	// a recent sync debounces lazy syncs but is not reported as a rate-limit cooldown
+	var sync m
+	if code, _ := e.do(1, "POST", "/api/sync", nil, &sync); code != 200 || sync["cooldownUntil"] != nil || sync["running"] != false {
+		t.Fatalf("lazy sync right after a sync: %d %+v", code, sync)
+	}
+
 	// listing (synced by OnUserCreated) and isolation
 	var list struct {
 		Items []struct {
