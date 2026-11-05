@@ -279,7 +279,7 @@ func convert(act *filedef.Activity) *Activity {
 			Trigger:        l.LapTrigger.String(),
 			HasWorkoutStep: l.WktStepIndex != typedef.MessageIndexInvalid,
 		}
-		if math.IsNaN(lap.EndT) && !math.IsNaN(lap.StartT) && !math.IsNaN(lap.ElapsedS) {
+		if (math.IsNaN(lap.EndT) || lap.EndT <= lap.StartT) && !math.IsNaN(lap.StartT) && !math.IsNaN(lap.ElapsedS) {
 			lap.EndT = lap.StartT + lap.ElapsedS
 		}
 		out.Laps = append(out.Laps, lap)

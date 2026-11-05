@@ -186,13 +186,21 @@ func stressOf(us *garmin.UserSummary, ds *garmin.DailySummary) *float64 {
 // StressOn returns the average stress of a day (nil when unknown or insufficient data).
 func (w *Wellness) StressOn(d string) *float64 { return stressOf(w.User[d], w.Daily[d]) }
 
-// FloorsOn returns floors climbed and descended on a day.
+// FloorsOn returns floors climbed and descended on a day. Garmin omits the value on days without
+// floors: a day with step data but no floors counts as 0.
 func (w *Wellness) FloorsOn(d string) (*float64, *float64) {
-	if us := w.User[d]; us != nil && (us.FloorsAscended != nil || us.FloorsDescended != nil) {
-		return pr(us.FloorsAscended, 0), pr(us.FloorsDescended, 0)
+	zero := func(p *float64, hasDay bool) *float64 {
+		if p == nil && hasDay {
+			return num(0, 0)
+		}
+		return pr(p, 0)
+	}
+	if us := w.User[d]; us != nil && (us.FloorsAscended != nil || us.FloorsDescended != nil || us.TotalSteps != nil) {
+		return zero(us.FloorsAscended, us.TotalSteps != nil), zero(us.FloorsDescended, us.TotalSteps != nil)
 	}
 	if ds := w.Daily[d]; ds != nil {
-		return pr(ds.FloorsUp(), 0), pr(ds.FloorsDown(), 0)
+		steps, _ := ds.StepsValue()
+		return zero(ds.FloorsUp(), steps != nil), zero(ds.FloorsDown(), steps != nil)
 	}
 	return nil, nil
 }
