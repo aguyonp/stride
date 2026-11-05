@@ -17,9 +17,9 @@ help:
 	@echo "make dev-frontend  Vite on :5173 (proxy /api -> :8080)"
 	@echo "make build         $(BIN) with the embedded SPA"
 	@echo "make test          go vet + go test + vitest"
-	@echo "make up            pull and start the published image (STRIDE_TAG=latest|prerelease|dev|vX.Y.Z)"
-	@echo "make changelog     preview the changelog since the last v* tag"
-	@echo "make release       tag main as v\$$(cat VERSION) with its changelog and push (CI builds latest + vX.Y.Z)"
+	@echo "make up            pull and start the published image (STRIDE_TAG=latest|prerelease|dev|X.Y.Z)"
+	@echo "make changelog     preview the changelog since the last release tag"
+	@echo "make release       tag main as \$$(cat VERSION) with its changelog and push (CI builds latest + X.Y.Z)"
 	@echo "make docker-up     build locally and start docker compose (stride + valkey)"
 	@echo "make logs          follow the stride container logs"
 
@@ -72,9 +72,9 @@ release:
 	@test -z "$$(git status --porcelain)" || { echo "release: working tree not clean"; exit 1; }
 	@git fetch --quiet --tags origin main
 	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" || { echo "release: main is not in sync with origin/main"; exit 1; }
-	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then echo "release: tag v$(VERSION) exists, bump the VERSION file"; exit 1; fi
-	git tag -a "v$(VERSION)" -m "Stride v$(VERSION)" -m "$$(scripts/changelog.sh HEAD)"
-	git push origin "v$(VERSION)"
+	@if git rev-parse -q --verify "refs/tags/$(VERSION)" >/dev/null; then echo "release: tag $(VERSION) exists, bump the VERSION file"; exit 1; fi
+	git tag -a "$(VERSION)" -m "Stride $(VERSION)" -m "$$(scripts/changelog.sh HEAD)"
+	git push origin "$(VERSION)"
 
 clean:
 	rm -rf bin .build

@@ -44,11 +44,7 @@ func Get() Info {
 }
 
 func label(i Info) string {
-	v := i.Version
-	if v != "dev" && v != "local" && !strings.HasPrefix(v, "v") {
-		v = "v" + v
-	}
-	parts := []string{v}
+	parts := []string{strings.TrimPrefix(i.Version, "v")}
 	if i.Commit != "" {
 		parts = append(parts, i.Commit)
 	}

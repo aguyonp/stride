@@ -1,6 +1,6 @@
 # Stride
 
-Stride pulls your training and recovery data (Garmin Connect Personal API, Strava, Open-Meteo weather), merges duplicates, computes biomechanics, fatigue, aerobic efficiency, joint impact, load and readiness, tracks your plan, goals and pain, and turns any session into a compact Markdown prompt for your AI coach — or sends it to your own LLM (Gemini, Claude, OpenAI, Ollama). Generated or imported workouts land in the calendar and export as `.FIT` for the watch. Multi-user, passkey-only sign-in.
+Stride merges your Garmin and Strava data, computes biomechanics, efficiency, impact, load and readiness, and turns each session into an AI-coach prompt (copied, or sent to your own LLM). Plans export to `.FIT`. Multi-user, passkeys only.
 
 ![Stride dashboard (demo data)](docs/screenshot.png)
 
@@ -14,19 +14,27 @@ mkdir -p data && docker compose up -d
 open http://localhost:8080
 ```
 
-- **First account = admin**; others join by invitation (`/admin`).
-- Garmin, Strava, your LLM key and notification webhooks are all optional, set per user in the app.
+- **First account = admin**; others join by invitation. Integrations are optional, set per user in the app.
 - **Back up `STRIDE_MASTER_KEY`**: it encrypts every stored credential.
-- Passkeys need HTTPS except on `localhost` (set `STRIDE_PUBLIC_URL=https://…` behind a proxy).
-- Private image: `docker login ghcr.io` with a `read:packages` token.
+- Passkeys need HTTPS except on `localhost`. Private image: `docker login ghcr.io` (`read:packages`).
 
 ## Architecture
 
 ![Architecture](docs/architecture.svg)
 
-## Images
+## Release cycle
 
-CI tests, then pushes `ghcr.io/aguyonp/stride` (amd64, arm64): tag `vX.Y.Z` → `latest` + `vX.Y.Z` and a GitHub release with the changelog; `main` → `prerelease`; other branches → `dev`; always `sha-<commit>`. Release: bump `VERSION` in your PR, merge, then `make release` on `main`. Pick an image with `STRIDE_TAG`; update with `docker compose pull && docker compose up -d`.
+One SemVer string, no `v`: `VERSION` file = git tag = image tag = version in Settings.
+
+| Trigger | Image `ghcr.io/aguyonp/stride` | Version |
+| --- | --- | --- |
+| push to a branch | `dev` | `3.0.0-dev` |
+| merge into `main` | `prerelease` | `3.0.0-pre` |
+| tag `3.0.0` | `latest` + `3.0.0` + GitHub release | `3.0.0` |
+
+1. Bump `VERSION` in your PR (`make changelog` previews the notes), merge, validate `prerelease`.
+2. On an up-to-date `main`, `make release` pushes the tag with its changelog; CI builds `latest` + `3.0.0` and publishes the release (a tag ≠ `VERSION` fails).
+3. Deploy or roll back: `STRIDE_TAG=<tag> docker compose up -d`.
 
 ## Configuration (`.env`)
 

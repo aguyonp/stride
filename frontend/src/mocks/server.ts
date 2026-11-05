@@ -457,7 +457,7 @@ route('GET', /^\/api\/admin\/logs$/, ({ url }) => {
   const page = rows.slice(0, 100)
   return json({ items: page, nextBefore: rows.length > 100 ? page[page.length - 1].id : null, dropped: 0 })
 })
-route('GET', /^\/api\/version$/, () => json({ version: '3.0.0', commit: 'demo123', builtAt: '2026-11-05T20:00:00Z', go: 'go1.27.1', label: 'v3.0.0 · demo123 · 2026-11-05T20:00:00Z' }))
+route('GET', /^\/api\/version$/, () => json({ version: '3.0.0', commit: 'demo123', builtAt: '2026-11-05T20:00:00Z', go: 'go1.27.1', label: '3.0.0 · demo123 · 2026-11-05T20:00:00Z' }))
 route('POST', /^\/api\/actions$/, () => new Response(null, { status: 204 }))
 route('POST', /^\/api\/admin\/cache\/flush$/, () => json({ removed: 37 + Math.floor(Math.random() * 120) }))
 route('GET', /^\/api\/admin\/connections$/, () => {

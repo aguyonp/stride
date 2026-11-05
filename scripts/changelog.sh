@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Markdown changelog of the commits between the previous v* tag and <ref> (default HEAD), grouped by
+# Markdown changelog of the commits between the previous X.Y.Z tag and <ref> (default HEAD), grouped by
 # conventional-commit type. Usage: scripts/changelog.sh [ref]
 set -euo pipefail
 
 to="${1:-HEAD}"
-prev="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${to}^" 2>/dev/null || true)"
+prev="$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' "${to}^" 2>/dev/null || true)"
 range="${prev:+${prev}..}${to}"
 
 git log --no-merges --format='%s%x09%h' "$range" | awk -F '\t' '
