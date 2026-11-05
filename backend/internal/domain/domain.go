@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"stride/internal/apimeter"
 	"stride/internal/athlete"
 	"stride/internal/cache"
+	"stride/internal/egress"
 	"stride/internal/env"
 	"stride/internal/garmin"
 	"stride/internal/provider/strava"
@@ -32,6 +34,8 @@ type Deps struct {
 	Strava  strava.API       // nil when Strava is not configured
 	Weather weather.Provider // nil when weather is disabled
 	Log     *slog.Logger
+	// BaseURLs overrides fixed external endpoints in tests (keys: gemini, anthropic, openai, telegram).
+	BaseURLs map[string]string
 }
 
 type Services struct {
@@ -46,6 +50,8 @@ type Services struct {
 	subsOnce sync.Once
 	sf       singleflight.Group
 	bg       sync.WaitGroup
+	egress   *http.Client
+	llmHTTP  *http.Client
 }
 
 func New(d Deps) (*Services, error) {
@@ -58,10 +64,23 @@ func New(d Deps) (*Services, error) {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	s := &Services{deps: d, log: d.Log, Now: time.Now, clients: map[int64]*garmin.Client{}, running: map[int64]bool{}}
+	s := &Services{deps: d, log: d.Log, Now: time.Now, clients: map[int64]*garmin.Client{}, running: map[int64]bool{},
+		egress: egress.Client(d.Env.AllowPrivateEgress, llmTimeout), llmHTTP: &http.Client{Timeout: llmTimeout}}
 	s.ensureStravaSubscription()
 	return s, nil
 }
+
+func (s *Services) egressHTTP() *http.Client { return s.egress }
+
+// baseURL returns the test override of a fixed external endpoint, or def.
+func (s *Services) baseURL(key, def string) string {
+	if u := s.deps.BaseURLs[key]; u != "" {
+		return strings.TrimRight(u, "/")
+	}
+	return def
+}
+
+func (s *Services) telegramBase() string { return s.baseURL("telegram", "https://api.telegram.org") }
 
 // LastSyncAt returns the most recent provider sync of a user (zero when never synced).
 func (s *Services) LastSyncAt(ctx context.Context, userID int64) (time.Time, error) {

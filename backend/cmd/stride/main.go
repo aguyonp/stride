@@ -138,6 +138,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if err := dom.DedupOnce(ctx); err != nil {
+		log.Warn("⚠️ Dédoublonnage des activités en échec", "err", err.Error())
+	}
 	authSvc, err := auth.New(auth.Options{Env: cfg, Store: st, Cache: kv, Log: log,
 		OnUserCreated: dom.OnUserCreated, OnUserDeleted: dom.PurgeUserCache})
 	if err != nil {
@@ -160,7 +163,7 @@ func run() error {
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      120 * time.Second,
+		WriteTimeout:      150 * time.Second, // LLM calls may take up to 120 s
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    64 << 10,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"stride/internal/athlete"
+	"stride/internal/workout"
 )
 
 type activityRef struct {
@@ -28,15 +29,17 @@ type backupGoal struct {
 }
 
 type backupPlanned struct {
-	Date                  string   `json:"date"`
-	Sport                 string   `json:"sport"`
-	Title                 string   `json:"title"`
-	TargetDurationS       *float64 `json:"targetDurationS"`
-	TargetDistanceM       *float64 `json:"targetDistanceM"`
-	TargetPaceMinSecPerKm *float64 `json:"targetPaceMinSecPerKm"`
-	TargetPaceMaxSecPerKm *float64 `json:"targetPaceMaxSecPerKm"`
-	TargetCadenceSpm      *float64 `json:"targetCadenceSpm"`
-	Instructions          string   `json:"instructions"`
+	Date                  string         `json:"date"`
+	Sport                 string         `json:"sport"`
+	Title                 string         `json:"title"`
+	TargetDurationS       *float64       `json:"targetDurationS"`
+	TargetDistanceM       *float64       `json:"targetDistanceM"`
+	TargetPaceMinSecPerKm *float64       `json:"targetPaceMinSecPerKm"`
+	TargetPaceMaxSecPerKm *float64       `json:"targetPaceMaxSecPerKm"`
+	TargetCadenceSpm      *float64       `json:"targetCadenceSpm"`
+	Instructions          string         `json:"instructions"`
+	Steps                 []workout.Step `json:"steps,omitempty"`
+	Source                string         `json:"source,omitempty"`
 }
 
 type backupShoe struct {
@@ -111,7 +114,7 @@ func (s *Services) Backup(ctx context.Context, uid int64) (*Backup, error) {
 	}
 	for _, ps := range plan {
 		b.Plan = append(b.Plan, backupPlanned{ps.Date, ps.Sport, ps.Title, ps.TargetDurationS, ps.TargetDistanceM,
-			ps.TargetPaceMinSecPerKm, ps.TargetPaceMaxSecPerKm, ps.TargetCadenceSpm, ps.Instructions})
+			ps.TargetPaceMinSecPerKm, ps.TargetPaceMaxSecPerKm, ps.TargetCadenceSpm, ps.Instructions, ps.Steps, ps.Source})
 	}
 	shoes, err := r.Shoes(ctx, uid)
 	if err != nil {
@@ -250,7 +253,8 @@ func (s *Services) Restore(ctx context.Context, uid int64, body []byte, mode str
 		}
 		for _, bp := range b.Plan {
 			ps := athlete.PlannedSession{Date: bp.Date, Sport: bp.Sport, Title: bp.Title, TargetDurationS: bp.TargetDurationS, TargetDistanceM: bp.TargetDistanceM,
-				TargetPaceMinSecPerKm: bp.TargetPaceMinSecPerKm, TargetPaceMaxSecPerKm: bp.TargetPaceMaxSecPerKm, TargetCadenceSpm: bp.TargetCadenceSpm, Instructions: bp.Instructions}
+				TargetPaceMinSecPerKm: bp.TargetPaceMinSecPerKm, TargetPaceMaxSecPerKm: bp.TargetPaceMaxSecPerKm, TargetCadenceSpm: bp.TargetCadenceSpm, Instructions: bp.Instructions,
+				Steps: bp.Steps, Source: bp.Source}
 			found := false
 			for _, ex := range plan {
 				if ex.Date == ps.Date && ex.Sport == ps.Sport && strings.EqualFold(ex.Title, strings.TrimSpace(ps.Title)) {

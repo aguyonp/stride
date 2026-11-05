@@ -9,7 +9,7 @@ import (
 )
 
 // Version is bumped whenever Core changes; it is part of the analysis cache key.
-const Version = 2
+const Version = 3
 
 // Inputs of the per-activity computation. Detail/ListItem are nil for Strava-only activities.
 type Inputs struct {
@@ -41,7 +41,7 @@ type Core struct {
 }
 
 const (
-	warnGAPModel   = "GAP calculée avec un modèle de coût de pente (Minetti), non fournie par Garmin"
+	warnGAPModel   = "GAP calculée avec un modèle de coût de pente (Minetti) : non fournie par Garmin pour cette séance et non exposée par l'API Strava"
 	warnStrideCalc = "Longueur de foulée calculée (vitesse / cadence), non mesurée par un capteur"
 	warnNoDynamics = "Dynamique de course (GCT, oscillation verticale, équilibre G/D) et Stamina : Garmin non connecté"
 )

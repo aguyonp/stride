@@ -156,8 +156,11 @@ func (s *Services) runSync(ctx context.Context, uid int64, morning bool) error {
 		s.finishProviderSync(ctx, uid, pStrava, n, err, cn.HistoryFrom.String == "", analysis.DateAdd(today, -initialHistory))
 		if err != nil {
 			errs = append(errs, err)
+		} else {
+			s.syncStravaGear(ctx, uid)
 		}
 	}
+	s.notifyPending(ctx, uid)
 	_, _ = s.deps.Cache.DelPrefix(ctx, userKey(uid, "glist"))
 	s.log.Info(fmt.Sprintf("🔄 Synchro %s en %s", map[bool]string{true: "matinale", false: "à la demande"}[morning], time.Since(t0).Round(time.Millisecond)),
 		"user", uid, "nouvellesGarmin", newG, "nouvellesStrava", newS, "erreurs", len(errs))

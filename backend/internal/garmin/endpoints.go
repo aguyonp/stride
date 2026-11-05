@@ -148,3 +148,14 @@ func (c *Client) UserSummaryDaily(ctx context.Context, date string) ([]byte, err
 func (c *Client) HRZones(ctx context.Context) ([]byte, error) {
 	return c.get(ctx, "hrzones", EPHRZones, EPHRZones, jsonAccept)
 }
+
+// CreateWorkout creates a Garmin Connect workout (JSON payload) and returns the created workout.
+func (c *Client) CreateWorkout(ctx context.Context, payload []byte) ([]byte, error) {
+	return c.post(ctx, "create workout", "/workout-service/workout", "/workout-service/workout", payload)
+}
+
+// ScheduleWorkout puts a workout on the Garmin Connect calendar at date (YYYY-MM-DD).
+func (c *Client) ScheduleWorkout(ctx context.Context, workoutID int64, date string) ([]byte, error) {
+	body, _ := json.Marshal(map[string]string{"date": date})
+	return c.post(ctx, "schedule workout", "/workout-service/schedule/{id}", fmt.Sprintf("/workout-service/schedule/%d", workoutID), body)
+}

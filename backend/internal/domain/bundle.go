@@ -64,6 +64,7 @@ type bundle struct {
 	stravaAct *strava.Activity
 	streams   *strava.Streams
 	weather   *weather.Conditions
+	imported  []byte // rescue import file (format in row.ImportFormat)
 	sources   []string
 	warnings  []string
 }
@@ -257,6 +258,17 @@ func (s *Services) startPosition(ctx context.Context, uid int64, a *activityRow)
 			}
 		}
 	}
+	if a.ImportFormat != nil {
+		if b, err := s.loadBundle(ctx, uid, a); err == nil {
+			if act := b.records(a.isRunning()); act != nil {
+				for _, r := range act.Records {
+					if lat, lon, ok := try(&r.Lat, &r.Lon); ok && !math.IsNaN(lat) && !math.IsNaN(lon) {
+						return lat, lon, true
+					}
+				}
+			}
+		}
+	}
 	return 0, 0, false
 }
 
@@ -300,6 +312,9 @@ func (s *Services) loadBundle(ctx context.Context, uid int64, a *activityRow) (*
 		}
 	}
 	b.fit = get("fit")
+	if f := a.ImportFormat; f != nil {
+		b.imported = get("import_" + *f)
+	}
 	if raw := get("strava_detail"); raw != nil {
 		var act strava.Activity
 		if json.Unmarshal(raw, &act) == nil {
@@ -337,9 +352,25 @@ func (b *bundle) records(isRunning bool) *fitdata.Activity {
 		}
 		b.warnings = append(b.warnings, "Fichier FIT illisible, repli sur les séries détaillées")
 	}
+	format := ""
+	if b.row.ImportFormat != nil && len(b.imported) > 0 {
+		format = *b.row.ImportFormat
+	}
+	if format == "fit" {
+		if a, err := fitdata.Decode(b.imported); err == nil && len(a.Records) > 0 {
+			b.sources = append(b.sources, "import")
+			return a
+		}
+	}
 	if b.details != nil && len(b.details.Metrics) > 0 {
 		b.sources = append(b.sources, "details")
 		return fitdata.FromDetails(b.details, start)
+	}
+	if format == "gpx" || format == "tcx" {
+		if tr, err := fitdata.DecodeXML(b.imported); err == nil {
+			b.sources = append(b.sources, "import")
+			return tr.Act
+		}
 	}
 	if b.streams != nil && len(b.streams.TimeS) > 0 {
 		b.sources = append(b.sources, "stravaStreams")

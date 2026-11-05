@@ -4,6 +4,7 @@
 package garmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -62,6 +63,9 @@ func status(err error) int {
 	}
 	return 0
 }
+
+// Status returns the HTTP status of an API error (0 otherwise).
+func Status(err error) int { return status(err) }
 
 func IsUnauthorized(err error) bool {
 	s := status(err)
@@ -214,7 +218,7 @@ func (c *Client) exchange(ctx context.Context) (string, time.Time, error) {
 				return "", time.Time{}, err
 			}
 		}
-		st, body, err := c.send(ctx, "token", tokenPath, http.MethodPost, tokenPath, func(r *http.Request) {
+		st, body, err := c.send(ctx, "token", tokenPath, http.MethodPost, tokenPath, nil, func(r *http.Request) {
 			r.Header.Set("Accept", "*/*")
 			r.Header.Set("Authorization", "ApiKey "+c.key)
 		})
@@ -269,7 +273,7 @@ func jwtExpiry(tok string) (time.Time, bool) {
 
 // send performs one metered HTTP exchange. A non-2xx status is returned as *APIError
 // together with the status; the body is only returned on success.
-func (c *Client) send(ctx context.Context, op, endpoint, method, pathQ string, hdr func(*http.Request)) (int, []byte, error) {
+func (c *Client) send(ctx context.Context, op, endpoint, method, pathQ string, payload []byte, hdr func(*http.Request)) (int, []byte, error) {
 	uid := c.userID
 	if uid == 0 {
 		uid = apimeter.UserFrom(ctx)
@@ -279,9 +283,16 @@ func (c *Client) send(ctx context.Context, op, endpoint, method, pathQ string, h
 		return 0, nil, err
 	}
 	defer release()
-	req, err := http.NewRequestWithContext(ctx, method, c.base+pathQ, nil)
+	var rd io.Reader
+	if payload != nil {
+		rd = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.base+pathQ, rd)
 	if err != nil {
 		return 0, nil, err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	hdr(req)
 	req.Header.Set("User-Agent", userAgent)
@@ -321,6 +332,26 @@ func (c *Client) send(ctx context.Context, op, endpoint, method, pathQ string, h
 	return resp.StatusCode, body, nil
 }
 
+// post is an authenticated JSON POST: one forced token refresh on 401, no retry (not idempotent).
+func (c *Client) post(ctx context.Context, op, endpoint, pathQ string, payload []byte) ([]byte, error) {
+	tok, err := c.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for attempt := 0; ; attempt++ {
+		st, body, err := c.send(ctx, op, endpoint, http.MethodPost, pathQ, payload, func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer "+tok)
+			r.Header.Set("Accept", "application/json")
+		})
+		if err == nil || st != http.StatusUnauthorized || attempt > 0 {
+			return body, err
+		}
+		if tok, err = c.forceRefresh(ctx, tok); err != nil {
+			return nil, err
+		}
+	}
+}
+
 // get is an authenticated GET: one forced token refresh on 401, two retries on 5xx/network errors,
 // no retry on 429 (the meter starts a cooldown). Empty bodies yield ErrNoData.
 func (c *Client) get(ctx context.Context, op, endpoint, pathQ, accept string) ([]byte, error) {
@@ -330,7 +361,7 @@ func (c *Client) get(ctx context.Context, op, endpoint, pathQ, accept string) ([
 	}
 	retried401, retries := false, 0
 	for {
-		st, body, err := c.send(ctx, op, endpoint, http.MethodGet, pathQ, func(r *http.Request) {
+		st, body, err := c.send(ctx, op, endpoint, http.MethodGet, pathQ, nil, func(r *http.Request) {
 			r.Header.Set("Authorization", "Bearer "+tok)
 			r.Header.Set("Accept", accept)
 		})

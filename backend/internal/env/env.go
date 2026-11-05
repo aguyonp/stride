@@ -42,6 +42,9 @@ type Config struct {
 
 	WeatherProvider string
 
+	// AllowPrivateEgress lets user-supplied URLs (LLM base URL, webhooks) reach private networks.
+	AllowPrivateEgress bool
+
 	SyncHour      int
 	SyncJitterMin time.Duration
 	SyncJitterMax time.Duration
@@ -110,6 +113,9 @@ func Load() (Config, error) {
 	}
 	if _, err := time.LoadLocation(c.Timezone); err != nil {
 		return Config{}, fmt.Errorf("TZ: %w", err)
+	}
+	if c.AllowPrivateEgress, err = strconv.ParseBool(get("STRIDE_ALLOW_PRIVATE_EGRESS", "false")); err != nil {
+		return Config{}, fmt.Errorf("STRIDE_ALLOW_PRIVATE_EGRESS must be true|false")
 	}
 	return c, nil
 }

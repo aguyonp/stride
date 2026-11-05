@@ -206,13 +206,21 @@ type env2 struct {
 	fs  *fakeStrava
 }
 
-func setup(t *testing.T) *env2 {
+func setup(t *testing.T) *env2 { return setupWith(t, nil, nil) }
+
+// setupWith lets V3 tests add Garmin routes and adjust the domain dependencies.
+func setupWith(t *testing.T, garminExtra func(*http.ServeMux), deps func(*domain.Deps)) *env2 {
 	t.Helper()
 	ctx := context.Background()
 	fx := &fixture{now: time.Now()}
 	y := fx.now.In(paris).AddDate(0, 0, -1)
 	fx.runStart = time.Date(y.Year(), y.Month(), y.Day(), 18, 0, 0, 0, paris)
-	gsrv := httptest.NewServer(fx.garmin())
+	gmux := http.NewServeMux()
+	gmux.Handle("/", fx.garmin())
+	if garminExtra != nil {
+		garminExtra(gmux)
+	}
+	gsrv := httptest.NewServer(gmux)
 	t.Cleanup(gsrv.Close)
 	st, err := store.Open(ctx, t.TempDir()+"/t.db")
 	if err != nil {
@@ -235,8 +243,12 @@ func setup(t *testing.T) *env2 {
 	cfg := env.Config{GarminBaseURL: gsrv.URL, Timezone: "Europe/Paris", PublicURL: "http://localhost:8080", WeatherProvider: "open-meteo",
 		StravaClientID: "1", StravaClientSecret: "x", StravaWebhookToken: "verif", AdminGarminKey: goodKey}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc, err := domain.New(domain.Deps{Env: cfg, Store: st, Cache: cache.NewMemory(), Sealer: sealer, Meter: apimeter.Nop(),
-		Strava: fs, Weather: fakeWeather{}, Log: log})
+	dd := domain.Deps{Env: cfg, Store: st, Cache: cache.NewMemory(), Sealer: sealer, Meter: apimeter.Nop(),
+		Strava: fs, Weather: fakeWeather{}, Log: log}
+	if deps != nil {
+		deps(&dd)
+	}
+	svc, err := domain.New(dd)
 	if err != nil {
 		t.Fatal(err)
 	}

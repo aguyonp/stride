@@ -121,6 +121,10 @@ func fullActivity() *view.ActivityView {
 			{Level: "warn", Code: "FLOORS_PREV_DAY", Title: "Escaliers la veille", Message: "16 étages montés la veille (> 15), charge cumulée avant la séance."},
 			{Level: "info", Code: "SLEEP_LOW", Title: "Sommeil profond court", Message: "Profond 0h56 (< 1h), récupération tissulaire réduite."},
 		},
+		Efficiency: &analysis.Efficiency{Eligible: true, EfSpeed: fp(1.284), EfPower: fp(1.712), TrendChangePct: fp(3.4)},
+		Impact:     &analysis.Impact{Steps: fp(7224), StepsPerKm: fp(1029), VoFactor: fp(1.11), DescentFactor: fp(1.05), JointIndex: fp(8.4), JointIndex7d: fp(23.7)},
+		Readiness: analysis.ReadinessBanner{Level: "orange", Title: "Vigilance : signaux de fatigue",
+			Reasons: []string{"Ratio de charge élevé (1,42 > 1,3)", "Sommeil moyen 7 j faible (55/100)"}},
 	}
 }
 
@@ -139,7 +143,9 @@ func stravaOnly() *view.ActivityView {
 
 func dayView() *view.DayView {
 	return &view.DayView{
-		Date:     "2026-11-02",
+		Date: "2026-11-02",
+		Readiness: analysis.ReadinessBanner{Level: "red", Title: "Alerte : récupération insuffisante sous charge élevée",
+			Reasons: []string{"3 nuits sur 7 sous la ligne de base VFC", "Ratio de charge élevé (1,42 > 1,3)"}},
 		Recovery: recovery(),
 		Day: analysis.DayInfo{Steps: fp(8432), StepGoal: fp(8000), FloorsUp: fp(12), FloorsDown: fp(10), IntensityModerateMin: fp(25),
 			IntensityVigorousMin: fp(5), ActiveCalories: fp(640), StressAvg: fp(32), BodyBatteryCharged: fp(45), BodyBatteryDrained: fp(60)},
@@ -173,7 +179,8 @@ func multiExport() *view.MultiExport {
 		},
 		Weekly: []view.WeekTrend{
 			{WeekStart: "2026-10-26", Sessions: 1, DistanceM: 6000, DurationS: 2100, Load: fp(110), LoadRatio: fp(0.95), CadenceAvg: fp(171),
-				GctAvg: fp(252), HrvAvg: fp(47), SleepScoreAvg: fp(80), PainDuring: fp(2), PainCold: fp(1.5), PainNextMorning: fp(1)},
+				GctAvg: fp(252), HrvAvg: fp(47), SleepScoreAvg: fp(80), PainDuring: fp(2), PainCold: fp(1.5), PainNextMorning: fp(1),
+				EfAvg: fp(1.27), JointIndex: fp(7.9)},
 			{WeekStart: "2026-11-02", Sessions: 1, DistanceM: 7020, DurationS: 2530},
 		},
 		Plan: view.PlanVsDone{Planned: 4, Done: 2, Partial: 1, Missed: 1, VolumeDeltaPct: fp(-12)},

@@ -23,6 +23,8 @@ func DefaultLimits() map[string]Limits {
 		Garmin:    {Global: 4, PerUser: 6},
 		Strava:    {Global: 2},
 		OpenMeteo: {Global: 2},
+		LLM:       {Global: 4},
+		Webhook:   {Global: 4},
 	}
 }
 
@@ -286,7 +288,7 @@ func (m *Local) Snapshot() Snapshot {
 	for name := range m.providers {
 		names = append(names, name)
 	}
-	order := map[string]int{Garmin: 0, Strava: 1, OpenMeteo: 2}
+	order := map[string]int{Garmin: 0, Strava: 1, OpenMeteo: 2, LLM: 3, Webhook: 4}
 	sort.Slice(names, func(i, j int) bool {
 		oi, iok := order[names[i]]
 		oj, jok := order[names[j]]

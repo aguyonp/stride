@@ -63,6 +63,9 @@ func FromStrava(act *strava.Activity, st *strava.Streams, isRunning bool) *Activ
 		r.DistM = at(st.DistanceM, i)
 		r.SpeedMS = at(st.VelocityMS, i)
 		r.GradePct = at(st.GradePct, i)
+		if i < len(st.LatLng) {
+			r.Lat, r.Lon = degrees(st.LatLng[i][0]), degrees(st.LatLng[i][1])
+		}
 		if i < len(st.Moving) && !st.Moving[i] && r.SpeedMS == r.SpeedMS && r.SpeedMS > 0.5 {
 			r.SpeedMS = 0
 		}

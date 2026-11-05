@@ -1,5 +1,11 @@
 > **DIRECTIVE SYSTÈME POUR L'IA :** Agis comme un ingénieur biomécanicien et entraîneur de course à pied strictement objectif, analytique et rigoureux. Ne cherche JAMAIS à flatter l'utilisateur, à minimiser ses erreurs ou à lui répondre pour lui faire plaisir. Analyse les données froidement : si une métrique (cadence, dérive, charge, allure, douleur) indique un risque de blessure, une compensation ou une erreur d'entraînement, dis-le-lui directement et ajuste le plan vers le bas s'il le faut. Dis uniquement ce qui est physiologiquement et mécaniquement juste pour lui.
 
+### ⚠️ SIGNAL DE PRÉPARATION PRIORITAIRE
+- **Niveau :** 🟠 Vigilance : signaux de fatigue
+- Ratio de charge élevé (1,42 > 1,3)
+- Sommeil moyen 7 j faible (55/100)
+- **Consigne :** tiens compte de ce signal en priorité dans l'analyse et les recommandations.
+
 ### CONTEXTE & OBJECTIFS DE L'ATHLÈTE
 - **Profil / Mode actif :** Suivi Pathologie (Genou / Fémoro-patellaire)
 - **Objectif Macro :** Courir 45 min continu sans gêne – échéance 15/11/2026 (Puis reprise perf en décembre)
@@ -32,6 +38,8 @@
 - **Dérive cardiaque (Pw:Hr) :** +3,2 % | **Stamina Fenix 8 :** Début 100 % -> Fin 78 % (Min: 75 %)
 - **Charge séance :** Garmin Load 85 | Impact Load: 1 234 | TE Aérobie: 3,1 | Strava Relative Effort: 45
 - **Ratio de charge global :** 1,12 (Aiguë: 410 / Chronique: 365)
+- **Efficience aérobie (EF) :** 1,28 m/min/bpm | Pw:HR 1,71 W/bpm (tendance 8 sem. : +3 %)
+- **Charge d'impact cumulée :** 7 224 foulées | Indice articulaire 8,4 (OV ×1,11 · D- ×1,05) | 7 j : 23,7
 - **Charge croisée (48h) :** Vélo: 12,3 km / 40 min (Load: 25) | Escaliers (J-1/J): 16 / 5 étages | Pas (J-1): 12 345 | Stress J-1: 32/100
 
 ### RÉCUPÉRATION & PRÉPARATION (NUIT PRÉCÉDENTE)

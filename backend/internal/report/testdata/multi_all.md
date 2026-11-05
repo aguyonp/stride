@@ -13,10 +13,10 @@
 _1 séance sans analyse détaillée disponible (GCT / dérive : N/D)._
 
 ### TENDANCES HEBDOMADAIRES
-| Semaine | Séances | Volume | Durée | Load | Ratio charge | Cadence moy | GCT moy | VFC moy | Sommeil moy | Gêne effort | Gêne froid | Gêne lendemain |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 26/10 | 1 | 6,0 km | 0h35 | 110 | 0,95 | 171 spm | 252 ms | 47 ms | 80 | 2 | 1,5 | 1 |
-| 02/11 | 1 | 7,0 km | 0h42 | N/D | N/D | N/D | N/D | N/D | N/D | N/D | N/D | N/D |
+| Semaine | Séances | Volume | Durée | Load | Ratio charge | EF moy | Indice impacts | Cadence moy | GCT moy | VFC moy | Sommeil moy | Gêne effort | Gêne froid | Gêne lendemain |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 26/10 | 1 | 6,0 km | 0h35 | 110 | 0,95 | 1,27 | 7,9 | 171 spm | 252 ms | 47 ms | 80 | 2 | 1,5 | 1 |
+| 02/11 | 1 | 7,0 km | 0h42 | N/D | N/D | N/D | N/D | N/D | N/D | N/D | N/D | N/D | N/D | N/D |
 
 ### PRÉVU vs RÉALISÉ
 - Séances prévues : 4 | réalisées : 2 | partielles : 1 | manquées : 1 | écart volume : -12 %

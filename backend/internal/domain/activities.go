@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 	"stride/internal/view"
 )
 
-const matchWindowS = 120
+// matchWindowS is the §11.1 start tolerance between two records of the same activity.
+const matchWindowS = 300
 
 // activityRow is the normalized summary of one activity (Garmin and/or Strava).
 type activityRow struct {
@@ -47,11 +49,14 @@ type activityRow struct {
 	Final      bool
 	BundleAt   int64
 	UpdatedAt  int64
+	// ImportFormat is fit | gpx | tcx when a rescue import provided the series.
+	ImportFormat *string
+	Notified     bool
 }
 
 const actCols = `id, garmin_id, strava_id, start_utc, start_local, local_date, type, sport, name, distance_m, duration_s, moving_s,
 	elapsed_s, avg_speed, gap_speed, avg_hr, max_hr, avg_power, avg_cadence, avg_gct, elev_gain, elev_loss, training_load,
-	strava_gear, complete, final, COALESCE(bundle_at, 0), updated_at`
+	strava_gear, complete, final, COALESCE(bundle_at, 0), updated_at, import_format, notified_at IS NOT NULL`
 
 func nullF(v sql.NullFloat64) *float64 {
 	if !v.Valid {
@@ -64,12 +69,15 @@ func nullF(v sql.NullFloat64) *float64 {
 func scanActivity(sc interface{ Scan(...any) error }) (*activityRow, error) {
 	a := &activityRow{}
 	var gid, sid sql.NullInt64
-	var gear sql.NullString
+	var gear, imp sql.NullString
 	var f [14]sql.NullFloat64
 	var complete, final int
 	err := sc.Scan(&a.ID, &gid, &sid, &a.StartUTC, &a.StartLocal, &a.LocalDate, &a.Type, &a.Sport, &a.Name,
 		&f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6], &f[7], &f[8], &f[9], &f[10], &f[11], &f[12], &f[13],
-		&gear, &complete, &final, &a.BundleAt, &a.UpdatedAt)
+		&gear, &complete, &final, &a.BundleAt, &a.UpdatedAt, &imp, &a.Notified)
+	if imp.Valid {
+		a.ImportFormat = &imp.String
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +161,9 @@ func (a *activityRow) sources() []string {
 	}
 	if a.StravaID != nil {
 		out = append(out, pStrava)
+	}
+	if a.ImportFormat != nil {
+		out = append(out, "import")
 	}
 	return out
 }
@@ -304,7 +315,9 @@ func (s *Services) upsertGarmin(ctx context.Context, uid int64, raw json.RawMess
 			id, _ = res.LastInsertId()
 			created = true
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE activities SET garmin_id = ?, start_utc = ?, start_local = ?, local_date = ?, type = ?, sport = ?, name = ?,
+		_, err = tx.ExecContext(ctx, `UPDATE activities SET final = CASE WHEN garmin_id IS NULL THEN 0 ELSE final END,
+			complete = CASE WHEN garmin_id IS NULL THEN 0 ELSE complete END, garmin_id = ?, start_utc = ?, start_local = ?, local_date = ?, type = ?, sport = ?,
+			name = CASE WHEN strava_id IS NULL THEN ? ELSE name END,
 			distance_m = ?, duration_s = ?, moving_s = ?, elapsed_s = ?, avg_speed = ?, gap_speed = ?, avg_hr = ?, max_hr = ?, avg_power = ?,
 			avg_cadence = ?, avg_gct = ?, elev_gain = ?, elev_loss = ?, training_load = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
 			it.ActivityID, c.startUTC, c.startLocal, c.date, c.typ, c.sport, c.name, c.dist, c.dur, c.moving, c.elapsed, c.speed, c.gap,
@@ -317,9 +330,26 @@ func (s *Services) upsertGarmin(ctx context.Context, uid int64, raw json.RawMess
 	return id, created, err
 }
 
-// matchCandidate finds an activity of the other provider (column idCol still NULL) within 120 s.
-func (s *Services) matchCandidate(ctx context.Context, tx *sql.Tx, uid int64, idCol string, c summaryCols) (int64, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id, sport, ABS(start_utc - ?) AS d FROM activities WHERE user_id = ? AND `+idCol+` IS NULL
+// distanceCompatible applies the §11.1 distance rule: within max(10 %, 300 m) when both are known.
+func distanceCompatible(a, b *float64) bool {
+	if a == nil || b == nil || *a <= 0 || *b <= 0 {
+		return true
+	}
+	return math.Abs(*a-*b) <= math.Max(0.10*math.Max(*a, *b), 300)
+}
+
+type querier interface {
+	QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error)
+}
+
+// matchCandidate finds the closest activity of another source (column idCol still NULL, or any
+// source when idCol is empty) matching the §11.1 rule.
+func (s *Services) matchCandidate(ctx context.Context, tx querier, uid int64, idCol string, c summaryCols) (int64, error) {
+	cond := ""
+	if idCol != "" {
+		cond = " AND " + idCol + " IS NULL"
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, sport, distance_m, ABS(start_utc - ?) AS d FROM activities WHERE user_id = ?`+cond+`
 		AND start_utc BETWEEN ? AND ? ORDER BY d`, c.startUTC, uid, c.startUTC-matchWindowS, c.startUTC+matchWindowS)
 	if err != nil {
 		return 0, err
@@ -328,10 +358,11 @@ func (s *Services) matchCandidate(ctx context.Context, tx *sql.Tx, uid int64, id
 	for rows.Next() {
 		var id, d int64
 		var sport string
-		if err := rows.Scan(&id, &sport, &d); err != nil {
+		var dist sql.NullFloat64
+		if err := rows.Scan(&id, &sport, &dist, &d); err != nil {
 			return 0, err
 		}
-		if analysis.CompatibleSports(sport, c.sport) {
+		if analysis.CompatibleSports(sport, c.sport) && distanceCompatible(nullF(dist), c.dist) {
 			return id, nil
 		}
 	}
@@ -376,8 +407,8 @@ func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activi
 		}
 		if hasGarmin.Valid {
 			_, err = tx.ExecContext(ctx, `UPDATE activities SET final = CASE WHEN strava_id IS NULL THEN 0 ELSE final END,
-				complete = CASE WHEN strava_id IS NULL THEN 0 ELSE complete END, strava_id = ?, strava_gear = ?, updated_at = ?
-				WHERE id = ? AND user_id = ?`, a.ID, gear, now, id, uid)
+				complete = CASE WHEN strava_id IS NULL THEN 0 ELSE complete END, strava_id = ?, strava_gear = ?, name = ?, updated_at = ?
+				WHERE id = ? AND user_id = ?`, a.ID, gear, c.name, now, id, uid)
 		} else {
 			_, err = tx.ExecContext(ctx, `UPDATE activities SET strava_id = ?, strava_gear = ?, start_utc = ?, start_local = ?, local_date = ?, type = ?, sport = ?,
 				name = ?, distance_m = ?, duration_s = ?, moving_s = ?, elapsed_s = ?, avg_speed = ?, avg_hr = ?, max_hr = ?, avg_power = ?, avg_cadence = ?,

@@ -77,6 +77,9 @@ type ActivityDetail struct {
 	BodyBatteryDelta    *float64          `json:"bodyBatteryDelta"`
 	Stamina             *analysis.Stamina `json:"stamina"`
 	Strava              *StravaInfo       `json:"strava"`
+	// GarminGear is always null: the Personal API does not expose gear (404), see GarminGearReason.
+	GarminGear       *string `json:"garminGear"`
+	GarminGearReason string  `json:"garminGearReason"`
 }
 
 type Weather struct {
@@ -162,6 +165,9 @@ type ActivityView struct {
 	Alerts       []analysis.Alert          `json:"alerts"`
 	Warnings     []string                  `json:"warnings"`
 	DataSources  []string                  `json:"dataSources"`
+	Efficiency   *analysis.Efficiency      `json:"efficiency"`
+	Impact       *analysis.Impact          `json:"impact"`
+	Readiness    analysis.ReadinessBanner  `json:"readiness"`
 	// PlannedToday is the planned session matched to (or scheduled on the day of) this activity.
 	PlannedToday *athlete.PlannedSession `json:"-"`
 }
@@ -180,6 +186,7 @@ type DayView struct {
 	Upcoming    []athlete.PlannedSession  `json:"upcoming"`
 	Alerts      []analysis.Alert          `json:"alerts"`
 	Warnings    []string                  `json:"warnings"`
+	Readiness   analysis.ReadinessBanner  `json:"readiness"`
 	// History feeds the HISTORIQUE 14 JOURS table of the day report.
 	History []HistoryRow `json:"-"`
 }
@@ -286,6 +293,8 @@ type WeekTrend struct {
 	LoadRatio       *float64
 	CadenceAvg      *float64
 	GctAvg          *float64
+	EfAvg           *float64
+	JointIndex      *float64
 	HrvAvg          *float64
 	SleepScoreAvg   *float64
 	PainDuring      *float64
@@ -318,4 +327,85 @@ type MultiExport struct {
 	Alerts     []AlertCount
 	Upcoming   []athlete.PlannedSession
 	Unanalyzed int
+}
+
+type EfficiencyPoint struct {
+	Date         string   `json:"date"`
+	ActivityID   int64    `json:"activityId"`
+	EfSpeed      *float64 `json:"efSpeed"`
+	EfPower      *float64 `json:"efPower"`
+	AvgHR        *float64 `json:"avgHR"`
+	PaceSecPerKm *float64 `json:"paceSecPerKm"`
+}
+
+type EfficiencyTrend struct {
+	Points         []EfficiencyPoint `json:"points"`
+	RollingEfSpeed []*float64        `json:"rollingEfSpeed"`
+	ChangePct      *float64          `json:"changePct"`
+}
+
+type NotificationTarget struct {
+	ID         int64   `json:"id"`
+	Kind       string  `json:"kind"`
+	Label      string  `json:"label"`
+	Enabled    bool    `json:"enabled"`
+	Hint       string  `json:"hint"`
+	LastStatus *string `json:"lastStatus"`
+	LastSentAt *string `json:"lastSentAt"`
+	LastError  *string `json:"lastError"`
+}
+
+type NotifyTestResult struct {
+	OK      bool   `json:"ok"`
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+}
+
+type LLMConfig struct {
+	Configured bool    `json:"configured"`
+	Provider   *string `json:"provider"`
+	Model      *string `json:"model"`
+	BaseURL    *string `json:"baseUrl"`
+	KeyHint    *string `json:"keyHint"`
+	UpdatedAt  *string `json:"updatedAt"`
+}
+
+type LLMTestResult struct {
+	OK        bool   `json:"ok"`
+	LatencyMs int    `json:"latencyMs"`
+	Message   string `json:"message"`
+}
+
+type LLMAnalysis struct {
+	ID                   int64  `json:"id"`
+	Kind                 string `json:"kind"`
+	Ref                  string `json:"ref"`
+	Provider             string `json:"provider"`
+	Model                string `json:"model"`
+	Markdown             string `json:"markdown"`
+	PromptTokensEstimate int    `json:"promptTokensEstimate"`
+	DurationMs           int64  `json:"durationMs"`
+	CreatedAt            string `json:"createdAt"`
+}
+
+type Calendar struct {
+	Days []WeekDay `json:"days"`
+}
+
+type ImportResult struct {
+	ActivityID int64 `json:"activityId"`
+	Merged     bool  `json:"merged"`
+}
+
+type TrackBounds struct {
+	MinLat float64 `json:"minLat"`
+	MaxLat float64 `json:"maxLat"`
+	MinLon float64 `json:"minLon"`
+	MaxLon float64 `json:"maxLon"`
+}
+
+// Track points are [lat, lon, tS, cadenceSpm|null, gradePct|null].
+type Track struct {
+	Points [][]*float64 `json:"points"`
+	Bounds *TrackBounds `json:"bounds"`
 }
