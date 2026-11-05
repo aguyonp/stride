@@ -5,10 +5,9 @@ export interface BarPart {
   label: string
   value: number
   color: string
-  display: string // valeur lisible (ex. « 1h22 »)
+  display: string
 }
 
-/** Barre segmentée haute (partie d'un tout) + légende avec valeurs. */
 export function SegmentedBar({ parts, ariaLabel, className }: { parts: BarPart[]; ariaLabel: string; className?: string }) {
   const total = parts.reduce((s, p) => s + Math.max(0, p.value), 0)
   return (

@@ -10,7 +10,6 @@ export function sortAlerts(alerts: Alert[]): Alert[] {
   return [...alerts].sort((a, b) => ORDER[a.level] - ORDER[b.level])
 }
 
-/** Bandeau d'alertes : danger > warn > info ; sinon carte « Aucun signal d'alerte ». */
 export function AlertsBanner({ alerts, className, max = 3 }: { alerts: Alert[]; className?: string; max?: number }) {
   const [expanded, setExpanded] = useState(false)
   const sorted = sortAlerts(alerts)

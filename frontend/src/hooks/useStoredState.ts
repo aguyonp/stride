@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { readStored, writeStored } from '../lib/storage'
 
-/** État persistant en localStorage, sérialisé en chaîne et validé à la lecture. */
+/** localStorage-backed state, validated on read. */
 export function useStoredState<T>(
   key: string,
   fallback: T,

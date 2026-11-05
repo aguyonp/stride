@@ -1,7 +1,6 @@
 import { Info } from 'lucide-react'
 import { cn } from '../../lib/cn'
 
-/** Avertissements non bloquants (sources en échec) en pastilles discrètes. */
 export function Warnings({ warnings, sources, className }: { warnings: string[]; sources?: string[]; className?: string }) {
   if (!warnings.length && !sources?.length) return null
   return (

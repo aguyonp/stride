@@ -13,7 +13,6 @@ interface CardProps {
   'aria-label'?: string
 }
 
-/** Carte en verre avec en-tête optionnel. */
 export function Card({ title, icon, action, subtitle, className, bodyClassName, children, as: Tag = 'section', ...rest }: CardProps) {
   return (
     <Tag className={cn('glass animate-in min-w-0 p-4 sm:p-5', className)} aria-label={rest['aria-label']}>

@@ -16,7 +16,7 @@ import {
   todayISO,
 } from './format'
 
-// Les séparateurs FR (espace fine insécable, insécable) sont normalisés pour la lisibilité.
+// French separators (narrow and regular no-break spaces) are normalised for readability.
 const norm = (s: string) => s.replace(/[  ]/g, ' ')
 
 describe('allure', () => {

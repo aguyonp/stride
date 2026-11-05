@@ -14,7 +14,7 @@ export function linear(domain: [number, number], range: [number, number]): Linea
   return f
 }
 
-/** Pas « rond » (1, 2, 2.5, 5 × 10^n). */
+/** Round step (1, 2, 2.5, 5 × 10^n). */
 function niceStep(span: number, count: number): number {
   const raw = span / Math.max(1, count)
   const pow = 10 ** Math.floor(Math.log10(raw))
@@ -23,7 +23,7 @@ function niceStep(span: number, count: number): number {
   return m * pow
 }
 
-/** Domaine arrondi + graduations propres. */
+/** Nice domain and ticks. */
 export function niceDomain(min: number, max: number, count = 3): { domain: [number, number]; ticks: number[] } {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return { domain: [0, 1], ticks: [0, 1] }
   if (min === max) {
@@ -54,7 +54,7 @@ export function extent(values: (number | null)[], extra: number[] = []): [number
   return lo === Infinity ? null : [lo, hi]
 }
 
-/** Chemin SVG d'une ligne avec trous (null = coupure). */
+/** SVG line path; null breaks the line. */
 export function linePath(xs: number[], ys: (number | null)[], x: (v: number) => number, y: (v: number) => number): string {
   let d = ''
   let pen = false
@@ -70,7 +70,7 @@ export function linePath(xs: number[], ys: (number | null)[], x: (v: number) => 
   return d
 }
 
-/** Aire sous la courbe par morceaux continus. */
+/** Area under continuous runs. */
 export function areaPath(xs: number[], ys: (number | null)[], x: (v: number) => number, y: (v: number) => number, y0: number): string {
   let d = ''
   let start = -1
@@ -90,7 +90,7 @@ export function areaPath(xs: number[], ys: (number | null)[], x: (v: number) => 
   return d
 }
 
-/** Index du point le plus proche de t (xs trié). */
+/** Nearest index to t (xs sorted). */
 export function nearestIndex(xs: number[], t: number): number {
   let lo = 0
   let hi = xs.length - 1
@@ -102,7 +102,7 @@ export function nearestIndex(xs: number[], t: number): number {
   return Math.abs(xs[lo] - t) <= Math.abs(xs[hi] - t) ? lo : hi
 }
 
-/** Pas de graduation temporelle (s) pour ~n graduations. */
+/** Time tick step (s) for ~n ticks. */
 export function timeStep(totalS: number, maxTicks: number): number {
   const steps = [60, 120, 300, 600, 900, 1200, 1800, 3600, 5400, 7200]
   return steps.find((s) => totalS / s <= maxTicks) ?? 7200

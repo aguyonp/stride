@@ -2,10 +2,9 @@ import { Copy, Download, Share2 } from 'lucide-react'
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { fmtNumber } from '../../lib/format'
 import { Dialog } from '../ui/Dialog'
-import { Switch } from '../ui/Switch'
 import type { ReportPayload } from './useReportExport'
 
-/** Coloration légère du markdown (titres, gras, tableaux). */
+/** Light markdown highlighting (headings, bold, tables, directive). */
 function renderLine(line: string, i: number): ReactNode {
   if (line.startsWith('###')) {
     return (
@@ -15,16 +14,17 @@ function renderLine(line: string, i: number): ReactNode {
     )
   }
   const isTable = line.startsWith('|')
+  const quote = line.startsWith('>')
   const parts = line.split(/(\*\*[^*]+\*\*|\|)/g).filter((p) => p !== '')
   return (
-    <span key={i} className={isTable ? 'text-ink-2' : undefined}>
+    <span key={i} className={isTable ? 'text-ink-2' : quote ? 'text-ink-3 italic' : undefined}>
       {parts.map((p, j) =>
         p === '|' ? (
           <span key={j} className="text-ink-3/70">
             |
           </span>
         ) : p.startsWith('**') ? (
-          <span key={j} className="font-semibold text-ink">
+          <span key={j} className="font-semibold text-ink not-italic">
             {p}
           </span>
         ) : (
@@ -39,28 +39,28 @@ interface ReportPreviewProps {
   open: boolean
   onClose: () => void
   payload: ReportPayload | null
-  withHistory: boolean
-  onToggleHistory: (v: boolean) => void
   onCopy: () => void
   onDownload: () => void
   onShare: () => void
   canShare: boolean
   refreshing?: boolean
+  title?: string
+  extra?: ReactNode
 }
 
-export function ReportPreview({ open, onClose, payload, withHistory, onToggleHistory, onCopy, onDownload, onShare, canShare, refreshing }: ReportPreviewProps) {
+export function ReportPreview({ open, onClose, payload, onCopy, onDownload, onShare, canShare, refreshing, title = 'Aperçu du prompt', extra }: ReportPreviewProps) {
   const lines = useMemo(() => (payload?.report ?? '').split('\n'), [payload?.report])
   return (
     <Dialog
       open={open}
       onClose={onClose}
       variant="drawer"
-      title="Aperçu du rapport"
+      title={title}
       description={payload ? `≈ ${fmtNumber(payload.tokens)} tokens · ${fmtNumber(payload.report.length)} caractères · ${payload.filename}` : undefined}
       bodyClassName="px-0 py-0"
       footer={
         <div className="space-y-3">
-          <Switch compact checked={withHistory} onChange={onToggleHistory} label="Inclure l’historique 14 j" description="Ajoute un tableau compact des 14 derniers jours." />
+          {extra}
           <div className="flex gap-2">
             <button type="button" className="btn btn-primary flex-1" onClick={onCopy} disabled={!payload || refreshing}>
               <Copy className="size-4" aria-hidden="true" /> Copier
@@ -79,9 +79,8 @@ export function ReportPreview({ open, onClose, payload, withHistory, onToggleHis
       }
     >
       <pre
-        id="report-preview-text"
         tabIndex={0}
-        aria-label="Texte du rapport"
+        aria-label="Texte du prompt"
         className={`min-h-full px-5 py-4 font-mono text-[12px] leading-[1.6] whitespace-pre-wrap text-ink-2 select-text sm:text-[12.5px] ${refreshing ? 'is-refetching' : ''}`}
         style={{ overflowWrap: 'anywhere' }}
       >

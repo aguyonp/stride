@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** Largeur d'un élément, mise à jour via ResizeObserver. */
+/** Element width tracked with ResizeObserver. */
 export function useElementWidth<T extends HTMLElement>() {
   const ref = useRef<T | null>(null)
   const [width, setWidth] = useState(0)

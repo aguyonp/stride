@@ -1,5 +1,4 @@
-// Simulation déterministe d'une séance (séries temporelles ≤ 400 points).
-// Utilisé uniquement en mode mock (VITE_MOCK=1).
+// Deterministic session simulator (≤ 400 points per series). Mock mode only.
 
 import type { Series } from '../api/types'
 
@@ -12,7 +11,7 @@ export function hashStr(s: string): number {
   return h >>> 0
 }
 
-/** PRNG mulberry32. */
+/** mulberry32 PRNG. */
 export function rng(seed: number): () => number {
   let a = seed >>> 0
   return () => {
@@ -28,30 +27,33 @@ export type PhaseKind = 'run' | 'walk' | 'stand' | 'warmup' | 'active' | 'rest' 
 export interface Phase {
   kind: PhaseKind
   durationS: number
-  pace: number // s/km (ignoré si stand)
-  hrBoost?: number // bpm ajoutés à la cible FC (fatigue simulée)
+  pace: number
+  hrBoost?: number
 }
 
 export interface RunSpec {
   phases: Phase[]
-  structured: boolean // true → blocs (course/marche ou fractionné)
-  cadence: number // cadence de course de référence (spm)
-  vo: number // oscillation verticale (cm)
-  gct: number // temps de contact (ms)
-  power: number // puissance à l'allure de référence (W)
-  hrRef: number // FC à l'allure de référence
+  structured: boolean
+  cadence: number
+  vo: number
+  gct: number
+  power: number
+  hrRef: number
   refPace: number
-  drift: number // hausse relative de FC sur la séance (0.03 = +3 %)
-  balanceLeft: number | null // null = non mesuré
+  drift: number
+  balanceLeft: number | null
   elev: { base: number; amp: number; cycles: number; trend: number } | null
   hasPower: boolean
+  /** spm lost per % of downhill grade (overstriding when braking). */
+  downhillCadenceLoss?: number
   seed: number
 }
 
 export interface SimPoint {
   t: number
   kind: PhaseKind
-  dist: number // m cumulés
+  dist: number
+  gradePct: number | null
 }
 
 export interface Simulation {
@@ -71,7 +73,6 @@ export function simulate(spec: RunSpec): Simulation {
   const n = Math.min(400, Math.max(60, Math.ceil(durationS / 5)))
   const dt = durationS / (n - 1)
 
-  // bornes des phases
   const bounds: { start: number; end: number; phase: Phase }[] = []
   let acc = 0
   for (const p of spec.phases) {
@@ -80,35 +81,38 @@ export function simulate(spec: RunSpec): Simulation {
   }
   const phaseAt = (t: number) => bounds.find((b) => t >= b.start && t < b.end)?.phase ?? spec.phases[spec.phases.length - 1]
 
-  const series: Series = {
-    tS: [],
-    hr: [],
-    cadenceSpm: [],
-    powerW: [],
-    paceSecPerKm: [],
-    elevationM: [],
-    gctMs: [],
-    voCm: [],
-    gctBalanceLeftPct: [],
-  }
+  const series: Series = { tS: [], hr: [], cadenceSpm: [], powerW: [], paceSecPerKm: [], elevationM: [], gctMs: [], voCm: [], gctBalanceLeftPct: [] }
   const points: SimPoint[] = []
 
   let hr = spec.hrRef - 38
   let dist = 0
   let smoothPace = spec.phases[0].pace
+  let prevElev: number | null = null
+  let prevDist = 0
+  let grade: number | null = null
   for (let i = 0; i < n; i++) {
     const t = i * dt
     const ph = phaseAt(t)
     const frac = t / durationS
     const running = isRunKind(ph.kind)
 
-    // allure (lissée pour éviter les marches d'escalier)
     const targetPace = ph.kind === 'stand' ? 0 : ph.pace * (1 + noise(0.025))
     if (ph.kind !== 'stand') smoothPace = smoothPace + (targetPace - smoothPace) * Math.min(1, dt / 12)
     const speed = ph.kind === 'stand' ? 0 : 1000 / smoothPace
     if (i > 0) dist += speed * dt
 
-    // FC : réponse du 1er ordre vers la cible
+    let elev: number | null = null
+    if (spec.elev) {
+      const e = spec.elev
+      elev = Math.round((e.base + e.amp * Math.sin(2 * Math.PI * e.cycles * frac) + e.amp * 0.25 * Math.sin(2 * Math.PI * e.cycles * 3.1 * frac + 1) + e.trend * frac) * 10) / 10
+      if (prevElev !== null && dist - prevDist > 5) grade = ((elev - prevElev) / (dist - prevDist)) * 100
+      if (prevElev === null || dist - prevDist > 5) {
+        prevElev = elev
+        prevDist = dist
+      }
+    }
+    const down = grade !== null && grade < 0 ? Math.min(10, -grade) : 0
+
     const intensity = running ? (spec.refPace - ph.pace) * 0.22 : -24
     const target = spec.hrRef + intensity + spec.hrRef * spec.drift * frac + (ph.kind === 'stand' ? -10 : 0) + (ph.hrBoost ?? 0)
     hr += (target - hr) * (1 - Math.exp(-dt / 22))
@@ -120,7 +124,7 @@ export function simulate(spec: RunSpec): Simulation {
     let vo: number | null = null
     let bal: number | null = null
     if (running) {
-      cad = Math.round(spec.cadence + (spec.refPace - ph.pace) * 0.09 + noise(2.6) - frac * 1.2)
+      cad = Math.round(spec.cadence + (spec.refPace - ph.pace) * 0.09 + noise(2.6) - frac * 1.2 - down * (spec.downhillCadenceLoss ?? 1.2))
       pw = spec.hasPower ? Math.round(spec.power * (spec.refPace / smoothPace) + noise(9)) : null
       gct = Math.round(spec.gct + (ph.pace - spec.refPace) * 0.22 + frac * 6 + noise(5))
       vo = Math.round((spec.vo + frac * 0.35 + noise(0.25)) * 10) / 10
@@ -128,16 +132,6 @@ export function simulate(spec: RunSpec): Simulation {
     } else if (ph.kind === 'walk') {
       cad = Math.round(112 + noise(3))
       pw = spec.hasPower ? Math.round(138 + noise(10)) : null
-    }
-
-    let elev: number | null = null
-    if (spec.elev) {
-      const e = spec.elev
-      elev =
-        Math.round(
-          (e.base + e.amp * Math.sin(2 * Math.PI * e.cycles * frac) + e.amp * 0.25 * Math.sin(2 * Math.PI * e.cycles * 3.1 * frac + 1) + e.trend * frac) *
-            10,
-        ) / 10
     }
 
     series.tS.push(Math.round(t))
@@ -149,15 +143,11 @@ export function simulate(spec: RunSpec): Simulation {
     series.gctMs.push(gct)
     series.voCm.push(vo)
     series.gctBalanceLeftPct.push(bal)
-    points.push({ t, kind: ph.kind, dist })
+    points.push({ t, kind: ph.kind, dist, gradePct: grade === null ? null : Math.round(grade * 10) / 10 })
   }
 
   return { series, points, durationS, distanceM: dist }
 }
-
-/* ------------------------------------------------------------------ */
-/* Agrégats                                                           */
-/* ------------------------------------------------------------------ */
 
 export function mean(xs: (number | null)[]): number | null {
   let s = 0
@@ -183,7 +173,6 @@ export function elevGainLoss(xs: (number | null)[]): { gain: number | null; loss
   let gain = 0
   let loss = 0
   let ref = vals[0]
-  // hystérésis 1 m pour ignorer le bruit
   for (const v of vals) {
     const d = v - ref
     if (d >= 1) {
@@ -198,7 +187,14 @@ export function elevGainLoss(xs: (number | null)[]): { gain: number | null; loss
 }
 
 export function round(v: number | null, d = 0): number | null {
-  if (v === null) return null
+  if (v === null || !Number.isFinite(v)) return null
   const k = 10 ** d
   return Math.round(v * k) / k
+}
+
+/** Grade cost factor (simplified Minetti): > 1 uphill, < 1 downhill. */
+export function gradeFactor(gradePct: number | null): number {
+  if (gradePct === null) return 1
+  const g = Math.max(-15, Math.min(15, gradePct))
+  return g >= 0 ? 1 + 0.035 * g : Math.max(0.8, 1 + 0.018 * g)
 }

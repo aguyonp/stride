@@ -22,12 +22,12 @@ export function monthBounds(year: number, month0: number): { from: string; to: s
   return { from: toISODate(new Date(year, month0, 1)), to: toISODate(new Date(year, month0 + 1, 0)) }
 }
 
-/** Calendrier mensuel compact : points sur les jours avec activités, navigation clavier (flèches). */
+/** Compact month grid with activity dots and arrow-key navigation. */
 export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, onSelect, today, loading }: MiniCalendarProps) {
   const gridRef = useRef<HTMLDivElement>(null)
   const days = useMemo(() => {
     const first = new Date(year, month0, 1)
-    const offset = (first.getDay() + 6) % 7 // lundi = 0
+    const offset = (first.getDay() + 6) % 7
     const count = new Date(year, month0 + 1, 0).getDate()
     const cells: (string | null)[] = Array.from({ length: offset }, () => null)
     for (let d = 1; d <= count; d++) cells.push(toISODate(new Date(year, month0, d)))

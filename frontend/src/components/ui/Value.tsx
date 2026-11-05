@@ -2,11 +2,12 @@ import type { ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 import { isNum, ND } from '../../lib/format'
 
-/** Affiche « N/D » grisé si la valeur est absente (jamais 0). */
-export function NA({ className }: { className?: string }) {
+/** Greyed « N/D » for missing values (never 0). */
+export function NA({ className, reason }: { className?: string; reason?: string | null }) {
   return (
-    <span className={cn('font-medium text-ink-3', className)} title="Non disponible">
+    <span className={cn('font-medium text-ink-3', className)} title={reason ?? 'Non disponible'}>
       {ND}
+      {reason && <span className="ml-1 text-[0.72em] font-normal">· {reason}</span>}
     </span>
   )
 }
@@ -17,11 +18,11 @@ interface ValueProps {
   unit?: string
   className?: string
   unitClassName?: string
+  reason?: string | null
 }
 
-/** Valeur numérique formatée + unité discrète, ou N/D. */
-export function Value({ value, format, unit, className, unitClassName }: ValueProps) {
-  if (!isNum(value)) return <NA className={className} />
+export function Value({ value, format, unit, className, unitClassName, reason }: ValueProps) {
+  if (!isNum(value)) return <NA className={className} reason={reason} />
   return (
     <span className={cn('num', className)}>
       {format(value)}
@@ -39,7 +40,6 @@ interface StatProps {
   emphasis?: boolean
 }
 
-/** Tuile de métrique compacte (libellé, valeur, sous-texte). */
 export function Stat({ label, children, sub, icon, className, emphasis }: StatProps) {
   return (
     <div className={cn('glass-inset min-w-0 px-3.5 py-3', className)}>

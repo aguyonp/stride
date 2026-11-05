@@ -1,5 +1,4 @@
-// Accès localStorage tolérant (navigation privée, stockage bloqué…).
-// Ne stocke QUE des préférences d'interface — jamais de clé ni de secret.
+// Tolerant localStorage access (private mode, blocked storage). UI preferences only, never secrets.
 
 export function readStored(key: string): string | null {
   try {
@@ -19,7 +18,8 @@ export function writeStored(key: string, value: string | null) {
 }
 
 export const STORAGE_KEYS = {
-  mode: 'stride.mode',
   theme: 'stride.theme',
-  history: 'stride.history14',
+  include: 'stride.include',
+  multiInclude: 'stride.multiInclude',
+  promptSubject: 'stride.promptSubject',
 } as const

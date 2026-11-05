@@ -9,7 +9,6 @@ interface SparklineProps {
   ariaLabel: string
 }
 
-/** Mini-tendance (7 points) avec bande de référence et point final. */
 export function Sparkline({ values, band, height = 44, color = 'var(--accent)', ariaLabel }: SparklineProps) {
   const [ref, width] = useElementWidth<HTMLDivElement>()
   const extra = band && band.min !== null && band.max !== null ? [band.min, band.max] : []

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 interface RingProps {
-  value: number | null // 0-100
+  value: number | null
   size?: number
   stroke?: number
   color?: string
@@ -9,7 +9,6 @@ interface RingProps {
   children?: ReactNode
 }
 
-/** Anneau de progression (pourcentage). */
 export function Ring({ value, size = 76, stroke = 8, color = 'var(--accent)', label, children }: RingProps) {
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r

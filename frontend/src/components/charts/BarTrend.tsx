@@ -5,9 +5,9 @@ import { extent, linear, niceDomain } from './scale'
 
 export interface BarDatum {
   key: string
-  label: string // libellé axe (ex. « lu 28 »)
+  label: string
   value: number | null
-  tooltip: string // texte complet (survol / focus)
+  tooltip: string
   highlight?: boolean
 }
 
@@ -20,11 +20,7 @@ interface BarTrendProps {
   zeroBased?: boolean
 }
 
-/**
- * Colonnes (≤ 24 px) avec bande de référence (ex. baseline VFC).
- * Chaque colonne est focalisable et affiche sa valeur au survol/focus ;
- * la dernière (jour J) est étiquetée directement.
- */
+/** Columns with a reference band; each bar is focusable and reveals its value. */
 export function BarTrend({ data, band, format, height = 132, ariaLabel, zeroBased = false }: BarTrendProps) {
   const [ref, width] = useElementWidth<HTMLDivElement>()
   const [active, setActive] = useState<number | null>(null)
