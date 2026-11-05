@@ -48,7 +48,7 @@ func (m *countMeter) Observe(c apimeter.Call) {
 	m.ms[c.Endpoint] += c.Duration
 }
 func (m *countMeter) SetQuota(string, apimeter.Quota) {}
-func (m *countMeter) Snapshot() apimeter.Snapshot    { return apimeter.Snapshot{} }
+func (m *countMeter) Snapshot() apimeter.Snapshot     { return apimeter.Snapshot{} }
 func (m *countMeter) total() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -264,7 +264,7 @@ func TestLive(t *testing.T) {
 	})
 	var eps []string
 	for ep, n := range meter.calls {
-		eps = append(eps, fmt.Sprintf("%s ×%d (avg %s)", ep, n, (meter.ms[ep] / time.Duration(n)).Round(time.Millisecond)))
+		eps = append(eps, fmt.Sprintf("%s ×%d (avg %s)", ep, n, (meter.ms[ep]/time.Duration(n)).Round(time.Millisecond)))
 	}
 	sort.Strings(eps)
 	t.Logf("provider calls total %d, statuses %v", meter.total(), meter.status)
