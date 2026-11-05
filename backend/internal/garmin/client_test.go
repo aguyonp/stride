@@ -12,17 +12,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"stride/internal/apimeter"
 )
 
 const fakeKey = "cle-de-test-synthetique-0001"
-
-var tokenBase = time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
 
 func fakeJWT(exp time.Time) string {
 	h := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
@@ -30,21 +29,34 @@ func fakeJWT(exp time.Time) string {
 	return h + "." + p + ".sig"
 }
 
-type fakeGarmin struct {
-	tokens, data, fit atomic.Int32
-	fail401, fail429  atomic.Int32
-	lastAccept        atomic.Value
+type recMeter struct {
+	mu    sync.Mutex
+	calls []apimeter.Call
 }
 
-func (f *fakeGarmin) handler(t *testing.T) http.Handler {
+func (m *recMeter) Acquire(context.Context, string, int64) (func(), error) { return func() {}, nil }
+func (m *recMeter) Observe(c apimeter.Call) {
+	m.mu.Lock()
+	m.calls = append(m.calls, c)
+	m.mu.Unlock()
+}
+func (m *recMeter) SetQuota(string, apimeter.Quota) {}
+func (m *recMeter) Snapshot() apimeter.Snapshot     { return apimeter.Snapshot{} }
+
+type fakeGarmin struct {
+	tokens, data              atomic.Int32
+	fail401, fail429, fail5xx atomic.Int32
+}
+
+func (f *fakeGarmin) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+tokenPath, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "ApiKey "+fakeKey {
+		if r.Header.Get("Authorization") != "ApiKey "+fakeKey || r.Header.Get("Accept") != "*/*" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		n := f.tokens.Add(1)
-		_, _ = io.WriteString(w, fakeJWT(tokenBase.Add(24*time.Hour).Add(time.Duration(n)*time.Second)))
+		f.tokens.Add(1)
+		_, _ = io.WriteString(w, fakeJWT(time.Now().Add(24*time.Hour)))
 	})
 	mux.HandleFunc("GET /hrv-service/hrv/{date}", func(w http.ResponseWriter, r *http.Request) {
 		f.data.Add(1)
@@ -52,203 +64,153 @@ func (f *fakeGarmin) handler(t *testing.T) http.Handler {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if f.fail401.Load() > 0 {
+		switch {
+		case f.fail401.Load() > 0:
 			f.fail401.Add(-1)
 			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		if f.fail429.Load() > 0 {
+		case f.fail429.Load() > 0:
 			f.fail429.Add(-1)
-			w.Header().Set("Retry-After", "0")
+			w.Header().Set("Retry-After", "42")
 			w.WriteHeader(http.StatusTooManyRequests)
-			return
-		}
-		if r.PathValue("date") == "2026-01-01" {
+		case f.fail5xx.Load() > 0:
+			f.fail5xx.Add(-1)
+			w.WriteHeader(http.StatusBadGateway)
+		case r.PathValue("date") == "2026-01-01":
 			w.WriteHeader(http.StatusNoContent)
-			return
+		default:
+			_, _ = io.WriteString(w, `{"hrvSummary":{"calendarDate":"`+r.PathValue("date")+`","lastNightAvg":45,"status":"BALANCED"}}`)
 		}
-		_, _ = io.WriteString(w, `{"hrvSummary":{"calendarDate":"`+r.PathValue("date")+`","lastNightAvg":45,"status":"BALANCED"}}`)
 	})
 	mux.HandleFunc("GET /download-service/files/activity/{id}", func(w http.ResponseWriter, r *http.Request) {
-		f.fit.Add(1)
-		f.lastAccept.Store(r.Header.Get("Accept"))
 		if r.Header.Get("Accept") != fitAccept {
 			w.WriteHeader(http.StatusNotAcceptable)
 			return
 		}
 		var buf bytes.Buffer
 		zw := zip.NewWriter(&buf)
-		fw, _ := zw.Create(r.PathValue("id") + "_ACTIVITY.fit")
+		fw, _ := zw.Create("x_ACTIVITY.fit")
 		_, _ = fw.Write([]byte("0123456789ab-contenu-fit"))
 		_ = zw.Close()
 		_, _ = w.Write(buf.Bytes())
 	})
-	mux.HandleFunc("GET /activity-service/activity/{id}", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
 	return mux
 }
 
-func newTestClient(t *testing.T, srvURL, dir string, key string, now time.Time) *Client {
-	t.Helper()
-	return New(Options{
-		BaseURL: srvURL, DataDir: dir, Key: func() string { return key },
-		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Location: func() *time.Location { return time.UTC },
-		Now:      func() time.Time { return now },
+func newTestClient(url, key string, m apimeter.Meter, onTok func(string, time.Time)) *Client {
+	return New(Options{BaseURL: url, UserID: 7, APIKey: key, Meter: m, OnToken: onTok,
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Sleep: func(context.Context, time.Duration) error { return nil }})
+}
+
+func TestTokenRefreshOn401AndPersistence(t *testing.T) {
+	fg := &fakeGarmin{}
+	srv := httptest.NewServer(fg.handler())
+	defer srv.Close()
+	m := &recMeter{}
+	saved := 0
+	c := newTestClient(srv.URL, fakeKey, m, func(tok string, exp time.Time) {
+		if strings.Count(tok, ".") == 2 && exp.After(time.Now()) {
+			saved++
+		}
 	})
-}
-
-func TestTokenRetryAndCache(t *testing.T) {
-	fg := &fakeGarmin{}
-	srv := httptest.NewServer(fg.handler(t))
-	defer srv.Close()
-	dir := t.TempDir()
-	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
-	c := newTestClient(t, srv.URL, dir, fakeKey, now)
-	ctx := context.Background()
-
-	// 401 une fois → refresh forcé du jeton → succès
 	fg.fail401.Store(1)
-	h, err := c.HRVDay(ctx, "2026-11-03")
-	if err != nil || h.HrvSummary == nil || pf(h.HrvSummary.LastNightAvg) != 45 {
-		t.Fatalf("HRVDay : %v %+v", err, h)
-	}
-	if fg.tokens.Load() != 2 || fg.data.Load() != 2 {
-		t.Errorf("jetons=%d appels=%d (attendu 2/2)", fg.tokens.Load(), fg.data.Load())
-	}
-	// cache mémoire (date = aujourd'hui)
-	if _, err := c.HRVDay(ctx, "2026-11-03"); err != nil || fg.data.Load() != 2 {
-		t.Errorf("cache mémoire attendu (appels=%d)", fg.data.Load())
-	}
-	// 429 → backoff → succès ; date ancienne → cache disque
-	fg.fail429.Store(1)
-	if _, err := c.HRVDay(ctx, "2026-10-20"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "cache", "hrv", "2026-10-20.json")); err != nil {
-		t.Errorf("cache disque attendu : %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "cache", "hrv", "2026-11-03.json")); err == nil {
-		t.Error("pas de cache disque attendu pour aujourd'hui")
-	}
-	// 204 → ErrNoData
-	if _, err := c.HRVDay(ctx, "2026-01-01"); !errors.Is(err, ErrNoData) {
-		t.Errorf("ErrNoData attendu, obtenu %v", err)
-	}
-	// 404 → IsNotFound
-	if _, err := c.Activity(ctx, 42); !IsNotFound(err) {
-		t.Errorf("404 attendu, obtenu %v", err)
-	}
-
-	// token.json : 0600, empreinte de la clé, jamais la clé
-	b, err := os.ReadFile(filepath.Join(dir, "token.json"))
+	b, err := c.HRVDay(context.Background(), "2026-11-03")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(b), fakeKey) {
-		t.Fatal("la clé ne doit jamais être écrite dans token.json")
+	h, _ := Decode[HRVDay](b)
+	if h.HrvSummary == nil || *h.HrvSummary.LastNightAvg != 45 {
+		t.Fatalf("hrv: %+v", h)
 	}
-	var ts tokenState
-	_ = json.Unmarshal(b, &ts)
-	if ts.KeySHA256 != keyHash(fakeKey) || ts.Token == "" {
-		t.Errorf("token.json inattendu")
+	if fg.tokens.Load() != 2 || fg.data.Load() != 2 || saved != 2 {
+		t.Errorf("tokens=%d calls=%d saved=%d", fg.tokens.Load(), fg.data.Load(), saved)
 	}
-	if st, _ := os.Stat(filepath.Join(dir, "token.json")); st.Mode().Perm() != 0o600 {
-		t.Errorf("permissions token.json = %v", st.Mode().Perm())
+	if c.TokenExpiresAt() == nil {
+		t.Error("token expiry expected")
 	}
-
-	// un nouveau client relit le jeton disque (pas de nouvel échange)
-	c2 := newTestClient(t, srv.URL, dir, fakeKey, now)
-	if _, err := c2.Token(ctx); err != nil || fg.tokens.Load() != 2 {
-		t.Errorf("jeton disque non réutilisé (échanges=%d, err=%v)", fg.tokens.Load(), err)
+	for _, call := range m.calls {
+		if call.Provider != apimeter.Garmin || call.UserID != 7 || strings.ContainsAny(call.Endpoint, "0123456789?") {
+			t.Errorf("metered call leaks ids or query: %+v", call)
+		}
 	}
-	if c2.TokenExpiresAt() == nil {
-		t.Error("expiration attendue")
-	}
-	// clé différente → jeton invalide → nouvel échange (refusé ici)
-	c3 := newTestClient(t, srv.URL, dir, "autre-cle-synthetique-0002", now)
-	if _, err := c3.Token(ctx); !IsUnauthorized(err) {
-		t.Errorf("401 attendu pour une autre clé, obtenu %v", err)
-	}
-	// renouvellement si < 1 h restante
-	c4 := newTestClient(t, srv.URL, dir, fakeKey, now.Add(23*time.Hour+30*time.Minute))
-	before := fg.tokens.Load()
-	if _, err := c4.Token(ctx); err != nil || fg.tokens.Load() != before+1 {
-		t.Errorf("renouvellement attendu (échanges %d → %d)", before, fg.tokens.Load())
+	// seeded token: no exchange
+	c2 := New(Options{BaseURL: srv.URL, UserID: 7, APIKey: fakeKey, Token: fakeJWT(time.Now().Add(20 * time.Hour)), TokenExpiresAt: time.Now().Add(20 * time.Hour),
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if _, err := c2.HRVDay(context.Background(), "2026-11-03"); err != nil || fg.tokens.Load() != 2 {
+		t.Errorf("seeded token not reused: %v %d", err, fg.tokens.Load())
 	}
 }
 
-func TestFITDownload(t *testing.T) {
+func TestRateLimitAndRetries(t *testing.T) {
 	fg := &fakeGarmin{}
-	srv := httptest.NewServer(fg.handler(t))
+	srv := httptest.NewServer(fg.handler())
 	defer srv.Close()
-	dir := t.TempDir()
-	c := newTestClient(t, srv.URL, dir, fakeKey, tokenBase)
-	b, err := c.ActivityFIT(context.Background(), 123)
-	if err != nil {
-		t.Fatal(err)
+	m := &recMeter{}
+	c := newTestClient(srv.URL, fakeKey, m, nil)
+	ctx := context.Background()
+	fg.fail429.Store(1)
+	_, err := c.HRVDay(ctx, "2026-11-03")
+	if !IsRateLimited(err) || fg.data.Load() != 1 {
+		t.Fatalf("429 must not be retried: %v calls=%d", err, fg.data.Load())
 	}
-	if string(b) != "0123456789ab-contenu-fit" {
-		t.Errorf("contenu extrait : %q", b)
+	last := m.calls[len(m.calls)-1]
+	if last.Status != 429 || last.RetryAfter != 42*time.Second {
+		t.Errorf("observed 429: %+v", last)
 	}
-	if fg.lastAccept.Load() != fitAccept {
-		t.Errorf("Accept = %v", fg.lastAccept.Load())
+	fg.fail5xx.Store(2)
+	if _, err := c.HRVDay(ctx, "2026-11-03"); err != nil {
+		t.Fatalf("5xx should be retried twice: %v", err)
 	}
-	st, err := os.Stat(filepath.Join(dir, "cache", "fit", "123.fit"))
-	if err != nil || st.Mode().Perm() != 0o600 {
-		t.Fatalf("cache FIT : %v", err)
+	if _, err := c.HRVDay(ctx, "2026-01-01"); !errors.Is(err, ErrNoData) {
+		t.Errorf("204 → ErrNoData, got %v", err)
 	}
-	if _, err := c.ActivityFIT(context.Background(), 123); err != nil || fg.fit.Load() != 1 {
-		t.Errorf("FIT attendu depuis le cache disque (téléchargements=%d)", fg.fit.Load())
+	bad := newTestClient(srv.URL, "mauvaise-cle-synthetique", m, nil)
+	if _, err := bad.Refresh(ctx); !IsUnauthorized(err) {
+		t.Errorf("bad key → unauthorized, got %v", err)
+	}
+	if _, err := newTestClient(srv.URL, "", m, nil).HRVDay(ctx, "2026-11-03"); !errors.Is(err, ErrNoAPIKey) {
+		t.Errorf("no key → ErrNoAPIKey, got %v", err)
 	}
 }
 
-func TestNoKey(t *testing.T) {
-	c := newTestClient(t, "http://127.0.0.1:1", t.TempDir(), "", time.Now())
-	if _, err := c.HRVDay(context.Background(), "2026-11-03"); !errors.Is(err, ErrNoAPIKey) {
-		t.Errorf("ErrNoAPIKey attendu, obtenu %v", err)
-	}
-	if c.Configured() {
-		t.Error("Configured() attendu false")
+func TestFITDownloadAcceptHeader(t *testing.T) {
+	srv := httptest.NewServer((&fakeGarmin{}).handler())
+	defer srv.Close()
+	b, err := newTestClient(srv.URL, fakeKey, apimeter.Nop(), nil).ActivityFIT(context.Background(), 123)
+	if err != nil || string(b) != "0123456789ab-contenu-fit" {
+		t.Fatalf("fit: %q %v", b, err)
 	}
 }
 
 func TestJWTExpiry(t *testing.T) {
-	exp := time.Date(2026, 11, 4, 18, 0, 0, 0, time.UTC)
-	got, ok := jwtExpiry(fakeJWT(exp))
-	if !ok || !got.Equal(exp) {
+	exp := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	if got, ok := jwtExpiry(fakeJWT(exp)); !ok || !got.Equal(exp) {
 		t.Errorf("exp = %v %v", got, ok)
 	}
 	if _, ok := jwtExpiry("pas.un.jwt"); ok {
-		t.Error("JWT invalide accepté")
+		t.Error("invalid JWT accepted")
 	}
 }
 
-func TestGoalValueAndBBPoints(t *testing.T) {
-	var d DailySummary
-	raw := `{"calendarDate":"2026-11-03","movement":{"steps":{"goal":8000,"value":8432},"floorsAscended":12,"floorsDescended":{}}}`
-	if err := json.Unmarshal([]byte(raw), &d); err != nil {
+func TestDecoders(t *testing.T) {
+	var ds DailySummary
+	if err := json.Unmarshal([]byte(`{"movement":{"steps":{"goal":8000,"value":9000},"floorsAscended":12}}`), &ds); err != nil {
 		t.Fatal(err)
 	}
-	v, g := d.StepsValue()
-	if pf(v) != 8432 || pf(g) != 8000 || pf(d.FloorsUp()) != 12 || d.FloorsDown() != nil {
-		t.Errorf("movement : %v %v %v %v", pf(v), pf(g), pf(d.FloorsUp()), d.FloorsDown())
+	if v, g := ds.StepsValue(); *v != 9000 || *g != 8000 || *ds.FloorsUp() != 12 {
+		t.Error("GoalValue")
 	}
-	var bb []BodyBatteryDay
-	raw = `[{"date":"2026-11-03","bodyBatteryValueDescriptorDTOList":[{"bodyBatteryValueDescriptorIndex":0,"bodyBatteryValueDescriptorKey":"timestamp"},{"bodyBatteryValueDescriptorIndex":1,"bodyBatteryValueDescriptorKey":"bodyBatteryLevel"}],"bodyBatteryValuesArray":[[1762150000000,82],[1762160000000,null]]}]`
-	if err := json.Unmarshal([]byte(raw), &bb); err != nil {
-		t.Fatal(err)
+	sl, err := Decode[DailySleep]([]byte(`{"dailySleepDTO":{"calendarDate":"2026-11-02","sleepTimeSeconds":100}}`))
+	if err != nil || sl.CalendarDate != "2026-11-02" || !sl.HasData() {
+		t.Errorf("sleep envelope: %+v %v", sl, err)
 	}
-	pts := bb[0].Points()
-	if len(pts) != 1 || pts[0].Level != 82 {
-		t.Errorf("points BB : %+v", pts)
+	us, err := Decode[UserSummary]([]byte(`{"calendarDate":"2026-11-02","bodyBatteryAtWakeTime":81,"floorsAscended":10.5}`))
+	if err != nil || *us.BodyBatteryAtWakeTime != 81 || *us.FloorsAscended != 10.5 {
+		t.Errorf("user summary: %+v %v", us, err)
 	}
-}
-
-func pf(p *float64) float64 {
-	if p == nil {
-		return -1
+	day := BodyBatteryDay{Descriptors: []BBDescriptor{{Index: 0, Key: "timestamp"}, {Index: 1, Key: "bodyBatteryLevel"}},
+		Values: [][]any{{1.0, 50.0}, {2.0, nil}}}
+	if pts := day.Points(); len(pts) != 1 || pts[0].Level != 50 {
+		t.Errorf("bb points: %+v", pts)
 	}
-	return *p
 }

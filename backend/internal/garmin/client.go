@@ -1,78 +1,79 @@
-// Package garmin est le client de la Garmin Personal API : échange clé → JWT,
-// retry/backoff, cache mémoire + disque et méthodes typées par endpoint.
+// Package garmin is a per-user client for the Garmin Connect Personal API.
+// Every outbound call goes through apimeter; responses are returned raw so the
+// domain layer decides what to persist (SQLite) or cache (TTL).
 package garmin
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/sync/singleflight"
-
+	"stride/internal/apimeter"
 	"stride/internal/logx"
 )
 
-// BaseURL est l'URL de la Garmin Personal API.
-const BaseURL = "https://personal.connectapi.garmin.com"
+const DefaultBaseURL = "https://personal.connectapi.garmin.com"
 
 const (
 	tokenPath      = "/personalapitoken-service/personal-api/personal-api-key/token"
-	userAgent      = "stride/1.0"
-	requestTimeout = 30 * time.Second
+	userAgent      = "stride/2.0"
+	requestTimeout = 45 * time.Second
 	renewBefore    = time.Hour
-	maxRetries     = 2 // nouvelles tentatives max sur 429/5xx/erreur réseau
+	maxRetries     = 2
 	maxBodyBytes   = 64 << 20
+	fitAccept      = "application/zip, application/x-zip-compressed, application/octet-stream"
 )
 
-// ErrNoAPIKey : aucune clé configurée (ni UI ni env).
-var ErrNoAPIKey = errors.New("aucune clé API Garmin configurée")
+var (
+	ErrNoAPIKey = errors.New("garmin: no personal API key")
+	ErrNoData   = errors.New("garmin: no data")
+)
 
-// ErrNoData : réponse vide (204 / corps vide) — pas une erreur, juste pas de donnée.
-var ErrNoData = errors.New("aucune donnée Garmin pour cette requête")
-
-// APIError décrit une réponse HTTP non-2xx (Status=0 : erreur réseau / timeout).
+// APIError is a non-2xx answer (Status 0 = network error or timeout).
 type APIError struct {
-	Op     string // "token" | "data" | "fit"
-	Path   string // chemin sans query
-	Status int
-	Err    error
+	Op       string
+	Endpoint string
+	Status   int
+	Err      error
 }
 
 func (e *APIError) Error() string {
 	if e.Status == 0 {
-		return fmt.Sprintf("Garmin %s %s : %v", e.Op, e.Path, e.Err)
+		return fmt.Sprintf("garmin %s %s: %v", e.Op, e.Endpoint, e.Err)
 	}
-	return fmt.Sprintf("Garmin %s %s : HTTP %d", e.Op, e.Path, e.Status)
+	return fmt.Sprintf("garmin %s %s: HTTP %d", e.Op, e.Endpoint, e.Status)
 }
 
 func (e *APIError) Unwrap() error { return e.Err }
 
-// IsUnauthorized : clé/jeton refusé par Garmin.
+func status(err error) int {
+	var ae *APIError
+	if errors.As(err, &ae) {
+		return ae.Status
+	}
+	return 0
+}
+
 func IsUnauthorized(err error) bool {
-	var ae *APIError
-	return errors.As(err, &ae) && (ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden)
+	s := status(err)
+	return s == http.StatusUnauthorized || s == http.StatusForbidden
 }
 
-// IsNotFound : ressource inexistante.
-func IsNotFound(err error) bool {
-	var ae *APIError
-	return errors.As(err, &ae) && ae.Status == http.StatusNotFound
+func IsNotFound(err error) bool { return status(err) == http.StatusNotFound }
+
+func IsRateLimited(err error) bool {
+	return status(err) == http.StatusTooManyRequests || errors.Is(err, apimeter.ErrCooldown)
 }
 
-// IsTimeout : délai dépassé côté Garmin.
 func IsTimeout(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
@@ -81,248 +82,171 @@ func IsTimeout(err error) bool {
 	return errors.As(err, &ne) && ne.Timeout()
 }
 
-// KeyFunc retourne la clé API courante ("" si aucune).
-type KeyFunc func() string
-
-// Options de construction du client.
 type Options struct {
 	BaseURL    string
-	DataDir    string
-	Key        KeyFunc
-	Logger     *slog.Logger
-	Location   func() *time.Location
+	UserID     int64
+	APIKey     string
+	Meter      apimeter.Meter
 	HTTPClient *http.Client
+	Log        *slog.Logger
 	Now        func() time.Time
+	// Token / TokenExpiresAt seed the JWT (decrypted from the database).
+	Token          string
+	TokenExpiresAt time.Time
+	// OnToken is called after every successful exchange so the caller can persist the JWT.
+	OnToken func(token string, expiresAt time.Time)
+	// Sleep is overridable for tests.
+	Sleep func(ctx context.Context, d time.Duration) error
 }
 
-// Client Garmin Personal API (thread-safe).
 type Client struct {
 	base    string
-	dataDir string
-	key     KeyFunc
-	log     *slog.Logger
-	loc     func() *time.Location
+	userID  int64
+	key     string
+	meter   apimeter.Meter
 	hc      *http.Client
+	log     *slog.Logger
 	now     func() time.Time
+	onToken func(string, time.Time)
+	sleep   func(context.Context, time.Duration) error
 
-	tokMu      sync.Mutex
-	tok        *tokenState
-	diskLoaded bool
-
-	mem *memCache
-	sf  singleflight.Group
+	mu  sync.Mutex
+	tok string
+	exp time.Time
 }
 
-type tokenState struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expiresAt"`
-	KeySHA256 string    `json:"keySha256"`
-}
-
-// New construit un client.
 func New(o Options) *Client {
 	c := &Client{
 		base:    strings.TrimRight(o.BaseURL, "/"),
-		dataDir: o.DataDir,
-		key:     o.Key,
-		log:     o.Logger,
-		loc:     o.Location,
+		userID:  o.UserID,
+		key:     strings.TrimSpace(o.APIKey),
+		meter:   o.Meter,
 		hc:      o.HTTPClient,
+		log:     o.Log,
 		now:     o.Now,
-		mem:     newMemCache(),
+		onToken: o.OnToken,
+		sleep:   o.Sleep,
+		tok:     o.Token,
+		exp:     o.TokenExpiresAt,
 	}
 	if c.base == "" {
-		c.base = BaseURL
+		c.base = DefaultBaseURL
 	}
-	if c.log == nil {
-		c.log = slog.Default()
-	}
-	if c.loc == nil {
-		c.loc = func() *time.Location { return time.Local }
+	if c.meter == nil {
+		c.meter = apimeter.Nop()
 	}
 	if c.hc == nil {
 		c.hc = &http.Client{Timeout: requestTimeout}
 	}
+	if c.log == nil {
+		c.log = slog.Default()
+	}
 	if c.now == nil {
 		c.now = time.Now
 	}
-	if c.key == nil {
-		c.key = func() string { return "" }
+	if c.sleep == nil {
+		c.sleep = sleepCtx
 	}
 	return c
 }
 
-// Configured indique si une clé est disponible.
-func (c *Client) Configured() bool { return c.key() != "" }
+func (c *Client) UserID() int64 { return c.userID }
 
-func keyHash(key string) string {
-	h := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(h[:])
-}
-
-func (c *Client) tokenFile() string { return filepath.Join(c.dataDir, "token.json") }
-
-// TokenExpiresAt retourne l'expiration du jeton courant s'il correspond à la clé courante.
+// TokenExpiresAt returns the expiry of the cached JWT, if still valid.
 func (c *Client) TokenExpiresAt() *time.Time {
-	key := c.key()
-	if key == "" {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tok == "" || !c.now().Before(c.exp) {
 		return nil
 	}
-	c.tokMu.Lock()
-	defer c.tokMu.Unlock()
-	c.loadDiskTokenLocked()
-	if c.tok == nil || c.tok.KeySHA256 != keyHash(key) || !c.now().Before(c.tok.ExpiresAt) {
-		return nil
-	}
-	t := c.tok.ExpiresAt
+	t := c.exp
 	return &t
 }
 
-// InvalidateToken oublie le jeton (mémoire + disque) et vide le cache mémoire.
-func (c *Client) InvalidateToken() {
-	c.tokMu.Lock()
-	c.tok = nil
-	c.diskLoaded = true
-	c.tokMu.Unlock()
-	_ = os.Remove(c.tokenFile())
-	c.mem.clear()
-}
-
-// SetToken installe un jeton déjà obtenu (après validation d'une nouvelle clé).
-func (c *Client) SetToken(token string, exp time.Time, key string) {
-	c.tokMu.Lock()
-	defer c.tokMu.Unlock()
-	c.tok = &tokenState{Token: token, ExpiresAt: exp, KeySHA256: keyHash(key)}
-	c.diskLoaded = true
-	c.saveTokenLocked()
-}
-
-func (c *Client) loadDiskTokenLocked() {
-	if c.diskLoaded {
-		return
-	}
-	c.diskLoaded = true
-	b, err := os.ReadFile(c.tokenFile())
-	if err != nil {
-		return
-	}
-	var ts tokenState
-	if json.Unmarshal(b, &ts) == nil && ts.Token != "" && ts.KeySHA256 != "" {
-		c.tok = &ts
-	}
-}
-
-func (c *Client) saveTokenLocked() {
-	if c.tok == nil || c.dataDir == "" {
-		return
-	}
-	b, err := json.Marshal(c.tok)
-	if err != nil {
-		return
-	}
-	if err := os.MkdirAll(c.dataDir, 0o700); err == nil {
-		if err := writeFileAtomic(c.tokenFile(), b, 0o600); err != nil {
-			c.log.Warn("⚠️ Impossible de persister le jeton Garmin", "err", err.Error())
-		}
-	}
-}
-
-// Token retourne un JWT valide (renouvelé s'il reste moins d'une heure).
+// Token returns a JWT valid for at least one more hour, exchanging the key when needed.
 func (c *Client) Token(ctx context.Context) (string, error) {
-	key := c.key()
-	if key == "" {
-		return "", ErrNoAPIKey
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tok != "" && c.exp.Sub(c.now()) > renewBefore {
+		return c.tok, nil
 	}
-	h := keyHash(key)
-	c.tokMu.Lock()
-	defer c.tokMu.Unlock()
-	c.loadDiskTokenLocked()
-	if c.tok != nil && c.tok.KeySHA256 == h && c.tok.ExpiresAt.Sub(c.now()) > renewBefore {
-		return c.tok.Token, nil
-	}
-	return c.renewLocked(ctx, key)
+	return c.renewLocked(ctx)
 }
 
-// forceRefresh renouvelle le jeton si `stale` est toujours le jeton courant.
+// Refresh forces a new token exchange (used to validate a key).
+func (c *Client) Refresh(ctx context.Context) (time.Time, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, err := c.renewLocked(ctx); err != nil {
+		return time.Time{}, err
+	}
+	return c.exp, nil
+}
+
 func (c *Client) forceRefresh(ctx context.Context, stale string) (string, error) {
-	key := c.key()
-	if key == "" {
-		return "", ErrNoAPIKey
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tok != "" && c.tok != stale && c.exp.Sub(c.now()) > renewBefore {
+		return c.tok, nil
 	}
-	c.tokMu.Lock()
-	defer c.tokMu.Unlock()
-	if c.tok != nil && c.tok.Token != stale && c.tok.KeySHA256 == keyHash(key) {
-		return c.tok.Token, nil
-	}
-	return c.renewLocked(ctx, key)
+	return c.renewLocked(ctx)
 }
 
-func (c *Client) renewLocked(ctx context.Context, key string) (string, error) {
-	tok, exp, err := c.Exchange(ctx, key)
+func (c *Client) renewLocked(ctx context.Context) (string, error) {
+	if c.key == "" {
+		return "", ErrNoAPIKey
+	}
+	tok, exp, err := c.exchange(ctx)
 	if err != nil {
 		return "", err
 	}
-	c.tok = &tokenState{Token: tok, ExpiresAt: exp, KeySHA256: keyHash(key)}
-	c.saveTokenLocked()
-	c.log.Info("🎫 Jeton Garmin renouvelé", "expire", exp.In(c.loc()).Format("2006-01-02 15:04 MST"))
+	c.tok, c.exp = tok, exp
+	if c.onToken != nil {
+		c.onToken(tok, exp)
+	}
+	c.log.Info("🎫 Jeton Garmin renouvelé", "user", c.userID, "expire", exp.UTC().Format(time.RFC3339))
 	return tok, nil
 }
 
-// Exchange échange une clé API contre un JWT (sans modifier l'état du client).
-func (c *Client) Exchange(ctx context.Context, key string) (string, time.Time, error) {
-	if strings.TrimSpace(key) == "" {
-		return "", time.Time{}, ErrNoAPIKey
-	}
+func (c *Client) exchange(ctx context.Context) (string, time.Time, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			if err := sleepCtx(ctx, backoff(attempt, 0)); err != nil {
+			if err := c.sleep(ctx, backoff(attempt)); err != nil {
 				return "", time.Time{}, err
 			}
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+tokenPath, nil)
-		if err != nil {
+		st, body, err := c.send(ctx, "token", tokenPath, http.MethodPost, tokenPath, func(r *http.Request) {
+			r.Header.Set("Accept", "*/*")
+			r.Header.Set("Authorization", "ApiKey "+c.key)
+		})
+		switch {
+		case err != nil && retryable(err, st):
+			lastErr = err
+			continue
+		case err != nil:
 			return "", time.Time{}, err
 		}
-		req.Header.Set("Accept", "*/*")
-		req.Header.Set("Authorization", "ApiKey "+key)
-		req.Header.Set("User-Agent", userAgent)
-		start := time.Now()
-		resp, err := c.hc.Do(req)
-		if err != nil {
-			c.log.Warn("📡 POST "+tokenPath+" erreur réseau", "durée", logx.Ms(time.Since(start)), "err", sanitizeErr(err))
-			lastErr = &APIError{Op: "token", Path: tokenPath, Err: errors.New(sanitizeErr(err))}
-			if ctx.Err() != nil {
-				return "", time.Time{}, lastErr
-			}
-			continue
+		tok := strings.Trim(strings.TrimSpace(string(body)), `"`)
+		if tok == "" || strings.Count(tok, ".") != 2 {
+			return "", time.Time{}, &APIError{Op: "token", Endpoint: tokenPath, Status: st, Err: errors.New("unexpected response (JWT expected)")}
 		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
-		c.log.Info(fmt.Sprintf("📡 POST %s %d · %s", tokenPath, resp.StatusCode, logx.Ms(time.Since(start))))
-		switch {
-		case resp.StatusCode == http.StatusOK:
-			tok := strings.TrimSpace(string(body))
-			tok = strings.Trim(tok, `"`)
-			if tok == "" || strings.Count(tok, ".") != 2 {
-				return "", time.Time{}, &APIError{Op: "token", Path: tokenPath, Status: resp.StatusCode, Err: errors.New("réponse inattendue (JWT attendu)")}
-			}
-			exp, ok := jwtExpiry(tok)
-			if !ok {
-				exp = c.now().Add(24 * time.Hour)
-			}
-			return tok, exp, nil
-		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
-			lastErr = &APIError{Op: "token", Path: tokenPath, Status: resp.StatusCode}
-			continue
-		default:
-			return "", time.Time{}, &APIError{Op: "token", Path: tokenPath, Status: resp.StatusCode}
+		exp, ok := jwtExpiry(tok)
+		if !ok {
+			exp = c.now().Add(24 * time.Hour)
 		}
+		return tok, exp, nil
 	}
 	return "", time.Time{}, lastErr
 }
 
-// jwtExpiry lit le claim exp du payload (base64url) sans vérifier la signature.
+func retryable(err error, st int) bool {
+	if errors.Is(err, apimeter.ErrCooldown) || errors.Is(err, context.Canceled) {
+		return false
+	}
+	return st == 0 || st >= 500
+}
+
 func jwtExpiry(tok string) (time.Time, bool) {
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 {
@@ -345,93 +269,110 @@ func jwtExpiry(tok string) (time.Time, bool) {
 	return time.Unix(int64(f), 0), true
 }
 
-// get effectue un GET authentifié avec retry 401 (après refresh forcé) et backoff 429/5xx.
-// pathQ inclut la query. Retourne le corps (vide si 204).
-func (c *Client) get(ctx context.Context, pathQ, accept, op string) ([]byte, error) {
-	path := pathQ
-	if i := strings.IndexByte(path, '?'); i >= 0 {
-		path = path[:i]
+// send performs one metered HTTP exchange. A non-2xx status is returned as *APIError
+// together with the status; the body is only returned on success.
+func (c *Client) send(ctx context.Context, op, endpoint, method, pathQ string, hdr func(*http.Request)) (int, []byte, error) {
+	uid := c.userID
+	if uid == 0 {
+		uid = apimeter.UserFrom(ctx)
 	}
+	release, err := c.meter.Acquire(ctx, apimeter.Garmin, uid)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer release()
+	req, err := http.NewRequestWithContext(ctx, method, c.base+pathQ, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	hdr(req)
+	req.Header.Set("User-Agent", userAgent)
+	call := apimeter.Call{Provider: apimeter.Garmin, UserID: uid, Endpoint: endpoint}
+	start := time.Now()
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		call.Duration, call.Err = time.Since(start), errors.New(sanitizeErr(err))
+		c.meter.Observe(call)
+		c.log.Warn(fmt.Sprintf("📡 %s %s erreur réseau · %s", method, endpoint, logx.Ms(call.Duration)), "user", uid, "err", sanitizeErr(err))
+		return 0, nil, &APIError{Op: op, Endpoint: endpoint, Err: errors.New(sanitizeErr(err))}
+	}
+	body, rerr := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	resp.Body.Close()
+	call.Duration, call.Status = time.Since(start), resp.StatusCode
+	if resp.StatusCode == http.StatusTooManyRequests {
+		call.RetryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+	}
+	if resp.StatusCode >= 400 {
+		call.Err = fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	c.meter.Observe(call)
+	lvl := slog.LevelInfo
+	if resp.StatusCode >= 400 {
+		lvl = slog.LevelWarn
+	}
+	c.log.Log(ctx, lvl, fmt.Sprintf("📡 %s %s %d · %s", method, endpoint, resp.StatusCode, logx.Ms(call.Duration)), "user", uid, "octets", len(body))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return resp.StatusCode, nil, &APIError{Op: op, Endpoint: endpoint, Status: resp.StatusCode}
+	}
+	if rerr != nil {
+		return resp.StatusCode, nil, &APIError{Op: op, Endpoint: endpoint, Status: resp.StatusCode, Err: rerr}
+	}
+	if resp.StatusCode == http.StatusNoContent {
+		return resp.StatusCode, nil, nil
+	}
+	return resp.StatusCode, body, nil
+}
+
+// get is an authenticated GET: one forced token refresh on 401, two retries on 5xx/network errors,
+// no retry on 429 (the meter starts a cooldown). Empty bodies yield ErrNoData.
+func (c *Client) get(ctx context.Context, op, endpoint, pathQ, accept string) ([]byte, error) {
 	tok, err := c.Token(ctx)
 	if err != nil {
 		return nil, err
 	}
-	retried401 := false
-	retries := 0
+	retried401, retries := false, 0
 	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+pathQ, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+tok)
-		req.Header.Set("Accept", accept)
-		req.Header.Set("User-Agent", userAgent)
-		start := time.Now()
-		resp, err := c.hc.Do(req)
-		if err != nil {
-			dur := time.Since(start)
-			c.log.Warn(fmt.Sprintf("📡 GET %s erreur réseau · %s", pathQ, logx.Ms(dur)), "err", sanitizeErr(err))
-			if ctx.Err() == nil && retries < maxRetries {
-				retries++
-				if err := sleepCtx(ctx, backoff(retries, 0)); err != nil {
-					return nil, err
-				}
-				continue
-			}
-			return nil, &APIError{Op: op, Path: path, Err: errors.New(sanitizeErr(err))}
-		}
-		body, rerr := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-		resp.Body.Close()
-		dur := time.Since(start)
-		lvl := slog.LevelInfo
-		if resp.StatusCode >= 400 {
-			lvl = slog.LevelWarn
-		}
-		c.log.Log(ctx, lvl, fmt.Sprintf("📡 GET %s %d · %s", pathQ, resp.StatusCode, logx.Ms(dur)), "octets", len(body))
+		st, body, err := c.send(ctx, op, endpoint, http.MethodGet, pathQ, func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer "+tok)
+			r.Header.Set("Accept", accept)
+		})
 		switch {
-		case resp.StatusCode >= 200 && resp.StatusCode < 300:
-			if rerr != nil {
-				return nil, &APIError{Op: op, Path: path, Status: resp.StatusCode, Err: rerr}
+		case err == nil:
+			if isEmptyBody(body) {
+				return nil, ErrNoData
 			}
 			return body, nil
-		case resp.StatusCode == http.StatusUnauthorized && !retried401:
+		case st == http.StatusUnauthorized && !retried401:
 			retried401 = true
-			c.log.Info("🎫 401 reçu : renouvellement forcé du jeton")
-			tok, err = c.forceRefresh(ctx, tok)
-			if err != nil {
+			if tok, err = c.forceRefresh(ctx, tok); err != nil {
 				return nil, err
 			}
-			continue
-		case (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500) && retries < maxRetries:
+		case retryable(err, st) && retries < maxRetries && ctx.Err() == nil:
 			retries++
-			wait := backoff(retries, parseRetryAfter(resp.Header.Get("Retry-After")))
-			c.log.Warn(fmt.Sprintf("⚠️ Garmin %d sur %s : nouvelle tentative dans %s", resp.StatusCode, path, logx.Ms(wait)))
-			if err := sleepCtx(ctx, wait); err != nil {
+			if err := c.sleep(ctx, backoff(retries)); err != nil {
 				return nil, err
 			}
-			continue
 		default:
-			return nil, &APIError{Op: op, Path: path, Status: resp.StatusCode}
+			return nil, err
 		}
 	}
 }
 
-func backoff(attempt int, retryAfter time.Duration) time.Duration {
-	if retryAfter > 0 {
-		if retryAfter > 5*time.Second {
-			return 5 * time.Second
-		}
-		return retryAfter
-	}
-	d := time.Duration(attempt*attempt) * 400 * time.Millisecond // 400ms, 1.6s
-	return d
+func isEmptyBody(b []byte) bool {
+	s := strings.TrimSpace(string(b))
+	return s == "" || s == "null" || s == `""`
+}
+
+func backoff(attempt int) time.Duration {
+	return time.Duration(attempt*attempt) * 500 * time.Millisecond
 }
 
 func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
 	if v == "" {
 		return 0
 	}
-	if s, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && s >= 0 {
+	if s, err := strconv.Atoi(v); err == nil && s >= 0 {
 		return time.Duration(s) * time.Second
 	}
 	if t, err := http.ParseTime(v); err == nil {
@@ -454,8 +395,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// sanitizeErr retire l'URL complète des erreurs réseau (aucun secret n'y figure,
-// mais on garde des logs courts et sans query).
+// sanitizeErr drops the URL (and its query) from transport errors.
 func sanitizeErr(err error) string {
 	s := err.Error()
 	if i := strings.Index(s, "\": "); i >= 0 && strings.Contains(s[:i], "http") {

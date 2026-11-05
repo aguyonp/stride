@@ -7,69 +7,25 @@ import (
 	"stride/internal/garmin"
 )
 
-// wellness regroupe les données bien-être récupérées pour une date J.
-type wellness struct {
-	date     string
-	sleep    *garmin.DailySleep
-	hrvDay   *garmin.HRVSummary
-	hrvRange []garmin.HRVSummary
-	bb       []garmin.BodyBatteryDay
-	dhr      *garmin.DailyHeartRate
-	sums     []garmin.DailySummary
-	steps    []garmin.StepsDay
-	sleeps   []garmin.DailySleep
-	acts     []garmin.ActivityListItem
-	actsOK   bool
-	zones    []garmin.HRZoneConfig
+// Wellness gathers the per-day Garmin wellness payloads around Date (from SQLite or cache).
+type Wellness struct {
+	Date  string
+	Sleep map[string]*garmin.DailySleep
+	HRV   map[string]*garmin.HRVSummary
+	Daily map[string]*garmin.DailySummary
+	User  map[string]*garmin.UserSummary
+	// Loads is the summed training load per local date; nil when unknown.
+	Loads map[string]float64
 }
 
-func (w *wellness) summary(date string) *garmin.DailySummary {
-	for i := range w.sums {
-		if w.sums[i].CalendarDate == date {
-			return &w.sums[i]
-		}
-	}
-	return nil
+func NewWellness(date string) *Wellness {
+	return &Wellness{Date: date, Sleep: map[string]*garmin.DailySleep{}, HRV: map[string]*garmin.HRVSummary{},
+		Daily: map[string]*garmin.DailySummary{}, User: map[string]*garmin.UserSummary{}}
 }
 
-func (w *wellness) hrvFor(date string) *garmin.HRVSummary {
-	if date == w.date && w.hrvDay != nil {
-		return w.hrvDay
-	}
-	for i := range w.hrvRange {
-		if w.hrvRange[i].CalendarDate == date {
-			return &w.hrvRange[i]
-		}
-	}
-	return nil
-}
-
-func (w *wellness) sleepFor(date string) *garmin.DailySleep {
-	if date == w.date && w.sleep.HasData() {
-		return w.sleep
-	}
-	for i := range w.sleeps {
-		if w.sleeps[i].CalendarDate == date && w.sleeps[i].HasData() {
-			return &w.sleeps[i]
-		}
-	}
-	return nil
-}
-
-func (w *wellness) stepsFor(date string) *garmin.StepsDay {
-	for i := range w.steps {
-		if w.steps[i].CalendarDate == date {
-			return &w.steps[i]
-		}
-	}
-	return nil
-}
-
-func (w *wellness) bbDay(date string) *garmin.BodyBatteryDay {
-	for i := range w.bb {
-		if w.bb[i].Date == date {
-			return &w.bb[i]
-		}
+func (w *Wellness) sleepFor(d string) *garmin.DailySleep {
+	if s := w.Sleep[d]; s.HasData() {
+		return s
 	}
 	return nil
 }
@@ -81,7 +37,6 @@ var hrvStatusLabels = map[string]string{
 	"POOR":       "Faible",
 }
 
-// HRVStatusLabel traduit un statut VFC Garmin.
 func HRVStatusLabel(s string) string {
 	if l, ok := hrvStatusLabels[s]; ok {
 		return l
@@ -89,29 +44,7 @@ func HRVStatusLabel(s string) string {
 	return s
 }
 
-// bodyBatteryAtWake : point le plus proche du réveil (sleepEndTimestampGMT), à ±3 h max.
-// Résolution réelle ~6 points/jour (sonde 2026-11-03 : le point le plus proche est à
-// < 45 min du réveil et correspond au maximum du jour).
-func bodyBatteryAtWake(days []garmin.BodyBatteryDay, wakeMs float64) float64 {
-	if !valid(wakeMs) {
-		return nan
-	}
-	best, bestD := nan, math.Inf(1)
-	for i := range days {
-		for _, p := range days[i].Points() {
-			d := math.Abs(p.TsMs - wakeMs)
-			if d < bestD {
-				best, bestD = p.Level, d
-			}
-		}
-	}
-	if bestD > float64(3*time.Hour/time.Millisecond) {
-		return nan
-	}
-	return best
-}
-
-// fmtLocalClock formate un horodatage "local" Garmin (ms epoch décalé) en "HH:MM".
+// fmtLocalClock formats a Garmin "local" timestamp (shifted epoch ms) as HH:MM.
 func fmtLocalClock(ms *float64) *string {
 	if ms == nil || *ms <= 0 {
 		return nil
@@ -120,12 +53,19 @@ func fmtLocalClock(ms *float64) *string {
 	return &s
 }
 
-// buildRecovery construit le contexte de récupération (nil si aucune donnée).
-func buildRecovery(w *wellness) *RecoveryContext {
-	rc := &RecoveryContext{Date: w.date, Trend: []TrendDay{}}
-	any := false
+func nonNegative(p *float64) *float64 {
+	if p == nil || *p < 0 {
+		return nil
+	}
+	return pr(p, 0)
+}
 
-	if h := w.hrvFor(w.date); h != nil && (h.LastNightAvg != nil || h.Status != nil) {
+// BuildRecovery returns the recovery context of the night ending on w.Date (nil without any data).
+func BuildRecovery(w *Wellness) *RecoveryContext {
+	rc := &RecoveryContext{Date: w.Date, Trend: []TrendDay{}}
+	found := false
+
+	if h := w.HRV[w.Date]; h != nil && (h.LastNightAvg != nil || h.Status != nil) {
 		hc := &HRVContext{
 			LastNightAvgMs:      pr(h.LastNightAvg, 0),
 			LastNight5MinHighMs: pr(h.LastNight5MinHigh, 0),
@@ -143,11 +83,10 @@ func buildRecovery(w *wellness) *RecoveryContext {
 			hc.DeltaVsWeeklyPct = num((ln-wk)/wk*100, 1)
 		}
 		rc.HRV = hc
-		any = true
+		found = true
 	}
 
-	sl := w.sleepFor(w.date)
-	if sl != nil {
+	if sl := w.sleepFor(w.Date); sl != nil {
 		score, qual := sl.Score()
 		rc.Sleep = &SleepContext{
 			Score:        pr(score, 0),
@@ -161,21 +100,21 @@ func buildRecovery(w *wellness) *RecoveryContext {
 			BedtimeLocal: fmtLocalClock(sl.SleepStartTimestampLocal),
 			WakeLocal:    fmtLocalClock(sl.SleepEndTimestampLocal),
 		}
-		any = true
+		found = true
 	}
 
-	sum := w.summary(w.date)
+	us, ds := w.User[w.Date], w.Daily[w.Date]
 	rhr, avg7 := nan, nan
-	if w.dhr != nil {
-		rhr, avg7 = pf(w.dhr.RestingHeartRate), pf(w.dhr.LastSevenDaysAvgRHR)
+	if us != nil {
+		rhr, avg7 = pf(us.RestingHeartRate), pf(us.LastSevenDaysAvgRestingHeartRate)
 	}
-	if !valid(rhr) && sum != nil && sum.HeartRate != nil {
-		rhr = pf(sum.HeartRate.RestingValue)
+	if !valid(rhr) && ds != nil && ds.HeartRate != nil {
+		rhr = pf(ds.HeartRate.RestingValue)
 	}
 	if !valid(avg7) {
 		var a wacc
-		for _, d := range dateRange(dateAdd(w.date, -6), w.date) {
-			if s := w.summary(d); s != nil && s.HeartRate != nil {
+		for _, d := range dateRange(dateAdd(w.Date, -6), w.Date) {
+			if s := w.Daily[d]; s != nil && s.HeartRate != nil {
 				a.add(pf(s.HeartRate.RestingValue), 1)
 			}
 		}
@@ -187,78 +126,103 @@ func buildRecovery(w *wellness) *RecoveryContext {
 			r.Delta = num(math.Round(rhr)-math.Round(avg7), 0)
 		}
 		rc.RestingHR = r
-		any = true
+		found = true
 	}
 
-	bbd := w.bbDay(w.date)
 	bb := &BodyBattery{}
-	if sl != nil {
-		bb.AtWake = num(bodyBatteryAtWake(w.bb, pf(sl.SleepEndTimestampGMT)), 0)
+	if us != nil {
+		bb.AtWake = nonNegative(us.BodyBatteryAtWakeTime)
+		bb.Max, bb.Min = nonNegative(us.BodyBatteryHighestValue), nonNegative(us.BodyBatteryLowestValue)
+		bb.Charged, bb.Drained = nonNegative(us.BodyBatteryChargedValue), nonNegative(us.BodyBatteryDrainedValue)
 	}
-	if sum != nil && sum.BodyBattery != nil {
-		bb.Max = pr(sum.BodyBattery.MaxValue, 0)
-		bb.Min = pr(sum.BodyBattery.MinValue, 0)
-		bb.Charged = pr(sum.BodyBattery.ChargedValue, 0)
-		bb.Drained = pr(sum.BodyBattery.DrainedValue, 0)
-	}
-	if bbd != nil {
-		if bbd.Charged != nil {
-			bb.Charged = pr(bbd.Charged, 0)
+	if ds != nil && ds.BodyBattery != nil {
+		if bb.Max == nil {
+			bb.Max = nonNegative(ds.BodyBattery.MaxValue)
 		}
-		if bbd.Drained != nil {
-			bb.Drained = pr(bbd.Drained, 0)
+		if bb.Min == nil {
+			bb.Min = nonNegative(ds.BodyBattery.MinValue)
 		}
-		if bb.Max == nil || bb.Min == nil {
-			mx, mn := nan, nan
-			for _, p := range bbd.Points() {
-				if !valid(mx) || p.Level > mx {
-					mx = p.Level
-				}
-				if !valid(mn) || p.Level < mn {
-					mn = p.Level
-				}
-			}
-			if bb.Max == nil {
-				bb.Max = num(mx, 0)
-			}
-			if bb.Min == nil {
-				bb.Min = num(mn, 0)
-			}
+		if bb.Charged == nil {
+			bb.Charged = nonNegative(ds.BodyBattery.ChargedValue)
+		}
+		if bb.Drained == nil {
+			bb.Drained = nonNegative(ds.BodyBattery.DrainedValue)
 		}
 	}
 	if bb.AtWake != nil || bb.Max != nil || bb.Charged != nil || bb.Drained != nil {
 		rc.BodyBattery = bb
-		any = true
+		found = true
 	}
-	if sum != nil && sum.Stress != nil {
-		rc.StressAvg = pr(sum.Stress.AvgLevel, 0)
-		if rc.StressAvg != nil && *rc.StressAvg < 0 {
-			rc.StressAvg = nil // -1/-2 = pas assez de données
-		}
-		if rc.StressAvg != nil {
-			any = true
-		}
+	rc.StressAvg = stressOf(us, ds)
+	if rc.StressAvg != nil {
+		found = true
 	}
 
-	rc.Trend = buildTrend(w)
+	rc.Trend = BuildTrend(w)
 	for _, t := range rc.Trend {
 		if t.HrvMs != nil || t.SleepS != nil || t.RestingHR != nil || t.Steps != nil {
-			any = true
+			found = true
 			break
 		}
 	}
-	if !any {
+	if !found {
 		return nil
 	}
 	return rc
 }
 
-// buildTrend : tendance J-6..J (ordre chronologique).
-func buildTrend(w *wellness) []TrendDay {
+func stressOf(us *garmin.UserSummary, ds *garmin.DailySummary) *float64 {
+	if us != nil {
+		if v := nonNegative(us.AverageStressLevel); v != nil {
+			return v
+		}
+	}
+	if ds != nil && ds.Stress != nil {
+		return nonNegative(ds.Stress.AvgLevel)
+	}
+	return nil
+}
+
+// StressOn returns the average stress of a day (nil when unknown or insufficient data).
+func (w *Wellness) StressOn(d string) *float64 { return stressOf(w.User[d], w.Daily[d]) }
+
+// FloorsOn returns floors climbed and descended on a day. Garmin omits the value on days without
+// floors: a day with step data but no floors counts as 0.
+func (w *Wellness) FloorsOn(d string) (*float64, *float64) {
+	zero := func(p *float64, hasDay bool) *float64 {
+		if p == nil && hasDay {
+			return num(0, 0)
+		}
+		return pr(p, 0)
+	}
+	if us := w.User[d]; us != nil && (us.FloorsAscended != nil || us.FloorsDescended != nil || us.TotalSteps != nil) {
+		return zero(us.FloorsAscended, us.TotalSteps != nil), zero(us.FloorsDescended, us.TotalSteps != nil)
+	}
+	if ds := w.Daily[d]; ds != nil {
+		steps, _ := ds.StepsValue()
+		return zero(ds.FloorsUp(), steps != nil), zero(ds.FloorsDown(), steps != nil)
+	}
+	return nil, nil
+}
+
+// StepsOn returns the step count and goal of a day.
+func (w *Wellness) StepsOn(d string) (*float64, *float64) {
+	if us := w.User[d]; us != nil && us.TotalSteps != nil {
+		return pr(us.TotalSteps, 0), pr(us.DailyStepGoal, 0)
+	}
+	if ds := w.Daily[d]; ds != nil {
+		v, g := ds.StepsValue()
+		return pr(v, 0), pr(g, 0)
+	}
+	return nil, nil
+}
+
+// BuildTrend returns the J-6..J trend in chronological order.
+func BuildTrend(w *Wellness) []TrendDay {
 	out := []TrendDay{}
-	for _, d := range dateRange(dateAdd(w.date, -6), w.date) {
+	for _, d := range dateRange(dateAdd(w.Date, -6), w.Date) {
 		td := TrendDay{Date: d}
-		if h := w.hrvFor(d); h != nil {
+		if h := w.HRV[d]; h != nil {
 			td.HrvMs = pr(h.LastNightAvg, 0)
 			td.HrvStatus = h.Status
 		}
@@ -268,78 +232,55 @@ func buildTrend(w *wellness) []TrendDay {
 			td.SleepS = pr(sl.SleepTimeSeconds, 0)
 			td.DeepS = pr(sl.DeepSleepSeconds, 0)
 		}
-		sum := w.summary(d)
-		if sum != nil {
-			if sum.HeartRate != nil {
-				td.RestingHR = pr(sum.HeartRate.RestingValue, 0)
+		if us := w.User[d]; us != nil {
+			td.RestingHR = pr(us.RestingHeartRate, 0)
+			td.BodyBatteryMax = nonNegative(us.BodyBatteryHighestValue)
+		}
+		if ds := w.Daily[d]; ds != nil {
+			if td.RestingHR == nil && ds.HeartRate != nil {
+				td.RestingHR = pr(ds.HeartRate.RestingValue, 0)
 			}
-			td.FloorsUp = pr(sum.FloorsUp(), 0)
-			if sum.BodyBattery != nil {
-				td.BodyBatteryMax = pr(sum.BodyBattery.MaxValue, 0)
+			if td.BodyBatteryMax == nil && ds.BodyBattery != nil {
+				td.BodyBatteryMax = nonNegative(ds.BodyBattery.MaxValue)
 			}
 		}
-		if d == w.date && w.dhr != nil && w.dhr.RestingHeartRate != nil {
-			td.RestingHR = pr(w.dhr.RestingHeartRate, 0)
-		}
-		if st := w.stepsFor(d); st != nil && st.TotalSteps != nil {
-			td.Steps = pr(st.TotalSteps, 0)
-		} else if sum != nil {
-			v, _ := sum.StepsValue()
-			td.Steps = pr(v, 0)
-		}
-		if w.actsOK {
-			load := 0.0
-			for i := range w.acts {
-				if w.acts[i].LocalDate() == d && w.acts[i].TrainingLoad != nil {
-					load += *w.acts[i].TrainingLoad
-				}
-			}
-			td.TrainingLoad = num(load, 0)
+		td.Steps, _ = w.StepsOn(d)
+		td.FloorsUp, _ = w.FloorsOn(d)
+		if w.Loads != nil {
+			td.TrainingLoad = num(w.Loads[d], 0)
 		}
 		out = append(out, td)
 	}
 	return out
 }
 
-// buildDayInfo : activité de la journée (Mode 2).
-func buildDayInfo(w *wellness) DayInfo {
+// BuildDayInfo returns the daily activity numbers of w.Date.
+func BuildDayInfo(w *Wellness) DayInfo {
 	var di DayInfo
-	sum := w.summary(w.date)
-	if st := w.stepsFor(w.date); st != nil {
-		di.Steps = pr(st.TotalSteps, 0)
-		di.StepGoal = pr(st.StepGoal, 0)
+	d := w.Date
+	di.Steps, di.StepGoal = w.StepsOn(d)
+	di.FloorsUp, di.FloorsDown = w.FloorsOn(d)
+	di.StressAvg = w.StressOn(d)
+	us, ds := w.User[d], w.Daily[d]
+	if us != nil {
+		di.IntensityModerateMin, di.IntensityVigorousMin = pr(us.ModerateIntensityMinutes, 0), pr(us.VigorousIntensityMinutes, 0)
+		di.ActiveCalories = pr(us.ActiveKilocalories, 0)
+		di.BodyBatteryCharged, di.BodyBatteryDrained = nonNegative(us.BodyBatteryChargedValue), nonNegative(us.BodyBatteryDrainedValue)
 	}
-	if sum != nil {
-		v, g := sum.StepsValue()
-		if di.Steps == nil {
-			di.Steps = pr(v, 0)
+	if ds != nil {
+		if ds.IntensityMinutes != nil && di.IntensityModerateMin == nil && di.IntensityVigorousMin == nil {
+			di.IntensityModerateMin, di.IntensityVigorousMin = pr(ds.IntensityMinutes.Moderate, 0), pr(ds.IntensityMinutes.Vigorous, 0)
 		}
-		if di.StepGoal == nil {
-			di.StepGoal = pr(g, 0)
+		if ds.Calories != nil && di.ActiveCalories == nil {
+			di.ActiveCalories = pr(ds.Calories.BurnedActive, 0)
 		}
-		di.FloorsUp = pr(sum.FloorsUp(), 0)
-		di.FloorsDown = pr(sum.FloorsDown(), 0)
-		if sum.IntensityMinutes != nil {
-			di.IntensityModerateMin = pr(sum.IntensityMinutes.Moderate, 0)
-			di.IntensityVigorousMin = pr(sum.IntensityMinutes.Vigorous, 0)
-		}
-		if sum.Calories != nil {
-			di.ActiveCalories = pr(sum.Calories.BurnedActive, 0)
-		}
-		if sum.Stress != nil && pf(sum.Stress.AvgLevel) >= 0 {
-			di.StressAvg = pr(sum.Stress.AvgLevel, 0)
-		}
-		if sum.BodyBattery != nil {
-			di.BodyBatteryCharged = pr(sum.BodyBattery.ChargedValue, 0)
-			di.BodyBatteryDrained = pr(sum.BodyBattery.DrainedValue, 0)
-		}
-	}
-	if bbd := w.bbDay(w.date); bbd != nil {
-		if bbd.Charged != nil {
-			di.BodyBatteryCharged = pr(bbd.Charged, 0)
-		}
-		if bbd.Drained != nil {
-			di.BodyBatteryDrained = pr(bbd.Drained, 0)
+		if ds.BodyBattery != nil {
+			if di.BodyBatteryCharged == nil {
+				di.BodyBatteryCharged = nonNegative(ds.BodyBattery.ChargedValue)
+			}
+			if di.BodyBatteryDrained == nil {
+				di.BodyBatteryDrained = nonNegative(ds.BodyBattery.DrainedValue)
+			}
 		}
 	}
 	return di

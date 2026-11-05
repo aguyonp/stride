@@ -3,99 +3,99 @@ package garmin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
 
-// Les champs numériques optionnels sont des *float64 (nil = absent / null).
+// Optional numeric fields are *float64 (nil = absent or null).
 
-// TypeRef est un {typeKey} Garmin.
 type TypeRef struct {
 	TypeKey string `json:"typeKey"`
 }
 
-// ActivityListItem : élément de /activitylist-service/activities/search/activities.
 type ActivityListItem struct {
-	ActivityID       int64    `json:"activityId"`
-	ActivityName     *string  `json:"activityName"`
-	StartTimeLocal   string   `json:"startTimeLocal"` // "2026-11-02 18:30:12"
-	StartTimeGMT     string   `json:"startTimeGMT"`
-	ActivityType     TypeRef  `json:"activityType"`
-	Distance         *float64 `json:"distance"`
-	Duration         *float64 `json:"duration"`
-	MovingDuration   *float64 `json:"movingDuration"`
-	ElapsedDuration  *float64 `json:"elapsedDuration"`
-	ElevationGain    *float64 `json:"elevationGain"`
-	ElevationLoss    *float64 `json:"elevationLoss"`
-	AverageSpeed     *float64 `json:"averageSpeed"`
-	MaxSpeed         *float64 `json:"maxSpeed"`
-	AverageHR        *float64 `json:"averageHR"`
-	MaxHR            *float64 `json:"maxHR"`
-	AvgCadenceSpm    *float64 `json:"averageRunningCadenceInStepsPerMinute"`
-	MaxCadenceSpm    *float64 `json:"maxRunningCadenceInStepsPerMinute"`
-	AvgPower         *float64 `json:"avgPower"`
-	MaxPower         *float64 `json:"maxPower"`
-	NormPower        *float64 `json:"normPower"`
-	AvgVO            *float64 `json:"avgVerticalOscillation"` // cm
-	AvgGCT           *float64 `json:"avgGroundContactTime"`   // ms
-	AvgStrideLength  *float64 `json:"avgStrideLength"`        // cm
-	AvgVerticalRatio *float64 `json:"avgVerticalRatio"`       // %
-	AerobicTE        *float64 `json:"aerobicTrainingEffect"`
-	AnaerobicTE      *float64 `json:"anaerobicTrainingEffect"`
-	TELabel          *string  `json:"trainingEffectLabel"`
-	TrainingLoad     *float64 `json:"activityTrainingLoad"`
-	LapCount         *float64 `json:"lapCount"`
-	LocationName     *string  `json:"locationName"`
-	Steps            *float64 `json:"steps"`
-	Calories         *float64 `json:"calories"`
-	BodyBatteryDelta *float64 `json:"differenceBodyBattery"`
-	HRZone1          *float64 `json:"hrTimeInZone_1"`
-	HRZone2          *float64 `json:"hrTimeInZone_2"`
-	HRZone3          *float64 `json:"hrTimeInZone_3"`
-	HRZone4          *float64 `json:"hrTimeInZone_4"`
-	HRZone5          *float64 `json:"hrTimeInZone_5"`
-	PowerZone1       *float64 `json:"powerTimeInZone_1"`
-	PowerZone2       *float64 `json:"powerTimeInZone_2"`
-	PowerZone3       *float64 `json:"powerTimeInZone_3"`
-	PowerZone4       *float64 `json:"powerTimeInZone_4"`
-	PowerZone5       *float64 `json:"powerTimeInZone_5"`
-	Fastest1000      *float64 `json:"fastestSplit_1000"`
-	Fastest1609      *float64 `json:"fastestSplit_1609"`
-	Fastest5000      *float64 `json:"fastestSplit_5000"`
-	Fastest10000     *float64 `json:"fastestSplit_10000"`
-	Fastest21098     *float64 `json:"fastestSplit_21098"`
-	Fastest42195     *float64 `json:"fastestSplit_42195"`
+	ActivityID            int64    `json:"activityId"`
+	ActivityName          *string  `json:"activityName"`
+	StartTimeLocal        string   `json:"startTimeLocal"` // "2026-11-02 18:30:12"
+	StartTimeGMT          string   `json:"startTimeGMT"`
+	ActivityType          TypeRef  `json:"activityType"`
+	Distance              *float64 `json:"distance"`
+	Duration              *float64 `json:"duration"`
+	MovingDuration        *float64 `json:"movingDuration"`
+	ElapsedDuration       *float64 `json:"elapsedDuration"`
+	ElevationGain         *float64 `json:"elevationGain"`
+	ElevationLoss         *float64 `json:"elevationLoss"`
+	AverageSpeed          *float64 `json:"averageSpeed"`
+	MaxSpeed              *float64 `json:"maxSpeed"`
+	AvgGradeAdjustedSpeed *float64 `json:"avgGradeAdjustedSpeed"`
+	AverageHR             *float64 `json:"averageHR"`
+	MaxHR                 *float64 `json:"maxHR"`
+	AvgCadenceSpm         *float64 `json:"averageRunningCadenceInStepsPerMinute"`
+	MaxCadenceSpm         *float64 `json:"maxRunningCadenceInStepsPerMinute"`
+	AvgPower              *float64 `json:"avgPower"`
+	MaxPower              *float64 `json:"maxPower"`
+	NormPower             *float64 `json:"normPower"`
+	AvgVO                 *float64 `json:"avgVerticalOscillation"` // cm
+	AvgGCT                *float64 `json:"avgGroundContactTime"`   // ms
+	AvgStrideLength       *float64 `json:"avgStrideLength"`        // cm
+	AvgVerticalRatio      *float64 `json:"avgVerticalRatio"`       // %
+	AerobicTE             *float64 `json:"aerobicTrainingEffect"`
+	AnaerobicTE           *float64 `json:"anaerobicTrainingEffect"`
+	TELabel               *string  `json:"trainingEffectLabel"`
+	TrainingLoad          *float64 `json:"activityTrainingLoad"`
+	LapCount              *float64 `json:"lapCount"`
+	LocationName          *string  `json:"locationName"`
+	Steps                 *float64 `json:"steps"`
+	Calories              *float64 `json:"calories"`
+	BodyBatteryDelta      *float64 `json:"differenceBodyBattery"`
+	StartLatitude         *float64 `json:"startLatitude"`
+	StartLongitude        *float64 `json:"startLongitude"`
+	HRZone1               *float64 `json:"hrTimeInZone_1"`
+	HRZone2               *float64 `json:"hrTimeInZone_2"`
+	HRZone3               *float64 `json:"hrTimeInZone_3"`
+	HRZone4               *float64 `json:"hrTimeInZone_4"`
+	HRZone5               *float64 `json:"hrTimeInZone_5"`
+	PowerZone1            *float64 `json:"powerTimeInZone_1"`
+	PowerZone2            *float64 `json:"powerTimeInZone_2"`
+	PowerZone3            *float64 `json:"powerTimeInZone_3"`
+	PowerZone4            *float64 `json:"powerTimeInZone_4"`
+	PowerZone5            *float64 `json:"powerTimeInZone_5"`
+	Fastest1000           *float64 `json:"fastestSplit_1000"`
+	Fastest1609           *float64 `json:"fastestSplit_1609"`
+	Fastest5000           *float64 `json:"fastestSplit_5000"`
+	Fastest10000          *float64 `json:"fastestSplit_10000"`
+	Fastest21098          *float64 `json:"fastestSplit_21098"`
+	Fastest42195          *float64 `json:"fastestSplit_42195"`
 }
 
-// HRZones retourne [z1..z5] en secondes ou nil si absent.
 func (a *ActivityListItem) HRZones() []float64 {
 	return zones(a.HRZone1, a.HRZone2, a.HRZone3, a.HRZone4, a.HRZone5)
 }
 
-// PowerZones retourne [z1..z5] en secondes ou nil si absent.
 func (a *ActivityListItem) PowerZones() []float64 {
 	return zones(a.PowerZone1, a.PowerZone2, a.PowerZone3, a.PowerZone4, a.PowerZone5)
 }
 
 func zones(ps ...*float64) []float64 {
 	out := make([]float64, len(ps))
-	any := false
+	found := false
 	for i, p := range ps {
 		if p != nil {
 			out[i] = *p
-			any = true
+			found = true
 		}
 	}
-	if !any {
+	if !found {
 		return nil
 	}
 	return out
 }
 
-// LocalDate retourne la date locale "YYYY-MM-DD" de l'activité.
 func (a *ActivityListItem) LocalDate() string { return datePart(a.StartTimeLocal) }
 
-// ActivityDetail : /activity-service/activity/{id}.
+func (a *ActivityListItem) StartGMT() (time.Time, bool) { return parseGarminTime(a.StartTimeGMT) }
+
 type ActivityDetail struct {
 	ActivityID      int64          `json:"activityId"`
 	ActivityName    *string        `json:"activityName"`
@@ -105,10 +105,11 @@ type ActivityDetail struct {
 	SplitSummaries  []SplitSummary `json:"splitSummaries"`
 }
 
-// ActivitySumDTO : summaryDTO du détail d'activité.
 type ActivitySumDTO struct {
 	StartTimeLocal        string   `json:"startTimeLocal"` // "2026-11-02T18:30:12.0"
 	StartTimeGMT          string   `json:"startTimeGMT"`
+	StartLatitude         *float64 `json:"startLatitude"`
+	StartLongitude        *float64 `json:"startLongitude"`
 	Distance              *float64 `json:"distance"`
 	Duration              *float64 `json:"duration"`
 	MovingDuration        *float64 `json:"movingDuration"`
@@ -141,13 +142,11 @@ type ActivitySumDTO struct {
 	DifferenceBodyBattery *float64 `json:"differenceBodyBattery"`
 	BeginPotentialStamina *float64 `json:"beginPotentialStamina"`
 	EndPotentialStamina   *float64 `json:"endPotentialStamina"`
+	MinAvailableStamina   *float64 `json:"minAvailableStamina"`
 	ModerateIntensityMins *float64 `json:"moderateIntensityMinutes"`
 	VigorousIntensityMins *float64 `json:"vigorousIntensityMinutes"`
-	AerobicTEMessage      *string  `json:"aerobicTrainingEffectMessage"`
-	AnaerobicTEMessage    *string  `json:"anaerobicTrainingEffectMessage"`
 }
 
-// SplitSummary : élément de splitSummaries.
 type SplitSummary struct {
 	SplitType         *string  `json:"splitType"`
 	NoOfSplits        *float64 `json:"noOfSplits"`
@@ -161,16 +160,13 @@ type SplitSummary struct {
 	ElevationLoss     *float64 `json:"elevationLoss"`
 }
 
-// LocalDate retourne la date locale "YYYY-MM-DD".
 func (d *ActivityDetail) LocalDate() string { return datePart(d.Summary.StartTimeLocal) }
 
-// LocalStart retourne "YYYY-MM-DDTHH:MM:SS" (heure locale, sans offset).
 func (d *ActivityDetail) LocalStart() string { return NormalizeLocal(d.Summary.StartTimeLocal) }
 
-// StartGMT parse startTimeGMT.
 func (d *ActivityDetail) StartGMT() (time.Time, bool) { return parseGarminTime(d.Summary.StartTimeGMT) }
 
-// NormalizeLocal convertit "2026-11-02 18:30:12" ou "2026-11-02T18:30:12.0" en "2026-11-02T18:30:12".
+// NormalizeLocal turns "2026-11-02 18:30:12" or "2026-11-02T18:30:12.0" into "2026-11-02T18:30:12".
 func NormalizeLocal(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.Replace(s, " ", "T", 1)
@@ -192,15 +188,13 @@ func datePart(s string) string {
 }
 
 func parseGarminTime(s string) (time.Time, bool) {
-	s = NormalizeLocal(s)
-	t, err := time.ParseInLocation("2006-01-02T15:04:05", s, time.UTC)
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", NormalizeLocal(s), time.UTC)
 	if err != nil {
 		return time.Time{}, false
 	}
 	return t, true
 }
 
-// ActivityDetails : /activity-service/activity/{id}/details (time-series).
 type ActivityDetails struct {
 	MetricDescriptors []MetricDescriptor `json:"metricDescriptors"`
 	Metrics           []struct {
@@ -208,7 +202,6 @@ type ActivityDetails struct {
 	} `json:"activityDetailMetrics"`
 }
 
-// MetricDescriptor décrit une colonne des time-series.
 type MetricDescriptor struct {
 	MetricsIndex int    `json:"metricsIndex"`
 	Key          string `json:"key"`
@@ -218,7 +211,6 @@ type MetricDescriptor struct {
 	} `json:"unit"`
 }
 
-// Column retourne l'index de la métrique key (ou -1).
 func (d *ActivityDetails) Column(key string) int {
 	for _, m := range d.MetricDescriptors {
 		if m.Key == key {
@@ -228,13 +220,11 @@ func (d *ActivityDetails) Column(key string) int {
 	return -1
 }
 
-// ScoreValue : {value, qualifierKey}.
 type ScoreValue struct {
 	Value        *float64 `json:"value"`
 	QualifierKey *string  `json:"qualifierKey"`
 }
 
-// DailySleep : /sleep-service/sleep/dailySleep (objet à plat).
 type DailySleep struct {
 	CalendarDate             string   `json:"calendarDate"`
 	SleepTimeSeconds         *float64 `json:"sleepTimeSeconds"`
@@ -263,12 +253,27 @@ type DailySleep struct {
 	} `json:"sleepNeed"`
 }
 
-// HasData indique si la nuit contient une durée de sommeil.
+// UnmarshalJSON accepts the flat object and the {"dailySleepDTO": {...}} envelope.
+func (s *DailySleep) UnmarshalJSON(b []byte) error {
+	type plain DailySleep
+	var env struct {
+		DTO *json.RawMessage `json:"dailySleepDTO"`
+	}
+	if json.Unmarshal(b, &env) == nil && env.DTO != nil {
+		b = *env.DTO
+	}
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*s = DailySleep(p)
+	return nil
+}
+
 func (s *DailySleep) HasData() bool {
 	return s != nil && s.SleepTimeSeconds != nil && *s.SleepTimeSeconds > 0
 }
 
-// Score retourne le score global (ou nil).
 func (s *DailySleep) Score() (*float64, *string) {
 	if s == nil || s.SleepScores == nil || s.SleepScores.Overall == nil {
 		return nil, nil
@@ -276,7 +281,6 @@ func (s *DailySleep) Score() (*float64, *string) {
 	return s.SleepScores.Overall.Value, s.SleepScores.Overall.QualifierKey
 }
 
-// HRVSummary : hrvSummary.
 type HRVSummary struct {
 	CalendarDate      string   `json:"calendarDate"`
 	WeeklyAvg         *float64 `json:"weeklyAvg"`
@@ -292,17 +296,14 @@ type HRVSummary struct {
 	FeedbackPhrase *string `json:"feedbackPhrase"`
 }
 
-// HRVDay : /hrv-service/hrv/{date}.
 type HRVDay struct {
 	HrvSummary *HRVSummary `json:"hrvSummary"`
 }
 
-// HRVRange : /hrv-service/hrv/daily/{start}/{end}.
 type HRVRange struct {
 	HrvSummaries []HRVSummary `json:"hrvSummaries"`
 }
 
-// BodyBatteryDay : élément de /wellness-service/wellness/bodyBattery/reports/daily.
 type BodyBatteryDay struct {
 	Date        string            `json:"date"`
 	Charged     *float64          `json:"charged"`
@@ -312,13 +313,11 @@ type BodyBatteryDay struct {
 	Events      []BodyBatteryEvnt `json:"bodyBatteryActivityEvent"`
 }
 
-// BBDescriptor décrit une colonne de bodyBatteryValuesArray.
 type BBDescriptor struct {
 	Index int    `json:"bodyBatteryValueDescriptorIndex"`
 	Key   string `json:"bodyBatteryValueDescriptorKey"`
 }
 
-// BodyBatteryEvnt : événement (SLEEP, ACTIVITY, STRESS, RECOVERY…).
 type BodyBatteryEvnt struct {
 	EventType         string   `json:"eventType"`
 	EventStartTimeGmt string   `json:"eventStartTimeGmt"`
@@ -326,14 +325,11 @@ type BodyBatteryEvnt struct {
 	Impact            *float64 `json:"bodyBatteryImpact"`
 }
 
-// BBPoint : point (horodatage ms, niveau).
 type BBPoint struct {
 	TsMs  float64
 	Level float64
 }
 
-// Points extrait les points (timestamp, niveau) en s'appuyant sur les descripteurs
-// (sonde 2026-11-03 : [timestamp, bodyBatteryLevel]).
 func (d *BodyBatteryDay) Points() []BBPoint {
 	tsIdx, lvlIdx := 0, 1
 	for _, desc := range d.Descriptors {
@@ -358,14 +354,13 @@ func (d *BodyBatteryDay) Points() []BBPoint {
 	return out
 }
 
-// GoalValue : {goal, value, distanceInMeters} — accepte aussi un nombre nu.
+// GoalValue is {goal, value, distanceInMeters}; a bare number is accepted too.
 type GoalValue struct {
 	Goal             *float64 `json:"goal"`
 	Value            *float64 `json:"value"`
 	DistanceInMeters *float64 `json:"distanceInMeters"`
 }
 
-// UnmarshalJSON accepte un objet ou un nombre.
 func (g *GoalValue) UnmarshalJSON(b []byte) error {
 	t := bytes.TrimSpace(b)
 	if len(t) == 0 || string(t) == "null" {
@@ -374,7 +369,7 @@ func (g *GoalValue) UnmarshalJSON(b []byte) error {
 	if t[0] != '{' {
 		var f float64
 		if err := json.Unmarshal(t, &f); err != nil {
-			return nil // tolérant
+			return nil
 		}
 		g.Value = &f
 		return nil
@@ -388,7 +383,6 @@ func (g *GoalValue) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// DailySummary : élément de /usersummary-service/v2/dailysummaries (data[]).
 type DailySummary struct {
 	CalendarDate string `json:"calendarDate"`
 	Movement     *struct {
@@ -428,7 +422,6 @@ type DailySummary struct {
 	} `json:"respiration"`
 }
 
-// Steps / FloorsUp / FloorsDown : accès tolérants.
 func (d *DailySummary) StepsValue() (*float64, *float64) {
 	if d == nil || d.Movement == nil || d.Movement.Steps == nil {
 		return nil, nil
@@ -436,7 +429,6 @@ func (d *DailySummary) StepsValue() (*float64, *float64) {
 	return d.Movement.Steps.Value, d.Movement.Steps.Goal
 }
 
-// FloorsUp retourne les étages montés.
 func (d *DailySummary) FloorsUp() *float64 {
 	if d == nil || d.Movement == nil || d.Movement.FloorsAscended == nil {
 		return nil
@@ -444,7 +436,6 @@ func (d *DailySummary) FloorsUp() *float64 {
 	return d.Movement.FloorsAscended.Value
 }
 
-// FloorsDown retourne les étages descendus.
 func (d *DailySummary) FloorsDown() *float64 {
 	if d == nil || d.Movement == nil || d.Movement.FloorsDescended == nil {
 		return nil
@@ -452,12 +443,32 @@ func (d *DailySummary) FloorsDown() *float64 {
 	return d.Movement.FloorsDescended.Value
 }
 
-// DailySummaries : enveloppe {data:[…]}.
 type DailySummaries struct {
 	Data []DailySummary `json:"data"`
 }
 
-// StepsDay : élément de /usersummary-service/stats/steps/daily.
+// UserSummary is /usersummary-service/usersummary/daily (flat object).
+type UserSummary struct {
+	CalendarDate                     string   `json:"calendarDate"`
+	TotalSteps                       *float64 `json:"totalSteps"`
+	DailyStepGoal                    *float64 `json:"dailyStepGoal"`
+	FloorsAscended                   *float64 `json:"floorsAscended"`
+	FloorsDescended                  *float64 `json:"floorsDescended"`
+	AverageStressLevel               *float64 `json:"averageStressLevel"`
+	MaxStressLevel                   *float64 `json:"maxStressLevel"`
+	RestingHeartRate                 *float64 `json:"restingHeartRate"`
+	LastSevenDaysAvgRestingHeartRate *float64 `json:"lastSevenDaysAvgRestingHeartRate"`
+	BodyBatteryAtWakeTime            *float64 `json:"bodyBatteryAtWakeTime"`
+	BodyBatteryHighestValue          *float64 `json:"bodyBatteryHighestValue"`
+	BodyBatteryLowestValue           *float64 `json:"bodyBatteryLowestValue"`
+	BodyBatteryChargedValue          *float64 `json:"bodyBatteryChargedValue"`
+	BodyBatteryDrainedValue          *float64 `json:"bodyBatteryDrainedValue"`
+	ModerateIntensityMinutes         *float64 `json:"moderateIntensityMinutes"`
+	VigorousIntensityMinutes         *float64 `json:"vigorousIntensityMinutes"`
+	ActiveKilocalories               *float64 `json:"activeKilocalories"`
+	SleepingSeconds                  *float64 `json:"sleepingSeconds"`
+}
+
 type StepsDay struct {
 	CalendarDate  string   `json:"calendarDate"`
 	TotalSteps    *float64 `json:"totalSteps"`
@@ -465,7 +476,6 @@ type StepsDay struct {
 	StepGoal      *float64 `json:"stepGoal"`
 }
 
-// DailyHeartRate : /wellness-service/wellness/dailyHeartRate.
 type DailyHeartRate struct {
 	CalendarDate        string   `json:"calendarDate"`
 	RestingHeartRate    *float64 `json:"restingHeartRate"`
@@ -474,7 +484,6 @@ type DailyHeartRate struct {
 	MaxHeartRate        *float64 `json:"maxHeartRate"`
 }
 
-// HRZoneConfig : élément de /biometric-service/heartRateZones/v2.
 type HRZoneConfig struct {
 	Sport                *string  `json:"sport"`
 	TrainingMethod       *string  `json:"trainingMethod"`
@@ -488,7 +497,6 @@ type HRZoneConfig struct {
 	RestingHRUsed        *float64 `json:"restingHeartRateUsed"`
 }
 
-// Floors retourne [z1..z5] planchers + max, ou nil.
 func (z *HRZoneConfig) Floors() []float64 {
 	ps := []*float64{z.Zone1Floor, z.Zone2Floor, z.Zone3Floor, z.Zone4Floor, z.Zone5Floor}
 	out := make([]float64, 0, 5)
@@ -499,4 +507,13 @@ func (z *HRZoneConfig) Floors() []float64 {
 		out = append(out, *p)
 	}
 	return out
+}
+
+// Decode unmarshals a raw payload into T.
+func Decode[T any](b []byte) (*T, error) {
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil, fmt.Errorf("garmin: decode %T: %w", v, err)
+	}
+	return &v, nil
 }

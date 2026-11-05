@@ -1,27 +1,95 @@
-// Package report génère les rapports texte markdown compacts (§4 du contrat) :
-// chiffres FR à virgule, "N/D" si absent, pas d'emoji hors section ALERTES.
+// Package report renders the Markdown prompts of docs/V2_SPEC.md §6 (French formatting, N/D when
+// absent, objectivity directive always first, sections toggled by chips).
 package report
 
 import (
 	"fmt"
+	"sort"
 	"strings"
-	"time"
+	"unicode/utf8"
 
 	"stride/internal/analysis"
-	"stride/internal/config"
+	"stride/internal/athlete"
 	f "stride/internal/frfmt"
+	"stride/internal/view"
 )
 
-// Reporter implémente analysis.Reporter.
-type Reporter struct{}
+// Directive is §6.1, verbatim.
+const Directive = "> **DIRECTIVE SYSTÈME POUR L'IA :** Agis comme un ingénieur biomécanicien et entraîneur de course à pied strictement objectif, analytique et rigoureux. Ne cherche JAMAIS à flatter l'utilisateur, à minimiser ses erreurs ou à lui répondre pour lui faire plaisir. Analyse les données froidement : si une métrique (cadence, dérive, charge, allure, douleur) indique un risque de blessure, une compensation ou une erreur d'entraînement, dis-le-lui directement et ajuste le plan vers le bas s'il le faut. Dis uniquement ce qui est physiologiquement et mécaniquement juste pour lui."
 
-var _ analysis.Reporter = Reporter{}
+const (
+	ChipPain    = "pain"
+	ChipBiomech = "biomech"
+	ChipHealth  = "health"
+	ChipPlan    = "plan"
+	ChipLoad    = "load"
+	ChipSplits  = "splits"
+	ChipHistory = "history"
+)
 
-const dash = "—"
+var Chips = []string{ChipPain, ChipBiomech, ChipHealth, ChipPlan, ChipLoad, ChipSplits, ChipHistory}
 
-func p(v *float64) float64 { return f.P(v) }
+// Include is the set of enabled chips; a nil Include enables everything.
+type Include map[string]bool
 
-// builder : sections séparées par une seule ligne vide.
+func All() Include {
+	inc := Include{}
+	for _, c := range Chips {
+		inc[c] = true
+	}
+	return inc
+}
+
+func (i Include) Has(chip string) bool {
+	if i == nil {
+		return true
+	}
+	return i[chip]
+}
+
+// String lists the enabled chips in canonical order (stable cache keys).
+func (i Include) String() string {
+	var out []string
+	for _, c := range Chips {
+		if i.Has(c) {
+			out = append(out, c)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+func ParseInclude(csv string) (Include, error) {
+	return ParseIncludeList(strings.Split(csv, ","))
+}
+
+func ParseIncludeList(list []string) (Include, error) {
+	inc := Include{}
+	for _, raw := range list {
+		c := strings.ToLower(strings.TrimSpace(raw))
+		if c == "" {
+			continue
+		}
+		known := false
+		for _, k := range Chips {
+			if k == c {
+				known = true
+			}
+		}
+		if !known {
+			return nil, fmt.Errorf("puce inconnue %q (attendu : %s)", c, strings.Join(Chips, ", "))
+		}
+		inc[c] = true
+	}
+	if len(inc) == 0 {
+		return All(), nil
+	}
+	return inc, nil
+}
+
+// EstimateTokens approximates the prompt size (runes / 4, rounded up).
+func EstimateTokens(s string) int { return (utf8.RuneCountInString(s) + 3) / 4 }
+
+// builder joins sections with exactly one blank line.
 type builder struct {
 	sections []string
 	cur      []string
@@ -36,7 +104,6 @@ func (b *builder) line(format string, args ...any) {
 	b.cur = append(b.cur, fmt.Sprintf(format, args...))
 }
 
-// raw ajoute une ligne telle quelle (pas d'interprétation des %).
 func (b *builder) raw(s string) { b.cur = append(b.cur, s) }
 
 func (b *builder) flush() {
@@ -51,37 +118,77 @@ func (b *builder) String() string {
 	return strings.Join(b.sections, "\n\n") + "\n"
 }
 
-// ---------- helpers de formatage ----------
+func newBuilder() *builder {
+	b := &builder{}
+	b.raw(Directive)
+	return b
+}
 
-func unitInt(v *float64, unit string) string { return f.Unit(p(v), unit) }
+// ---------- value helpers ----------
 
-func signedM(v float64, sign string) string {
-	if !f.Valid(v) {
+const dash = "—"
+
+func p(v *float64) float64 { return f.P(v) }
+
+func intOr(v *float64) string { return f.Or(p(v), f.Int) }
+
+func unit(v *float64, u string) string { return f.Unit(p(v), u) }
+
+func decOr(v *float64, n int) string { return f.Dec(p(v), n) }
+
+func signedUnit(v *float64, n int, u string) string {
+	if v == nil || !f.Valid(*v) {
 		return f.ND
 	}
-	return sign + f.Int(v) + " m"
+	return f.Signed(*v, n) + " " + u
 }
 
-func driftVerdictFR(v string) string {
-	switch v {
-	case "moderate":
-		return "modérée"
-	case "high":
-		return "élevée"
+func outOf100(v *float64) string {
+	if v == nil || !f.Valid(*v) {
+		return f.ND
 	}
-	return "stable"
+	return f.Int(*v) + "/100"
 }
 
-func acwrVerdictFR(v string) string {
-	switch v {
-	case "low":
-		return "faible"
-	case "high":
-		return "élevé"
-	case "danger":
-		return "danger"
+func pain(v *float64) string {
+	if v == nil || !f.Valid(*v) {
+		return f.ND
 	}
-	return "optimal"
+	return f.Num(*v, 1) + "/10"
+}
+
+func pace(v *float64) string { return f.Pace(p(v)) }
+
+func km(v *float64) string { return f.Km(p(v), 2) }
+
+func str(s *string) string {
+	if s == nil || strings.TrimSpace(*s) == "" {
+		return f.ND
+	}
+	return *s
+}
+
+// compact collapses whitespace and truncates to max runes.
+func compact(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > max {
+		return strings.TrimSpace(string(r[:max-1])) + "…"
+	}
+	return s
+}
+
+func elevPair(gain, loss *float64) string {
+	if gain == nil && loss == nil {
+		return f.ND
+	}
+	return "+" + intOr(gain) + "/-" + intOr(loss) + " m"
+}
+
+func signedM(v *float64, sign string) string {
+	if v == nil || !f.Valid(*v) {
+		return f.ND
+	}
+	return sign + f.Int(*v) + " m"
 }
 
 func alertEmoji(level string) string {
@@ -96,120 +203,150 @@ func alertEmoji(level string) string {
 	return "ℹ️"
 }
 
-// ---------- sections communes ----------
-
-func modeLabel(m analysis.Mode) string {
-	switch m {
-	case analysis.ModePerformance:
-		return "Performance"
-	case analysis.ModeRecovery:
-		return "Santé & Récupération"
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
 	}
-	return "Rééducation SFP"
+	return fmt.Sprintf("%d %s", n, many)
 }
 
-func writeHeader(b *builder, a *analysis.ActivityAnalysis) {
-	act := a.Activity
-	b.section("RAPPORT SÉANCE GARMIN - " + f.DateTime(act.StartLocal))
-	b.line("- **Mode :** %s", modeLabel(a.Mode))
-	speed := ""
-	if act.IsRunning || act.DistanceM == nil || act.DurationS == nil || p(act.DurationS) <= 0 {
-		speed = "Allure moy: " + f.Pace(p(act.AvgPaceSecPerKm))
-	} else {
-		speed = "Vitesse moy: " + f.Dec(p(act.DistanceM)/p(act.DurationS)*3.6, 1) + " km/h"
+var sportLabels = map[string]string{"run": "Course", "bike": "Vélo", "strength": "Renforcement", "mobility": "Mobilité", "rest": "Repos", "other": "Autre"}
+
+var matchStatusLabels = map[string]string{"done": "Réalisée", "partial": "Partielle", "missed": "Manquée", "upcoming": "À venir", "extra": "Hors plan"}
+
+func minutes(s float64) string {
+	if int64(s)%60 == 0 {
+		return f.Int(s/60) + " min"
 	}
-	b.line("- **Séance :** %s en %s | %s | Puissance: %s",
-		f.Km(p(act.DistanceM), 2), f.Duration(p(act.DurationS)), speed, unitInt(act.AvgPower, "W"))
-	b.line("- **Dénivelé :** %s / %s", signedM(p(a.Load.ElevGainM), "+"), signedM(p(a.Load.ElevLossM), "-"))
+	return f.Duration(s)
 }
 
-func gctBalanceText(g analysis.GctBalance) string {
-	if !g.Available || g.LeftPct == nil || g.RightPct == nil {
-		return f.ND + " (non mesuré par le capteur)"
+func paceRange(minS, maxS *float64) string {
+	switch {
+	case minS != nil && maxS != nil && f.PaceShort(*minS) != f.PaceShort(*maxS):
+		return f.PaceShort(*minS) + "-" + f.PaceShort(*maxS) + "/km"
+	case minS != nil:
+		return f.Pace(*minS)
+	case maxS != nil:
+		return f.Pace(*maxS)
 	}
-	return fmt.Sprintf("%s %% G / %s %% D (écart %s pt)", f.Dec(*g.LeftPct, 1), f.Dec(*g.RightPct, 1), f.Dec(p(g.GapPct), 1))
+	return ""
 }
 
-func gctBalanceShort(g analysis.GctBalance) string {
-	if !g.Available || g.LeftPct == nil || g.RightPct == nil {
-		return f.ND
-	}
-	return f.Dec(*g.LeftPct, 1) + "/" + f.Dec(*g.RightPct, 1)
-}
-
-func biomechOneLine(bm analysis.Biomechanics) string {
-	return fmt.Sprintf("Cadence %s | GCT %s | OV %s | RV %s | Foulée %s | G/D %s",
-		unitInt(bm.CadenceAvgSpm, "spm"), unitInt(bm.GroundContactTimeMs, "ms"),
-		f.UnitDec(p(bm.VerticalOscillationCm), 1, "cm"), f.UnitDec(p(bm.VerticalRatioPct), 1, "%"),
-		f.UnitDec(p(bm.StrideLengthM), 2, "m"), gctBalanceShort(bm.GctBalance))
-}
-
-func writeBiomechSFP(b *builder, a *analysis.ActivityAnalysis, prof config.Profile) {
-	bm := a.Biomechanics
-	b.section("BIOMÉCANIQUE ROTULE & IMPACTS")
-	b.line("- **Équilibre contact sol (G/D) :** %s", gctBalanceText(bm.GctBalance))
-	b.line("- **Temps de contact sol :** %s", unitInt(bm.GroundContactTimeMs, "ms"))
-	b.line("- **Cadence moyenne :** %s (Max : %s) | Dans la cible %s-%s : %s",
-		unitInt(bm.CadenceAvgSpm, "spm"), unitInt(bm.CadenceMaxSpm, "spm"),
-		f.Int(prof.CadenceTargetMin), f.Int(prof.CadenceTargetMax), unitInt(bm.CadenceInTargetPct, "%"))
-	b.line("- **Oscillation verticale :** %s | **Ratio vertical :** %s",
-		f.UnitDec(p(bm.VerticalOscillationCm), 1, "cm"), f.UnitDec(p(bm.VerticalRatioPct), 1, "%"))
-	b.line("- **Longueur de foulée moyenne :** %s", f.UnitDec(p(bm.StrideLengthM), 2, "m"))
-}
-
-func writeSegments(b *builder, sg analysis.Segments) {
-	b.section("DÉTAIL DES INTERVALLES / SPLITS")
-	rows := sg.Blocks
-	head := "Bloc"
-	if sg.Primary != "blocks" {
-		rows = sg.Laps
-		head = "Lap"
-	}
-	if len(rows) == 0 {
-		b.raw("Aucun split disponible.")
-		return
-	}
-	b.line("| %s | Durée | Distance | Allure | FC moy | Watts | Cadence |", head)
-	b.raw("|---|---|---|---|---|---|---|")
-	for _, s := range rows {
-		pace, watts, cad := f.Pace(p(s.PaceSecPerKm)), unitInt(s.AvgPower, "W"), unitInt(s.AvgCadenceSpm, "spm")
-		switch s.Kind {
-		case "walk":
-			pace, watts, cad = "Marche", dash, dash
-		case "stand":
-			pace, watts, cad = "Arrêt", dash, dash
+// describePlanned renders "Titre (38 min, 7 km) @ 5:15-5:25/km | Cible cadence: 170 spm – consigne".
+func describePlanned(ps athlete.PlannedSession, full bool) string {
+	title := strings.TrimSpace(ps.Title)
+	if title == "" {
+		title = sportLabels[ps.Sport]
+		if title == "" {
+			title = "Séance"
 		}
-		b.line("| %s | %s | %s | %s | %s | %s | %s |", s.Label, f.Duration(s.DurationS), f.Km(s.DistanceM, 2), pace,
-			unitInt(s.AvgHR, "bpm"), watts, cad)
 	}
-}
-
-func driftLine(d *analysis.Drift, withThird bool) string {
-	if d == nil {
-		return "- **Dérive cardiaque :** " + f.ND
+	var targets []string
+	if ps.TargetDurationS != nil && *ps.TargetDurationS > 0 {
+		targets = append(targets, minutes(*ps.TargetDurationS))
 	}
-	s := fmt.Sprintf("- **Dérive cardiaque (%s) :** %s %% (%s)", analysis.DriftMethodLabel(d.Method), f.Signed(d.DecouplingPct, 1), driftVerdictFR(d.Verdict))
-	if withThird {
-		s += fmt.Sprintf(" | FC dernier tiers : %s bpm", f.Signed(d.LastThirdHrRiseBpm, 0))
+	if ps.TargetDistanceM != nil && *ps.TargetDistanceM > 0 {
+		targets = append(targets, f.Num(*ps.TargetDistanceM/1000, 2)+" km")
+	}
+	s := title
+	if len(targets) > 0 {
+		s += " (" + strings.Join(targets, ", ") + ")"
+	}
+	if pr := paceRange(ps.TargetPaceMinSecPerKm, ps.TargetPaceMaxSecPerKm); pr != "" {
+		s += " @ " + pr
+	}
+	if !full {
+		return s
+	}
+	if ps.TargetCadenceSpm != nil {
+		s += " | Cible cadence: " + f.Int(*ps.TargetCadenceSpm) + " spm"
+	}
+	if in := compact(ps.Instructions, 160); in != "" {
+		s += " – " + in
 	}
 	return s
 }
 
-func writeLoadSFP(b *builder, a *analysis.ActivityAnalysis) {
-	b.section("CHARGE & FATIGUE")
-	b.raw(driftLine(a.Load.Drift, true))
-	b.line("- **Training Load :** %s | **TE aérobie :** %s | **Impact load :** %s",
-		f.Or(p(a.Load.TrainingLoad), f.Int), f.Or(p(a.Load.AerobicTE), func(v float64) string { return f.Dec(v, 1) }),
-		f.Or(p(a.Activity.ImpactLoad), f.Int))
+func upcomingText(ups []athlete.PlannedSession) string {
+	if len(ups) == 0 {
+		return "Aucune"
+	}
+	parts := make([]string, 0, len(ups))
+	for _, u := range ups {
+		parts = append(parts, f.DayMonth(u.Date)+" "+describePlanned(u, false))
+	}
+	return strings.Join(parts, " ; ")
 }
 
-func writeRecovery(b *builder, date string, rc *analysis.RecoveryContext) {
-	b.section(fmt.Sprintf("RÉCUPÉRATION & PHYSIOLOGIE (NUIT DU %s AU %s)", f.DayMonth(prevDay(date)), f.DayMonth(date)))
-	if rc == nil {
-		rc = &analysis.RecoveryContext{}
+func goalText(g athlete.Goal) string {
+	s := compact(g.Title, 160)
+	if g.TargetValue != nil {
+		s += " – cible " + f.Num(*g.TargetValue, 2)
+		if g.TargetUnit != nil && *g.TargetUnit != "" {
+			s += " " + *g.TargetUnit
+		}
 	}
-	// VFC
-	if h := rc.HRV; h != nil {
+	if g.TargetDate != nil && *g.TargetDate != "" {
+		s += " – échéance " + f.Date(*g.TargetDate)
+	}
+	if n := compact(g.Note, 160); n != "" {
+		s += " (" + n + ")"
+	}
+	return s
+}
+
+// splitGoals returns the macro goal (first active macro, else first active goal) and the others.
+func splitGoals(goals []athlete.Goal) (*athlete.Goal, []athlete.Goal) {
+	var active []athlete.Goal
+	for _, g := range goals {
+		if g.Status == "" || g.Status == "active" {
+			active = append(active, g)
+		}
+	}
+	if len(active) == 0 {
+		return nil, nil
+	}
+	idx := 0
+	for i, g := range active {
+		if g.Kind == "macro" {
+			idx = i
+			break
+		}
+	}
+	macro := active[idx]
+	others := append(append([]athlete.Goal{}, active[:idx]...), active[idx+1:]...)
+	return &macro, others
+}
+
+func macroText(goals []athlete.Goal) string {
+	m, _ := splitGoals(goals)
+	if m == nil {
+		return f.ND
+	}
+	return goalText(*m)
+}
+
+// ---------- shared sections ----------
+
+func writeRecovery(b *builder, rc *analysis.RecoveryContext) {
+	b.section("RÉCUPÉRATION & PRÉPARATION (NUIT PRÉCÉDENTE)")
+	readiness := f.ND + " (non exposé par l'API Garmin, saisie manuelle possible)"
+	bbWake := f.ND
+	if rc != nil {
+		if r := rc.Readiness; r.Source != nil && *r.Source == "manual" {
+			readiness = outOf100(r.Score)
+			if r.Status != nil && *r.Status != "" {
+				readiness += " (" + *r.Status + ")"
+			}
+		}
+		if rc.BodyBattery != nil {
+			bbWake = outOf100(rc.BodyBattery.AtWake)
+		}
+	}
+	b.line("- **Training Readiness :** %s | **Body Battery réveil :** %s", readiness, bbWake)
+	if rc != nil && rc.HRV != nil {
+		h := rc.HRV
 		status := f.ND
 		if h.StatusLabel != nil {
 			status = *h.StatusLabel
@@ -218,74 +355,54 @@ func writeRecovery(b *builder, date string, rc *analysis.RecoveryContext) {
 		if h.BaselineLowMs != nil && h.BaselineHighMs != nil {
 			base = f.Int(*h.BaselineLowMs) + "-" + f.Int(*h.BaselineHighMs) + " ms"
 		}
-		b.line("- **VFC nocturne :** %s (Statut : %s vs baseline %s | moy. 7 j : %s)",
-			unitInt(h.LastNightAvgMs, "ms"), status, base, unitInt(h.WeeklyAvgMs, "ms"))
+		b.line("- **VFC nocturne :** %s (Statut: %s | Baseline: %s | Moy 7j: %s)", unit(h.LastNightAvgMs, "ms"), status, base, unit(h.WeeklyAvgMs, "ms"))
 	} else {
 		b.raw("- **VFC nocturne :** " + f.ND)
 	}
-	// Sommeil
-	if sl := rc.Sleep; sl != nil {
-		score := f.ND
-		if sl.Score != nil {
-			score = f.Int(*sl.Score) + "/100"
+	sleep := f.ND
+	rhr := f.ND
+	if rc != nil {
+		if sl := rc.Sleep; sl != nil {
+			sleep = fmt.Sprintf("Score %s (Durée: %s dont Profond: %s)", outOf100(sl.Score), f.SleepHM(p(sl.DurationS)), f.SleepHM(p(sl.DeepS)))
 		}
-		b.line("- **Score Sommeil :** %s (Dont profond : %s) | Durée : %s", score, f.SleepHM(p(sl.DeepS)), f.SleepHM(p(sl.DurationS)))
-	} else {
-		b.raw("- **Score Sommeil :** " + f.ND)
+		if rc.RestingHR != nil {
+			rhr = unit(rc.RestingHR.Bpm, "bpm")
+		}
 	}
-	// FC repos + Body Battery
-	rhr, avg := f.ND, f.ND
-	if r := rc.RestingHR; r != nil {
-		rhr, avg = unitInt(r.Bpm, "bpm"), unitInt(r.Avg7d, "bpm")
-	}
-	bb := f.ND
-	if rc.BodyBattery != nil && rc.BodyBattery.AtWake != nil {
-		bb = f.Int(*rc.BodyBattery.AtWake) + "/100"
-	}
-	b.line("- **FC repos nocturne :** %s (moy. 7 j : %s) | **Body Battery réveil :** %s", rhr, avg, bb)
+	b.line("- **Sommeil :** %s | **FC repos :** %s", sleep, rhr)
 }
 
-func writeTrend(b *builder, rc *analysis.RecoveryContext) {
-	b.section("TENDANCE 7 JOURS")
-	b.raw("| Jour | VFC | Statut | Sommeil | Profond | FC repos | Pas | Étages |")
-	b.raw("|---|---|---|---|---|---|---|---|")
-	if rc == nil {
-		return
-	}
-	for _, t := range rc.Trend {
-		status := f.ND
-		if t.HrvStatus != nil {
-			status = analysis.HRVStatusLabel(*t.HrvStatus)
-		}
-		b.line("| %s | %s | %s | %s | %s | %s | %s | %s |", f.DayMonth(t.Date), unitInt(t.HrvMs, "ms"), status,
-			f.Or(p(t.SleepScore), f.Int), f.SleepHM(p(t.DeepS)), f.Or(p(t.RestingHR), f.Int), f.Or(p(t.Steps), f.Int), f.Or(p(t.FloorsUp), f.Int))
-	}
-}
-
-func writeHistory(b *builder, days int, rows []analysis.HistoryRow) {
-	b.section(fmt.Sprintf("HISTORIQUE %d JOURS", days))
-	if len(rows) == 0 {
-		b.raw("Aucune activité sur la période.")
-		return
-	}
-	b.raw("| Date | Type | Distance | Durée | Allure | FC | Cadence | D- | Load |")
-	b.raw("|---|---|---|---|---|---|---|---|---|")
+func writeHistory(b *builder, rows []view.HistoryRow, withPain bool) {
+	b.section("HISTORIQUE 14 JOURS (COURSE & RESSENTI)")
+	var runs []view.HistoryRow
 	for _, r := range rows {
-		label := r.TypeLabel
-		if label == "" {
-			label = analysis.TypeLabel(r.Type)
+		if r.IsRunning {
+			runs = append(runs, r)
 		}
-		pace, cad := dash, dash
-		if analysis.IsRunningType(r.Type) {
-			pace, cad = f.Pace(p(r.PaceSecPerKm)), f.Or(p(r.AvgCadenceSpm), f.Int)
+	}
+	if len(runs) == 0 {
+		b.raw("Aucune course sur la période.")
+		return
+	}
+	if withPain {
+		b.raw("| Date | Dist. | Durée | Allure | Cadence | GCT | D- | Load | Chaussures | Gêne Effort | Gêne Froid |")
+		b.raw("|---|---|---|---|---|---|---|---|---|---|---|")
+	} else {
+		b.raw("| Date | Dist. | Durée | Allure | Cadence | GCT | D- | Load | Chaussures |")
+		b.raw("|---|---|---|---|---|---|---|---|---|")
+	}
+	for _, r := range runs {
+		cells := []string{f.DayMonth(r.Date), km(r.DistanceM), f.Duration(p(r.DurationS)), pace(r.PaceSecPerKm),
+			unit(r.AvgCadenceSpm, "spm"), unit(r.GctMs, "ms"), unit(r.ElevLossM, "m"), intOr(r.TrainingLoad), str(r.ShoeName)}
+		if withPain {
+			cells = append(cells, pain(r.PainDuring), pain(r.PainCold))
 		}
-		b.line("| %s | %s | %s | %s | %s | %s | %s | %s | %s |", f.DayMonth(r.Date), label, f.Km(p(r.DistanceM), 2),
-			f.Duration(p(r.DurationS)), pace, f.Or(p(r.AvgHR), f.Int), cad, unitInt(r.ElevLossM, "m"), f.Or(p(r.TrainingLoad), f.Int))
+		b.raw("| " + strings.Join(cells, " | ") + " |")
 	}
 }
 
-func writeAlerts(b *builder, alerts []analysis.Alert) {
-	b.section("ALERTES")
+func writeAlerts(b *builder, title string, alerts []analysis.Alert) {
+	b.section(title)
 	if len(alerts) == 0 {
 		b.raw("- Aucune alerte.")
 		return
@@ -295,133 +412,23 @@ func writeAlerts(b *builder, alerts []analysis.Alert) {
 	}
 }
 
-func prevDay(date string) string {
-	if len(date) < 10 {
-		return date
-	}
-	return analysisDateAdd(date, -1)
+func writeContext(b *builder, prof athlete.Profile, goals []athlete.Goal, today string, upcoming []athlete.PlannedSession) {
+	b.section("CONTEXTE & OBJECTIFS DE L'ATHLÈTE")
+	b.raw("- **Profil / Mode actif :** " + prof.ModeLabel())
+	b.raw("- **Objectif Macro :** " + macroText(goals))
+	b.raw("- **Séance prévue aujourd'hui :** " + today)
+	b.raw("- **Prochaines séances prévues :** " + upcomingText(upcoming))
 }
 
-// ---------- rapports ----------
-
-// Activity génère le rapport d'une séance selon le mode.
-func (Reporter) Activity(a *analysis.ActivityAnalysis, prof config.Profile) string {
-	var b builder
-	writeHeader(&b, a)
-	switch a.Mode {
-	case analysis.ModePerformance:
-		writePerformance(&b, a)
-		b.section("BIOMÉCANIQUE (RÉSUMÉ)")
-		b.raw("- " + biomechOneLine(a.Biomechanics))
-		writeSegments(&b, a.Segments)
-		writeRecovery(&b, a.Activity.Date, a.Recovery)
-	case analysis.ModeRecovery:
-		b.raw("- **Biomécanique :** " + biomechOneLine(a.Biomechanics))
-		writeRecovery(&b, a.Activity.Date, a.Recovery)
-		writeTrend(&b, a.Recovery)
-	default:
-		writeBiomechSFP(&b, a, prof)
-		writeSegments(&b, a.Segments)
-		writeLoadSFP(&b, a)
-		writeRecovery(&b, a.Activity.Date, a.Recovery)
-	}
-	if a.History != nil && a.HistoryDays > 0 {
-		writeHistory(&b, a.HistoryDays, a.History)
-	}
-	writeAlerts(&b, a.Alerts)
-	return b.String()
-}
-
-func writePerformance(b *builder, a *analysis.ActivityAnalysis) {
-	pf := a.Performance
-	if pf == nil {
-		pf = &analysis.Performance{}
-	}
-	b.section("PERFORMANCE")
-	b.line("- **Puissance :** moy %s | normalisée %s", unitInt(pf.AvgPower, "W"), unitInt(pf.NormPower, "W"))
-	if z := pf.TimeInZonesS; len(z) == 5 {
-		b.line("- **Zones FC :** Z1 %s | Z2 %s | Z3 %s | Z4 %s | Z5 %s (Z4+Z5 : %s)",
-			f.Duration(z[0]), f.Duration(z[1]), f.Duration(z[2]), f.Duration(z[3]), f.Duration(z[4]), f.Duration(z[3]+z[4]))
-	} else {
-		b.raw("- **Zones FC :** " + f.ND)
-	}
-	if len(pf.TargetPaces) > 0 {
-		parts := make([]string, 0, len(pf.TargetPaces))
-		for _, t := range pf.TargetPaces {
-			val := f.Duration(t.Seconds)
-			if t.Seconds > 0 {
-				val += " sur " + f.Km(t.DistanceM, 2)
-			}
-			parts = append(parts, fmt.Sprintf("**%s (%s) :** %s", t.Label, strings.ReplaceAll(t.RangeLabel, "–", "-"), val))
+// sortedAlertCounts orders aggregated alerts by severity then frequency.
+func sortedAlertCounts(in []view.AlertCount) []view.AlertCount {
+	order := map[string]int{"danger": 0, "warn": 1, "info": 2, "ok": 3}
+	out := append([]view.AlertCount(nil), in...)
+	sort.SliceStable(out, func(i, j int) bool {
+		if order[out[i].Alert.Level] != order[out[j].Alert.Level] {
+			return order[out[i].Alert.Level] < order[out[j].Alert.Level]
 		}
-		b.raw("- " + strings.Join(parts, " | "))
-	}
-	b.raw(driftLine(a.Load.Drift, false))
-	if ac := pf.ACWR; ac != nil {
-		ratio := f.ND
-		if ac.Ratio != nil {
-			ratio = f.Dec(*ac.Ratio, 2)
-		}
-		b.line("- **Charge aiguë/chronique :** %s / %s (ACWR %s – %s)", f.Int(ac.Acute7d), f.Int(ac.Chronic28d), ratio, acwrVerdictFR(ac.Verdict))
-	} else {
-		b.raw("- **Charge aiguë/chronique :** " + f.ND)
-	}
-	b.line("- **Training Load séance :** %s | **TE :** %s aéro / %s anaéro", f.Or(p(a.Load.TrainingLoad), f.Int),
-		f.Or(p(a.Load.AerobicTE), func(v float64) string { return f.Dec(v, 1) }),
-		f.Or(p(a.Load.AnaerobicTE), func(v float64) string { return f.Dec(v, 1) }))
-}
-
-// Day génère le bilan « Santé & Récupération » d'une journée.
-func (Reporter) Day(d *analysis.DayAnalysis, _ config.Profile) string {
-	var b builder
-	b.section("BILAN RÉCUPÉRATION GARMIN - " + f.Date(d.Date))
-	b.raw("- **Mode :** Santé & Récupération (hors séance)")
-	day := d.Day
-	steps := f.ND
-	if day.Steps != nil {
-		steps = f.Int(*day.Steps) + " pas"
-		if day.StepGoal != nil {
-			steps += " (objectif " + f.Int(*day.StepGoal) + ")"
-		}
-	}
-	b.line("- **Activité du jour :** %s | Étages : %s ↑ / %s ↓ | Intensité : %s mod. / %s vig.", steps,
-		f.Or(p(day.FloorsUp), f.Int), f.Or(p(day.FloorsDown), f.Int),
-		unitInt(day.IntensityModerateMin, "min"), unitInt(day.IntensityVigorousMin, "min"))
-	if len(d.Activities) == 0 {
-		b.raw("- **Activités enregistrées :** Aucune")
-	} else {
-		parts := make([]string, 0, len(d.Activities))
-		for _, a := range d.Activities {
-			s := a.TypeLabel + " " + f.Duration(p(a.DurationS))
-			if a.DistanceM != nil && *a.DistanceM >= 50 {
-				s += " (" + f.Km(*a.DistanceM, 1) + ")"
-			}
-			parts = append(parts, s)
-		}
-		b.raw("- **Activités enregistrées :** " + strings.Join(parts, " ; "))
-	}
-	charged, drained := f.ND, f.ND
-	if day.BodyBatteryCharged != nil {
-		charged = "+" + f.Int(*day.BodyBatteryCharged)
-	}
-	if day.BodyBatteryDrained != nil {
-		drained = "-" + f.Int(*day.BodyBatteryDrained)
-	}
-	b.line("- **Stress moyen :** %s | **Body Battery :** %s / %s", f.Or(p(day.StressAvg), f.Int), charged, drained)
-	rc := d.Recovery
-	writeRecovery(&b, d.Date, &rc)
-	writeTrend(&b, &rc)
-	if d.History != nil && d.HistoryDays > 0 {
-		writeHistory(&b, d.HistoryDays, d.History)
-	}
-	writeAlerts(&b, d.Alerts)
-	return b.String()
-}
-
-func analysisDateAdd(d string, n int) string {
-	t, err := time.Parse("2006-01-02", d[:10])
-	if err != nil {
-		return d
-	}
-	return t.AddDate(0, 0, n).Format("2006-01-02")
+		return out[i].Count > out[j].Count
+	})
+	return out
 }

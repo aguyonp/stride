@@ -150,10 +150,10 @@ func run() error {
 
 	sched := scheduler.New(scheduler.Options{
 		Hour: cfg.SyncHour, JitterMin: cfg.SyncJitterMin, JitterMax: cfg.SyncJitterMax, Location: loc, Log: log,
-		// TODO(domain): list only active users having a provider connection.
-		Users: st.ListActiveUserIDs,
-		Sync:  dom.MorningSync,
-		Purge: maintenance(st, log),
+		Users:    dom.ConnectedUserIDs,
+		LastSync: dom.LastSyncAt,
+		Sync:     dom.MorningSync,
+		Purge:    maintenance(st, log),
 	})
 
 	srv := &http.Server{
@@ -208,6 +208,7 @@ func run() error {
 	}
 	stopSched()
 	wg.Wait()
+	dom.Wait()
 	log.Info("🛑 Serveur arrêté")
 	return serveErr
 }
