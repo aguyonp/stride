@@ -2,12 +2,14 @@ import { BatteryMedium, BedDouble, Footprints, Gauge, HeartPulse, Loader2, Penci
 import { ReadinessBanner } from '../v3/ReadinessBanner'
 import { useState, type ReactNode } from 'react'
 import { useDayView, useSaveCheckin } from '../../api/queries'
+import { useStandalone } from '../../api/queriesV31'
 import type { DayView } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { capitalize, fmtDateLong, fmtNumber, isNum } from '../../lib/format'
 import { hrvStatus } from '../../lib/labels'
 import { DoneActivityRow } from '../plan/DoneActivityRow'
 import { PlannedSessionCard } from '../plan/PlannedSessionCard'
+import { useSessionDrawer } from '../plan/useSessionDrawer'
 import { LevelIcon } from '../ui/Badge'
 import { Card } from '../ui/Card'
 import { Field } from '../ui/Field'
@@ -88,6 +90,8 @@ function Mini({ icon, label, value, tone }: { icon: ReactNode; label: string; va
 export function TodayCard({ date, className, showReadiness = true }: { date: string; className?: string; showReadiness?: boolean }) {
   const q = useDayView(date)
   const [editing, setEditing] = useState(false)
+  const drawer = useSessionDrawer()
+  const standalone = useStandalone()
   const d = q.data && q.data.date === date ? q.data : null
   if (!d) {
     return (
@@ -106,7 +110,7 @@ export function TodayCard({ date, className, showReadiness = true }: { date: str
   const serious = d.alerts.filter((a) => a.level === 'danger' || a.level === 'warn')
   const doneIds = new Set(d.planned.map((p) => p.match?.activityId).filter(Boolean))
   return (
-    <Card title="Aujourd’hui" icon={<Sun className="size-4" />} subtitle={capitalize(fmtDateLong(date))} action={<FreshnessPill freshness={d.freshness} />} className={className}>
+    <Card title="Aujourd’hui" icon={<Sun className="size-4" />} subtitle={capitalize(fmtDateLong(date))} action={standalone ? undefined : <FreshnessPill freshness={d.freshness} />} className={className}>
       <div className="space-y-3">
         {showReadiness && d.readiness && <ReadinessBanner r={d.readiness} compact label="Préparation" />}
         <div>
@@ -117,7 +121,7 @@ export function TodayCard({ date, className, showReadiness = true }: { date: str
             <ul className="space-y-2">
               {d.planned.map((p) => (
                 <li key={p.id}>
-                  <PlannedSessionCard session={p} compact doneActivity={d.activities.find((a) => a.id === p.match?.activityId) ?? null} />
+                  <PlannedSessionCard session={p} compact doneActivity={d.activities.find((a) => a.id === p.match?.activityId) ?? null} onOpen={() => drawer.open(p)} />
                 </li>
               ))}
               {d.activities
@@ -129,6 +133,7 @@ export function TodayCard({ date, className, showReadiness = true }: { date: str
                 ))}
             </ul>
           )}
+          {drawer.node}
         </div>
 
         <div className="glass-inset px-3 py-2.5">

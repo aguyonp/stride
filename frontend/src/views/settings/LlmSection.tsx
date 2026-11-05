@@ -38,7 +38,7 @@ export function LlmSection() {
   }
 
   return (
-    <Section id="ia" title="IA" icon={<Bot />} description="Ton propre fournisseur IA pour analyser une séance ou générer un plan. La clé est chiffrée côté serveur et n’est jamais réaffichée.">
+    <Section id="ia" title="IA" icon={<Bot />} description="Ton propre fournisseur IA (propre à ton compte) pour analyser une séance, générer ou adapter un plan. La clé est chiffrée côté serveur et n’est jamais réaffichée.">
       {cfg.isPending ? (
         <Spinner label="Chargement…" />
       ) : (

@@ -2,23 +2,56 @@ import { ArrowLeft, Bot, ClipboardPaste, Copy, Loader2, Sparkles, TriangleAlert 
 import { useState } from 'react'
 import { Link } from 'wouter'
 import { useLlmConfig, usePlanV3 } from '../../api/queriesV3'
-import type { PlanDraftsResponse, PlannedSessionInput, PlanPromptResponse } from '../../api/types'
+import type { Goal, PlanDraftsResponse, PlanHorizon, PlannedSessionInput, PlanPhase, PlanPromptResponse } from '../../api/types'
 import { copyText } from '../../lib/clipboard'
 import { cn } from '../../lib/cn'
-import { addDays, capitalize, fmtDateLong, fmtNumber } from '../../lib/format'
+import { addDays, capitalize, fmtDateLong, fmtDateShort, fmtNumber, mondayOf } from '../../lib/format'
 import { PLAN_SPORT_LABEL } from '../../lib/labels'
 import { Dialog } from '../ui/Dialog'
 import { Checkbox, Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { useToast } from '../ui/Toast'
-import { targetParts } from './planFormat'
+import { phaseTone } from './longterm'
+import { targetParts, weekLabel } from './planFormat'
 import { stepsSummary } from './steps'
 
 type Mode = 'llm' | 'prompt'
 type Step = 'config' | 'paste' | 'preview'
 
-function DraftList({ drafts, errors, selected, onToggle }: { drafts: PlannedSessionInput[]; errors: string[]; selected: Set<number>; onToggle: (i: number, on: boolean) => void }) {
+const TONE_BG = { accent: 'bg-accent', ok: 'bg-ok', warn: 'bg-warn', violet: 'bg-violet', info: 'bg-info' } as const
+
+function PhaseList({ phases }: { phases: PlanPhase[] }) {
+  return (
+    <section aria-labelledby="gen-phases" className="rounded-2xl bg-track/50 p-3">
+      <h3 id="gen-phases" className="label-caps mb-2">
+        Phases jusqu’à l’objectif
+      </h3>
+      <ol className="space-y-1.5">
+        {phases.map((p, i) => (
+          <li key={`${p.name}-${p.startDate}`} className="flex items-start gap-2 text-sm">
+            <span className={cn('mt-1.5 size-2 flex-none rounded-full', TONE_BG[phaseTone(p.name, i)])} aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="font-semibold text-ink">{p.name}</span>{' '}
+              <span className="num text-xs text-ink-3">
+                {fmtDateShort(p.startDate)} → {fmtDateShort(p.endDate)}
+                {p.weeklyVolumeKm ? ` · ${fmtNumber(p.weeklyVolumeKm)} km/sem` : ''}
+              </span>
+              {p.focus && <span className="block text-xs text-ink-3">{p.focus}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+function DraftList({ drafts, errors, selected, onToggle, onAll }: { drafts: PlannedSessionInput[]; errors: string[]; selected: Set<number>; onToggle: (i: number, on: boolean) => void; onAll: (on: boolean) => void }) {
+  const weeks = new Map<string, number[]>()
+  drafts.forEach((d, i) => {
+    const w = mondayOf(d.date)
+    weeks.set(w, [...(weeks.get(w) ?? []), i])
+  })
   return (
     <div className="space-y-3">
       {errors.length > 0 && (
@@ -36,45 +69,74 @@ function DraftList({ drafts, errors, selected, onToggle }: { drafts: PlannedSess
       {drafts.length === 0 ? (
         <p className="text-sm text-ink-3">Aucune séance exploitable.</p>
       ) : (
-        <ul className="space-y-2" aria-label="Séances proposées">
-          {drafts.map((d, i) => (
-            <li key={i} className={cn('rounded-2xl border p-3 transition-opacity', selected.has(i) ? 'border-line' : 'border-line opacity-55')}>
-              <Checkbox
-                checked={selected.has(i)}
-                onChange={(on) => onToggle(i, on)}
-                label={
-                  <span>
-                    <span className="block text-xs text-ink-3">
-                      {capitalize(fmtDateLong(d.date))} · {PLAN_SPORT_LABEL[d.sport] ?? d.sport}
-                    </span>
-                    <span className="block font-semibold text-ink">{d.title}</span>
-                  </span>
-                }
-                description={
-                  <span className="block space-y-0.5">
-                    {targetParts(d).length > 0 && <span className="num block">{targetParts(d).join(' · ')}</span>}
-                    {d.steps && d.steps.length > 0 && <span className="num block text-ink-2">{stepsSummary(d.steps)}</span>}
-                    {d.instructions && <span className="block">{d.instructions}</span>}
-                  </span>
-                }
-              />
-            </li>
+        <>
+          {drafts.length > 3 && (
+            <div className="flex justify-end">
+              <button type="button" className="text-xs font-semibold text-accent underline-offset-2 hover:underline" onClick={() => onAll(selected.size !== drafts.length)}>
+                {selected.size === drafts.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+              </button>
+            </div>
+          )}
+          {[...weeks.entries()].map(([w, idx]) => (
+            <section key={w} aria-label={weekLabel(w)}>
+              {weeks.size > 1 && <h3 className="label-caps mb-1.5">{weekLabel(w)}</h3>}
+              <ul className="space-y-2">
+                {idx.map((i) => {
+                  const d = drafts[i]
+                  return (
+                    <li key={i} className={cn('rounded-2xl border p-3 transition-opacity', selected.has(i) ? 'border-line' : 'border-line opacity-55')}>
+                      <Checkbox
+                        checked={selected.has(i)}
+                        onChange={(on) => onToggle(i, on)}
+                        label={
+                          <span>
+                            <span className="block text-xs text-ink-3">
+                              {capitalize(fmtDateLong(d.date))} · {PLAN_SPORT_LABEL[d.sport] ?? d.sport}
+                            </span>
+                            <span className="block font-semibold text-ink">{d.title}</span>
+                          </span>
+                        }
+                        description={
+                          <span className="block space-y-0.5">
+                            {targetParts(d).length > 0 && <span className="num block">{targetParts(d).join(' · ')}</span>}
+                            {d.steps && d.steps.length > 0 && <span className="num block text-ink-2">{stepsSummary(d.steps)}</span>}
+                            {d.instructions && <span className="block">{d.instructions}</span>}
+                          </span>
+                        }
+                      />
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </>
       )}
     </div>
   )
 }
 
 /** « Générer » : connected LLM → preview → confirm, or prompt → copy → paste answer → preview → confirm bulk create. */
-export function GenerateDialog({ open, onClose, today }: { open: boolean; onClose: () => void; today: string }) {
+interface GenerateDialogProps {
+  open: boolean
+  onClose: () => void
+  today: string
+  /** Active goals with a future date (nearest first). */
+  goals?: Goal[]
+  initialHorizon?: PlanHorizon
+  initialGoalId?: number
+}
+
+export function GenerateDialog({ open, onClose, today, goals = [], initialHorizon, initialGoalId }: GenerateDialogProps) {
   const llm = useLlmConfig()
   const plan = usePlanV3()
   const { toast } = useToast()
   const llmOn = llm.data?.configured === true
   const [mode, setMode] = useState<Mode | null>(null)
   const [step, setStep] = useState<Step>('config')
-  const [horizon, setHorizon] = useState<'session' | 'week'>('week')
+  const [horizon, setHorizon] = useState<PlanHorizon>(initialHorizon && (initialHorizon !== 'goal' || goals.length) ? initialHorizon : 'week')
+  const [goalId, setGoalId] = useState<number | undefined>(initialGoalId ?? goals[0]?.id)
+  const goal = goals.find((g) => g.id === goalId) ?? goals[0]
   const [startDate, setStartDate] = useState(addDays(today, 1))
   const [note, setNote] = useState('')
   const [prompt, setPrompt] = useState<PlanPromptResponse | null>(null)
@@ -90,7 +152,7 @@ export function GenerateDialog({ open, onClose, today }: { open: boolean; onClos
   }
   const generate = () => {
     plan.generate.mutate(
-      { mode: effMode, horizon, startDate, note: note.trim() || undefined },
+      { mode: effMode, horizon, startDate, goalId: horizon === 'goal' ? goal?.id : undefined, note: note.trim() || undefined },
       {
         onSuccess: (r) => {
           if ('prompt' in r) {
@@ -104,13 +166,18 @@ export function GenerateDialog({ open, onClose, today }: { open: boolean; onClos
   const parse = () => plan.importText.mutate(answer, { onSuccess: showDrafts })
   const confirm = () => {
     const chosen = (result?.drafts ?? []).filter((_, i) => selected.has(i)).map((d) => ({ ...d, source: d.source ?? (effMode === 'llm' ? 'llm' : 'import') }))
-    plan.bulk.mutate(chosen, {
-      onSuccess: (r) => {
-        toast({ title: `${r.length} séance${r.length > 1 ? 's' : ''} ajoutée${r.length > 1 ? 's' : ''} au planning`, tone: 'success' })
-        onClose()
+    const phases = result?.phases ?? []
+    plan.bulk.mutate(
+      { sessions: chosen, phases },
+      {
+        onSuccess: (r) => {
+          toast({ title: `${r.length} séance${r.length > 1 ? 's' : ''} ajoutée${r.length > 1 ? 's' : ''} au planning`, description: phases.length ? `${phases.length} phases enregistrées jusqu’à l’objectif.` : undefined, tone: 'success' })
+          onClose()
+        },
       },
-    })
+    )
   }
+  const phaseCount = result?.phases?.length ?? 0
   const busy = plan.generate.isPending || plan.importText.isPending || plan.bulk.isPending
   const error = plan.generate.error ?? plan.importText.error ?? plan.bulk.error
 
@@ -140,9 +207,10 @@ export function GenerateDialog({ open, onClose, today }: { open: boolean; onClos
         <button type="button" className="btn btn-ghost" onClick={() => setStep(effMode === 'llm' ? 'config' : 'paste')}>
           <ArrowLeft className="size-4" aria-hidden="true" /> Retour
         </button>
-        <button type="button" className="btn btn-primary" onClick={confirm} disabled={busy || selected.size === 0}>
+        <button type="button" className="btn btn-primary" onClick={confirm} disabled={busy || (selected.size === 0 && phaseCount === 0)}>
           {plan.bulk.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
           Ajouter {selected.size} séance{selected.size > 1 ? 's' : ''}
+          {phaseCount > 0 ? ` + ${phaseCount} phases` : ''}
         </button>
       </div>
     )
@@ -180,14 +248,31 @@ export function GenerateDialog({ open, onClose, today }: { open: boolean; onClos
               </p>
             )}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Horizon">
+              <Field label="Horizon" className={horizon === 'goal' && goals.length > 1 ? 'sm:col-span-2' : undefined} hint={horizon === 'goal' ? 'Au-delà de 3 semaines : phases jusqu’à la date + séances détaillées des 2 à 4 prochaines semaines.' : undefined}>
                 {(p) => (
-                  <select {...p} className="field" value={horizon} onChange={(e) => setHorizon(e.target.value as 'session' | 'week')}>
-                    <option value="session">Prochaine séance</option>
-                    <option value="week">Semaine (7 jours)</option>
+                  <select {...p} className="field" value={horizon} onChange={(e) => setHorizon(e.target.value as PlanHorizon)}>
+                    <option value="session">1 séance</option>
+                    <option value="week">7 jours</option>
+                    <option value="2weeks">14 jours</option>
+                    <option value="goal" disabled={!goal}>
+                      {goal ? `Jusqu’à l’échéance de mon objectif (${fmtDateShort(goal.targetDate as string)})` : 'Jusqu’à l’échéance de mon objectif (aucun objectif daté)'}
+                    </option>
                   </select>
                 )}
               </Field>
+              {horizon === 'goal' && goals.length > 1 && (
+                <Field label="Objectif">
+                  {(p) => (
+                    <select {...p} className="field" value={goal?.id} onChange={(e) => setGoalId(Number(e.target.value))}>
+                      {goals.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.title} · {fmtDateShort(g.targetDate as string)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+              )}
               <Field label="À partir du">{(p) => <input {...p} type="date" className="field" value={startDate} min={today} onChange={(e) => setStartDate(e.target.value)} />}</Field>
               <Field label="Précision pour le coach (facultatif)" className="sm:col-span-2">
                 {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Ex. pas de séance le jeudi, sortie longue le dimanche" />}
@@ -209,23 +294,27 @@ export function GenerateDialog({ open, onClose, today }: { open: boolean; onClos
               </button>
             </div>
             <Field label="2. Réponse de l’IA" hint="Colle la réponse complète : Stride lit le premier bloc ```json (format stride-plan).">
-              {(p) => <textarea {...p} className="field min-h-36 resize-y font-mono text-xs" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder={'```json\n{"format":"stride-plan","version":1,"sessions":[…]}\n```'} />}
+              {(p) => <textarea {...p} className="field min-h-36 resize-y font-mono text-xs" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder={horizon === 'goal' ? '```json\n{"format":"stride-plan","version":2,"phases":[…],"sessions":[…]}\n```' : '```json\n{"format":"stride-plan","version":1,"sessions":[…]}\n```'} />}
             </Field>
           </>
         )}
 
         {step === 'preview' && result && (
-          <DraftList
-            drafts={result.drafts}
-            errors={result.errors}
-            selected={selected}
-            onToggle={(i, on) => {
-              const next = new Set(selected)
-              if (on) next.add(i)
-              else next.delete(i)
-              setSelected(next)
-            }}
-          />
+          <>
+            {phaseCount > 0 && <PhaseList phases={result.phases ?? []} />}
+            <DraftList
+              drafts={result.drafts}
+              errors={result.errors}
+              selected={selected}
+              onAll={(on) => setSelected(on ? new Set(result.drafts.map((_, i) => i)) : new Set())}
+              onToggle={(i, on) => {
+                const next = new Set(selected)
+                if (on) next.add(i)
+                else next.delete(i)
+                setSelected(next)
+              }}
+            />
+          </>
         )}
 
         {plan.generate.isPending && effMode === 'llm' && <p className="text-sm text-ink-3">Ton IA prépare le plan… (jusqu’à 2 minutes)</p>}

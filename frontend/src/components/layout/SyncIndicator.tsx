@@ -1,5 +1,6 @@
 import { CircleAlert, Loader2, RefreshCw, Timer } from 'lucide-react'
-import { useStartSync, useSyncStatus } from '../../api/queries'
+import { Link } from 'wouter'
+import { useIntegrations, useStartSync, useSyncStatus } from '../../api/queries'
 import type { ProviderSync, SyncStatus } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtClock, fmtNumber, fmtWhen } from '../../lib/format'
@@ -43,13 +44,17 @@ function ProviderLine({ name, p }: { name: string; p: ProviderSync | null }) {
 }
 
 export function SyncIndicator() {
-  const status = useSyncStatus()
+  const integ = useIntegrations()
+  const connected = integ.data ? integ.data.garmin.connected || integ.data.strava.connected : true
+  const status = useSyncStatus(connected)
   const start = useStartSync()
   const s = status.data
+  const missing = integ.data?.strava.connected ? (integ.data.strava.missingScopes ?? []) : []
   const tone = syncTone(s)
   const text = label(s, tone)
   const Icon = tone === 'running' ? Loader2 : tone === 'cooldown' ? Timer : tone === 'error' ? CircleAlert : RefreshCw
   const color = tone === 'cooldown' || tone === 'error' ? 'text-warn' : tone === 'running' ? 'text-accent' : 'text-ink-2'
+  if (!connected) return null
   return (
     <Popover
       kind="dialog"
@@ -77,6 +82,14 @@ export function SyncIndicator() {
             <ProviderLine name="Garmin" p={s?.providers.garmin ?? null} />
             <ProviderLine name="Strava" p={s?.providers.strava ?? null} />
           </ul>
+          {missing.length > 0 && (
+            <p className="mt-2 text-xs text-warn">
+              Strava : autorisations incomplètes, activités et kudos non lus.{' '}
+              <Link href="/settings#integrations" className="font-semibold underline underline-offset-2">
+                Reconnecter
+              </Link>
+            </p>
+          )}
           {s?.lastLiveAt && <p className="num mt-2 text-xs text-ink-3">Dernier appel live : {fmtWhen(s.lastLiveAt)}</p>}
           <button
             type="button"

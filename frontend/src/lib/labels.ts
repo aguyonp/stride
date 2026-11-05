@@ -1,4 +1,4 @@
-import type { AcwrVerdict, AlertLevel, DriftVerdict, FocusArea, Freshness, GoalKind, MatchStatus, PlanSport, ShoeType } from '../api/types'
+import type { AcwrVerdict, AlertLevel, DriftVerdict, EventKind, FocusArea, Freshness, GoalKind, MatchStatus, PersonalRecord, PlanSport, ShoeType, Sport } from '../api/types'
 
 const HRV_STATUS: Record<string, { label: string; level: AlertLevel }> = {
   BALANCED: { label: 'Équilibré', level: 'ok' },
@@ -102,4 +102,18 @@ export const FRESHNESS_LABEL: Record<Freshness['source'], { label: string; hint:
   live: { label: 'Synchro live', hint: 'Un appel Garmin / Strava a été fait pour cette réponse.' },
 }
 
-export const SOURCE_LABEL: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', import: 'Import' }
+export const SOURCE_LABEL: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', import: 'Import', manual: 'Manuel' }
+
+export const SPORT_LABEL: Record<Sport, string> = { run: 'Course', bike: 'Vélo', walk: 'Marche', hike: 'Randonnée', swim: 'Natation', strength: 'Renforcement', other: 'Autre' }
+
+export const EVENT_KIND: Record<EventKind, { label: string; short: string; hint: string }> = {
+  fatigue: { label: 'Fatigue / Courbatures', short: 'Fatigue', hint: 'Jambes lourdes, sommeil court, journée chargée' },
+  pain: { label: 'Douleur / Alerte blessure', short: 'Douleur', hint: 'Gêne qui persiste, zone sensible' },
+  illness: { label: 'Maladie', short: 'Maladie', hint: 'Rhume, fièvre, gastro' },
+  unavailable: { label: 'Indisponibilité / Déplacement', short: 'Indispo.', hint: 'Voyage, travail, famille' },
+  forced_rest: { label: 'Repos forcé', short: 'Repos forcé', hint: 'Consigne médicale, arrêt complet' },
+}
+
+export const SEVERITY_LABEL = { 1: 'Légère', 2: 'Modérée', 3: 'Forte' } as const
+
+export const RECORD_SOURCE: Record<PersonalRecord['source'], string> = { computed: 'calculé', strava: 'Strava', manual: 'manuel' }

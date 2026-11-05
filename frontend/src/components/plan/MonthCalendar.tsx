@@ -1,6 +1,10 @@
+import { Flag } from 'lucide-react'
 import { useCalendar } from '../../api/queriesV3'
-import type { CalendarDay, MatchStatus, PlannedSession } from '../../api/types'
+import type { CalendarDay, CalendarEvent, Goal, MatchStatus, PlannedSession, PlanPhase } from '../../api/types'
 import { cn } from '../../lib/cn'
+import { EVENT_KIND } from '../../lib/labels'
+import { EventChip } from './EventDialog'
+import { phaseAt, phaseTone } from './longterm'
 import { addDays, capitalize, fmtDateLong, mondayOf, parseLocal } from '../../lib/format'
 import { InlineError } from '../ui/Misc'
 import { PlanSportIcon } from '../ui/icons'
@@ -15,6 +19,7 @@ const STATUS_CLS: Record<MatchStatus, string> = {
   extra: 'border-info/35 bg-info/10 text-ink',
 }
 const STATUS_DOT: Record<MatchStatus, string> = { done: 'bg-ok', partial: 'bg-warn', missed: 'bg-danger', upcoming: 'bg-ink-3', extra: 'bg-info' }
+const TONE_BG = { accent: 'bg-accent', ok: 'bg-ok', warn: 'bg-warn', violet: 'bg-violet', info: 'bg-info' } as const
 
 function monthRange(month: string): { from: string; to: string } {
   const from = mondayOf(`${month}-01`)
@@ -25,14 +30,25 @@ function dayLabel(d: CalendarDay): string {
   const parts = [capitalize(fmtDateLong(d.date))]
   if (d.planned.length) parts.push(`${d.planned.length} prévue(s) : ${d.planned.map((p) => p.title).join(', ')}`)
   if (d.done.length) parts.push(`${d.done.length} réalisée(s)`)
+  for (const e of d.events ?? []) parts.push(`Imprévu : ${EVENT_KIND[e.kind].label}`)
   return parts.join('. ')
 }
 
 /** Month grid (6 weeks): planned sessions coloured by match status, done activities as dots; a day opens its week. */
-export function MonthCalendar({ month, today, onPickDay, onOpenSession }: { month: string; today: string; onPickDay: (date: string) => void; onOpenSession: (s: PlannedSession) => void }) {
+interface MonthCalendarProps {
+  month: string
+  today: string
+  onPickDay: (date: string) => void
+  onOpenSession: (s: PlannedSession) => void
+  onOpenEvent?: (e: CalendarEvent, date: string) => void
+  goals?: Map<string, Goal>
+  phases?: PlanPhase[]
+}
+
+export function MonthCalendar({ month, today, onPickDay, onOpenSession, onOpenEvent, goals, phases = [] }: MonthCalendarProps) {
   const { from, to } = monthRange(month)
   const q = useCalendar(from, to)
-  const days = q.data?.days ?? Array.from({ length: 42 }, (_, i) => ({ date: addDays(from, i), planned: [], done: [] }))
+  const days: CalendarDay[] = q.data?.days ?? Array.from({ length: 42 }, (_, i) => ({ date: addDays(from, i), planned: [], done: [] }))
   if (q.isError) return <InlineError>{q.error.message}</InlineError>
   return (
     <div className={cn('transition-opacity', q.isPlaceholderData && 'opacity-60')} aria-busy={q.isFetching}>
@@ -50,15 +66,30 @@ export function MonthCalendar({ month, today, onPickDay, onOpenSession }: { mont
           const isToday = d.date === today
           const matched = new Set(d.planned.map((x) => x.match?.activityId).filter(Boolean))
           const extras = d.done.filter((a) => !matched.has(a.id))
+          const events = d.events ?? []
+          const goal = goals?.get(d.date)
+          const phase = phaseAt(phases, d.date)
           return (
             <div
               key={d.date}
-              className={cn('flex min-h-16 min-w-0 flex-col rounded-xl border p-1 sm:min-h-24 sm:p-1.5', inMonth ? 'border-line bg-white/[0.02]' : 'border-transparent opacity-45', isToday && 'border-accent/60 ring-1 ring-accent/40')}
+              className={cn('relative flex min-h-16 min-w-0 flex-col overflow-hidden rounded-xl border p-1 sm:min-h-24 sm:p-1.5', inMonth ? 'border-line bg-white/[0.02]' : 'border-transparent opacity-45', isToday && 'border-accent/60 ring-1 ring-accent/40', goal && 'border-violet/50')}
             >
-              <button type="button" onClick={() => onPickDay(d.date)} className="flex items-center justify-between rounded-md px-0.5 text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent" aria-label={`${dayLabel(d)}. Ouvrir la semaine`}>
+              <button type="button" onClick={() => onPickDay(d.date)} className="flex items-center justify-between gap-1 rounded-md px-0.5 text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent" aria-label={`${dayLabel(d)}${goal ? `. Objectif : ${goal.title}` : ''}. Ouvrir la semaine`}>
                 <span className={cn('num text-xs font-semibold', isToday ? 'text-accent' : 'text-ink-2')}>{p?.d}</span>
-                {extras.length > 0 && <span className="size-1.5 rounded-full bg-info sm:hidden" aria-hidden="true" />}
+                <span className="flex items-center gap-0.5">
+                  {goal && <Flag className="size-3 text-violet" aria-hidden="true" />}
+                  {events.length > 0 && <span className="size-1.5 rounded-full bg-warn sm:hidden" aria-hidden="true" />}
+                  {extras.length > 0 && <span className="size-1.5 rounded-full bg-info sm:hidden" aria-hidden="true" />}
+                </span>
               </button>
+              {events.length > 0 && (
+                <div className="mt-1 hidden flex-wrap gap-0.5 sm:flex">
+                  {events.map((e) => (
+                    <EventChip key={e.id} e={e} compact onOpen={onOpenEvent ? (ev) => onOpenEvent(ev, d.date) : undefined} />
+                  ))}
+                </div>
+              )}
+              {phase && <span className={cn('absolute inset-x-1 bottom-0.5 h-0.5 rounded-full opacity-60', TONE_BG[phaseTone(phase.name, phases.indexOf(phase))])} title={phase.name} aria-hidden="true" />}
               <ul className="mt-1 hidden min-w-0 space-y-1 sm:block">
                 {d.planned.slice(0, 3).map((s) => {
                   const st = s.match?.status ?? 'upcoming'

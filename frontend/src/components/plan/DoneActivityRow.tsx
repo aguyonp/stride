@@ -1,6 +1,7 @@
 import type { ActivitySummary } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtDuration, fmtKm, fmtPace } from '../../lib/format'
+import { KudosBadge } from '../dashboard/RecordsCard'
 import { ActivityIcon } from '../ui/icons'
 import { MatchBadge } from './MatchBadge'
 
@@ -13,8 +14,9 @@ export function DoneActivityRow({ activity: a, extra = true, className }: { acti
           <ActivityIcon sport={a.sport} type={a.type} className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-ink" title={a.name}>
-            {a.name}
+          <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-ink" title={a.name}>
+            <span className="truncate">{a.name}</span>
+            <KudosBadge count={a.kudos} className="flex-none" />
           </p>
           <p className="num truncate text-xs text-ink-3">
             {a.distanceM ? `${fmtKm(a.distanceM, 1)} · ` : ''}

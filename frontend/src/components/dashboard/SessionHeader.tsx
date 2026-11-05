@@ -1,4 +1,4 @@
-import { CalendarSearch, ChevronLeft, ChevronRight, GitMerge, MapPin } from 'lucide-react'
+import { CalendarSearch, ChevronLeft, ChevronRight, GitMerge, MapPin, Pencil } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ActivitySummary, ActivityView } from '../../api/types'
 import { cn } from '../../lib/cn'
@@ -8,6 +8,7 @@ import { MatchBadge } from '../plan/MatchBadge'
 import { FreshnessPill } from '../ui/FreshnessPill'
 import { ActivityIcon } from '../ui/icons'
 import { Skeleton } from '../ui/Skeleton'
+import { KudosBadge } from './RecordsCard'
 
 interface Props {
   summary: ActivitySummary | null
@@ -16,12 +17,15 @@ interface Props {
   onOpenPicker: () => void
   onPrev: (() => void) | null
   onNext: (() => void) | null
+  /** Manual activities only: opens the edit form. */
+  onEditManual?: () => void
   children?: ReactNode
 }
 
 /** Selected session identity: name, date, sources, freshness, picker and previous/next navigation. */
-export function SessionHeader({ summary, view, loading, onOpenPicker, onPrev, onNext, children }: Props) {
+export function SessionHeader({ summary, view, loading, onOpenPicker, onPrev, onNext, onEditManual, children }: Props) {
   const a = view?.activity ?? summary
+  const manual = a?.sources.includes('manual') ?? false
   return (
     <section className="glass animate-in p-4 sm:p-5" aria-label="Séance sélectionnée">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -67,8 +71,14 @@ export function SessionHeader({ summary, view, loading, onOpenPicker, onPrev, on
                 {view.sourceLabel}
               </span>
             ))}
+          {manual && onEditManual && (
+            <button type="button" className="chip border border-line bg-transparent text-ink-2 hover:bg-track" onClick={onEditManual}>
+              <Pencil className="size-3.5" aria-hidden="true" /> Modifier
+            </button>
+          )}
+          <KudosBadge count={a?.kudos} className="px-1" />
           {a?.planStatus && a.planStatus !== 'done' && <MatchBadge status={a.planStatus} />}
-          <FreshnessPill freshness={view?.freshness} className="max-sm:hidden" />
+          {!manual && <FreshnessPill freshness={view?.freshness} className="max-sm:hidden" />}
           <span className="ml-auto flex items-center gap-1.5 sm:ml-1">
             <button type="button" className="icon-btn size-10" onClick={onPrev ?? undefined} disabled={!onPrev} aria-label="Séance précédente (plus ancienne)">
               <ChevronLeft className="size-4" />
