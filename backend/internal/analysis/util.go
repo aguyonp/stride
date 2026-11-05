@@ -14,7 +14,7 @@ func roundTo(v float64, n int) float64 {
 	return math.Round(v*p) / p
 }
 
-// num retourne un pointeur arrondi à n décimales, nil si invalide.
+// num returns a pointer rounded to n decimals, nil when invalid.
 func num(v float64, n int) *float64 {
 	if !valid(v) {
 		return nil
@@ -23,7 +23,9 @@ func num(v float64, n int) *float64 {
 	return &r
 }
 
-// pf : pointeur → float (NaN si nil).
+// Num is the exported form of num.
+func Num(v float64, n int) *float64 { return num(v, n) }
+
 func pf(p *float64) float64 {
 	if p == nil {
 		return nan
@@ -31,13 +33,18 @@ func pf(p *float64) float64 {
 	return *p
 }
 
-// pr : arrondit un pointeur existant.
+// PF converts a pointer to float (NaN when nil).
+func PF(p *float64) float64 { return pf(p) }
+
 func pr(p *float64, n int) *float64 {
 	if p == nil {
 		return nil
 	}
 	return num(*p, n)
 }
+
+// PR rounds an optional value.
+func PR(p *float64, n int) *float64 { return pr(p, n) }
 
 func strp(s string) *string {
 	if s == "" {
@@ -62,7 +69,7 @@ func first(vs ...float64) float64 {
 	return nan
 }
 
-// wacc accumule une moyenne pondérée.
+// wacc accumulates a weighted mean.
 type wacc struct{ sw, swx float64 }
 
 func (a *wacc) add(v, w float64) {
@@ -79,18 +86,8 @@ func (a *wacc) mean() float64 {
 	return a.swx / a.sw
 }
 
-func maxValid(vs []float64) float64 {
-	m := nan
-	for _, v := range vs {
-		if valid(v) && (!valid(m) || v > m) {
-			m = v
-		}
-	}
-	return m
-}
-
-// dateAdd ajoute n jours à une date "YYYY-MM-DD".
-func dateAdd(d string, n int) string {
+// DateAdd adds n days to a YYYY-MM-DD date.
+func DateAdd(d string, n int) string {
 	t, err := time.Parse("2006-01-02", d)
 	if err != nil {
 		return d
@@ -98,19 +95,25 @@ func dateAdd(d string, n int) string {
 	return t.AddDate(0, 0, n).Format("2006-01-02")
 }
 
-// dateRange retourne les dates de from à to inclus (ordre chronologique).
-func dateRange(from, to string) []string {
+func dateAdd(d string, n int) string { return DateAdd(d, n) }
+
+// DateRange returns the dates from..to inclusive.
+func DateRange(from, to string) []string {
 	var out []string
-	for d := from; d <= to && len(out) < 400; d = dateAdd(d, 1) {
+	for d := from; d <= to && len(out) < 800; d = DateAdd(d, 1) {
 		out = append(out, d)
 	}
 	return out
 }
 
-// paceFromSpeed : m/s → s/km (NaN si < 0.5 m/s).
-func paceFromSpeed(v float64) float64 {
+func dateRange(from, to string) []string { return DateRange(from, to) }
+
+// PaceFromSpeed converts m/s to s/km (NaN below 0.5 m/s).
+func PaceFromSpeed(v float64) float64 {
 	if !valid(v) || v < 0.5 {
 		return nan
 	}
 	return 1000 / v
 }
+
+func paceFromSpeed(v float64) float64 { return PaceFromSpeed(v) }

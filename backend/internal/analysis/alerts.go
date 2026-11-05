@@ -2,110 +2,178 @@ package analysis
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
-	"stride/internal/config"
+	"stride/internal/athlete"
 	"stride/internal/frfmt"
 )
 
-// alertInput regroupe ce qui sert à évaluer les alertes (§5 du contrat).
-type alertInput struct {
-	isRunning bool
-	bio       *Biomechanics
-	elevLossM float64
-	drift     *Drift
-	fadePct   float64
-	recovery  *RecoveryContext
-	acwr      *ACWR
-	floorsUp  float64 // mode jour uniquement
-	dayMode   bool
+// AlertInput gathers what the §5 alerts look at. Unknown numbers are NaN.
+type AlertInput struct {
+	DayMode         bool
+	IsRunning       bool
+	Bio             *Biomechanics
+	ElevLossM       float64
+	Drift           *Drift
+	FadePct         float64
+	Recovery        *RecoveryContext
+	LoadRatio       *LoadRatio
+	FloorsPrevDay   float64
+	FloorsDay       float64
+	Plans           []athlete.PlanMatch
+	PainDuring      float64
+	PainNextMorning float64
 }
 
 var levelOrder = map[string]int{"danger": 0, "warn": 1, "info": 2, "ok": 3}
 
 func sideFR(s string) string {
-	if s == "right" {
+	switch s {
+	case "right":
 		return "droite"
+	case "both":
+		return "des deux côtés"
 	}
 	return "gauche"
 }
 
-// buildAlerts évalue les seuils du profil.
-func buildAlerts(in alertInput, p config.Profile) []Alert {
+func f1(v float64) string { return frfmt.Num(v, 1) }
+
+// BuildAlerts evaluates the profile thresholds; injury-specific alerts follow the focus preset.
+func BuildAlerts(in AlertInput, p athlete.Profile) []Alert {
+	th := p.Thresholds
+	injury := p.Preset().InjuryAlerts
 	var out []Alert
 	add := func(level, code, title, msg string) {
 		out = append(out, Alert{Level: level, Code: code, Title: title, Message: msg})
 	}
+	twoLevel := func(v, limit float64) string {
+		if v > 2*limit {
+			return "danger"
+		}
+		return "warn"
+	}
 
-	if in.isRunning && in.bio != nil {
-		b := in.bio
+	if in.IsRunning && in.Bio != nil {
+		b := in.Bio
 		if c := pf(b.CadenceAvgSpm); valid(c) {
 			switch {
-			case c < 170:
+			case c < th.CadenceMinSpm:
 				add("danger", "CADENCE_LOW", "Cadence basse",
-					fmt.Sprintf("%s spm < 170, risque d'overstriding.", frfmt.Int(c)))
-			case c < p.CadenceTargetMin:
-				add("warn", "CADENCE_LOW", "Cadence basse",
-					fmt.Sprintf("%s spm < cible %s spm, raccourcir légèrement la foulée.", frfmt.Int(c), frfmt.Num(p.CadenceTargetMin, 1)))
+					fmt.Sprintf("%s spm < %s spm, foulée trop longue (overstriding) et impact accru à chaque appui.", frfmt.Int(c), f1(th.CadenceMinSpm)))
+			case c < th.CadenceTargetMin:
+				add("warn", "CADENCE_LOW", "Cadence sous la cible",
+					fmt.Sprintf("%s spm < cible %s-%s spm, raccourcir légèrement la foulée.", frfmt.Int(c), f1(th.CadenceTargetMin), f1(th.CadenceTargetMax)))
 			}
 		}
-		if vo := pf(b.VerticalOscillationCm); valid(vo) && vo > p.VerticalOscillationAlertCm {
+		if sl := b.Slope; injury && sl != nil && sl.DownhillCadenceDropSpm != nil && *sl.DownhillCadenceDropSpm > th.DownhillCadenceDropSpm {
+			d := *sl.DownhillCadenceDropSpm
+			add(twoLevel(d, th.DownhillCadenceDropSpm), "DOWNHILL_CADENCE_DROP", "Cadence qui chute en descente",
+				fmt.Sprintf("-%s spm en descente vs plat (seuil %s spm), foulée qui s'allonge et freinage accru en descente.", frfmt.Int(d), f1(th.DownhillCadenceDropSpm)))
+		}
+		if fd := b.FatigueDrift; fd != nil && fd.GctDeltaPct != nil && *fd.GctDeltaPct > th.GctDriftMaxPct {
+			d := *fd.GctDeltaPct
+			add(twoLevel(d, th.GctDriftMaxPct), "GCT_DRIFT", "Dérive du temps de contact",
+				fmt.Sprintf("GCT %s %% entre le début et la fin (seuil +%s %%), fatigue neuromusculaire et perte de raideur.", frfmt.Signed(d, 1), f1(th.GctDriftMaxPct)))
+		}
+		if vo := pf(b.VerticalOscillationCm); valid(vo) && vo > th.VerticalOscillationMaxCm {
 			lvl := "warn"
-			if vo > p.VerticalOscillationAlertCm+1 {
+			if vo > th.VerticalOscillationMaxCm+1 {
 				lvl = "danger"
 			}
 			add(lvl, "VO_HIGH", "Oscillation verticale élevée",
-				fmt.Sprintf("%s cm > %s cm, rebond excessif et impacts accrus sur la rotule.", frfmt.Dec(vo, 1), frfmt.Num(p.VerticalOscillationAlertCm, 1)))
+				fmt.Sprintf("%s cm > %s cm, rebond excessif et impacts accrus.", frfmt.Dec(vo, 1), f1(th.VerticalOscillationMaxCm)))
 		}
 		g := b.GctBalance
 		if g.Available && g.GapPct != nil {
-			gap := *g.GapPct
-			if gap > p.GctBalanceAlertPct {
-				lvl := "warn"
-				if gap > 2*p.GctBalanceAlertPct {
-					lvl = "danger"
-				}
+			if gap := *g.GapPct; gap > th.GctBalanceGapPct {
 				msg := fmt.Sprintf("Écart G/D de %s pt (%s %% G / %s %% D)", frfmt.Dec(gap, 1), frfmt.Dec(pf(g.LeftPct), 1), frfmt.Dec(pf(g.RightPct), 1))
 				if g.WeakerSide != nil {
-					if *g.WeakerSide == p.InjuredSide {
-						msg += fmt.Sprintf(", contact plus court à %s = côté blessé (évitement probable).", sideFR(*g.WeakerSide))
+					if p.InjuredSide != nil && (*g.WeakerSide == *p.InjuredSide) {
+						msg += fmt.Sprintf(", contact plus court à %s = côté surveillé (évitement probable).", sideFR(*g.WeakerSide))
 					} else {
-						msg += fmt.Sprintf(", contact plus court à %s (côté sain).", sideFR(*g.WeakerSide))
+						msg += fmt.Sprintf(", contact plus court à %s.", sideFR(*g.WeakerSide))
 					}
 				} else {
 					msg += "."
 				}
-				add(lvl, "GCT_BALANCE", "Déséquilibre contact sol", msg)
+				add(twoLevel(gap, th.GctBalanceGapPct), "GCT_BALANCE", "Déséquilibre contact sol", msg)
 			}
 		} else if !g.Available {
-			add("info", "GCT_BALANCE_NA", "Équilibre G/D non mesuré", "Nécessite HRM-Pro / HRM 600 / Running Dynamics Pod.")
+			reason := "Nécessite HRM-Pro / HRM 600 / Running Dynamics Pod."
+			if g.Reason != nil && *g.Reason == NoGarminReason {
+				reason = NoGarminReason + "."
+			}
+			add("info", "GCT_BALANCE_NA", "Équilibre G/D non mesuré", reason)
 		}
 	}
 
-	if valid(in.elevLossM) && in.elevLossM > p.DescentAlertM {
-		lvl := "warn"
-		if in.elevLossM > 2*p.DescentAlertM {
-			lvl = "danger"
-		}
-		add(lvl, "DESCENT_HIGH", "Dénivelé négatif élevé",
-			fmt.Sprintf("-%s m > %s m, les descentes sollicitent fortement l'articulation fémoro-patellaire.", frfmt.Int(in.elevLossM), frfmt.Num(p.DescentAlertM, 1)))
+	if injury && valid(in.ElevLossM) && in.ElevLossM > th.DescentMaxM {
+		add(twoLevel(in.ElevLossM, th.DescentMaxM), "DESCENT_HIGH", "Dénivelé négatif élevé",
+			fmt.Sprintf("-%s m > %s m, les descentes augmentent fortement les contraintes excentriques (genoux, quadriceps).", frfmt.Int(in.ElevLossM), f1(th.DescentMaxM)))
+	}
+	if injury && valid(in.FloorsPrevDay) && in.FloorsPrevDay > th.FloorsPrevDayMax {
+		add("warn", "FLOORS_PREV_DAY", "Escaliers la veille",
+			fmt.Sprintf("%s étages montés la veille (> %s), charge cumulée avant la séance.", frfmt.Int(in.FloorsPrevDay), f1(th.FloorsPrevDayMax)))
+	}
+	if injury && in.DayMode && valid(in.FloorsDay) && in.FloorsDay > th.FloorsPrevDayMax {
+		add("warn", "FLOORS_HIGH", "Beaucoup d'escaliers",
+			fmt.Sprintf("%s étages montés (> %s), charge à prendre en compte pour la prochaine séance.", frfmt.Int(in.FloorsDay), f1(th.FloorsPrevDayMax)))
 	}
 
-	if d := in.drift; d != nil && d.DecouplingPct >= 5 {
+	if d := in.Drift; d != nil && d.DecouplingPct >= 5 {
 		lvl := "warn"
 		if d.DecouplingPct > 10 {
 			lvl = "danger"
 		}
 		add(lvl, "DRIFT_HIGH", "Dérive cardiaque",
-			fmt.Sprintf("Découplage %s %s %%, fatigue ou endurance aérobie insuffisante sur cette durée.", driftMethodLabel(d.Method), frfmt.Signed(d.DecouplingPct, 1)))
+			fmt.Sprintf("Découplage %s %s %%, fatigue ou endurance aérobie insuffisante sur cette durée.", DriftMethodLabel(d.Method), frfmt.Signed(d.DecouplingPct, 1)))
 	}
-
-	if valid(in.fadePct) {
+	if valid(in.FadePct) {
 		add("warn", "FADE_END", "Fin de séance en perte d'allure",
-			fmt.Sprintf("Dernier bloc %s %% plus lent que les précédents avec une FC au moins égale (fatigue en fin de séance).", frfmt.Int(in.fadePct)))
+			fmt.Sprintf("Dernier bloc %s %% plus lent que les précédents avec une FC au moins égale (fatigue en fin de séance).", frfmt.Int(in.FadePct)))
 	}
 
-	if rc := in.recovery; rc != nil {
+	if lr := in.LoadRatio; lr != nil && lr.Ratio != nil && *lr.Ratio > th.LoadRatioMax {
+		lvl := "warn"
+		if lr.Verdict == "danger" {
+			lvl = "danger"
+		}
+		add(lvl, "LOAD_RATIO", "Ratio de charge élevé",
+			fmt.Sprintf("Ratio aiguë/chronique %s (> %s, aiguë %s / chronique %s), progression trop rapide, alléger les prochains jours.",
+				frfmt.Dec(*lr.Ratio, 2), frfmt.Num(th.LoadRatioMax, 2), frfmt.Int(lr.Acute), frfmt.Int(lr.Chronic)))
+	}
+
+	for _, m := range in.Plans {
+		if m.Status != "done" && m.Status != "partial" {
+			continue
+		}
+		dev := math.Max(math.Abs(pf(m.DurationDeltaPct)), math.Abs(pf(m.DistanceDeltaPct)))
+		paceOut := m.PaceDeltaSecPerKm != nil && *m.PaceDeltaSecPerKm != 0
+		if (valid(dev) && dev > th.PlanDeviationPct) || paceOut {
+			add("warn", "PLAN_DEVIATION", "Écart prévu / réalisé", m.Summary)
+		}
+	}
+
+	if pd := in.PainDuring; valid(pd) && pd >= 3 {
+		lvl := "warn"
+		if pd >= 5 {
+			lvl = "danger"
+		}
+		add(lvl, "PAIN_DURING", "Douleur pendant l'effort",
+			fmt.Sprintf("Gêne %s/10 pendant la séance (seuil 3/10), réduire volume et intensité.", frfmt.Num(pd, 1)))
+	}
+	if pn := in.PainNextMorning; valid(pn) && pn > 0 && (!valid(in.PainDuring) || pn > in.PainDuring) {
+		lvl := "warn"
+		if pn >= 5 {
+			lvl = "danger"
+		}
+		add(lvl, "PAIN_NEXT_MORNING", "Douleur plus forte le lendemain",
+			fmt.Sprintf("Gêne au réveil %s/10 supérieure à celle de l'effort, signe de surcharge tissulaire.", frfmt.Num(pn, 1)))
+	}
+
+	if rc := in.Recovery; rc != nil {
 		if h := rc.HRV; h != nil {
 			st := spv(h.Status)
 			ln, low := pf(h.LastNightAvgMs), pf(h.BaselineLowMs)
@@ -126,7 +194,7 @@ func buildAlerts(in alertInput, p config.Profile) []Alert {
 				add("warn", "HRV_LOW", "VFC sous la baseline", fmt.Sprintf("VFC nocturne%s sous la borne basse, récupération incomplète.", detail))
 			}
 		}
-		if r := rc.RestingHR; r != nil && r.Delta != nil && *r.Delta >= p.RhrAlertDeltaBpm {
+		if r := rc.RestingHR; r != nil && r.Delta != nil && *r.Delta >= th.RhrDeltaMaxBpm {
 			add("warn", "RHR_HIGH", "FC repos élevée",
 				fmt.Sprintf("%s bpm vs moyenne 7 j (%s vs %s bpm), fatigue, stress ou début d'infection possible.", frfmt.Signed(*r.Delta, 0), frfmt.Int(pf(r.Bpm)), frfmt.Int(pf(r.Avg7d))))
 		}
@@ -139,28 +207,12 @@ func buildAlerts(in alertInput, p config.Profile) []Alert {
 			}
 		}
 		if bb := rc.BodyBattery; bb != nil && bb.AtWake != nil {
-			v := *bb.AtWake
-			switch {
+			switch v := *bb.AtWake; {
 			case v < 30:
 				add("danger", "BB_LOW", "Body Battery très basse", fmt.Sprintf("%s/100 au réveil, réserves d'énergie faibles.", frfmt.Int(v)))
 			case v < 50:
 				add("warn", "BB_LOW", "Body Battery basse", fmt.Sprintf("%s/100 au réveil, réserves d'énergie limitées.", frfmt.Int(v)))
 			}
-		}
-	}
-
-	if in.dayMode && valid(in.floorsUp) && in.floorsUp > 20 {
-		add("warn", "FLOORS_HIGH", "Beaucoup d'escaliers",
-			fmt.Sprintf("%s étages montés (> 20), charge fémoro-patellaire accrue.", frfmt.Int(in.floorsUp)))
-	}
-
-	if a := in.acwr; a != nil && a.Ratio != nil {
-		r := *a.Ratio
-		switch {
-		case r > 1.5:
-			add("danger", "ACWR", "Charge aiguë excessive", fmt.Sprintf("ACWR %s (> 1,5), risque élevé de blessure, alléger les prochains jours.", frfmt.Dec(r, 2)))
-		case r > 1.3:
-			add("warn", "ACWR", "Charge aiguë élevée", fmt.Sprintf("ACWR %s (> 1,3), progression trop rapide.", frfmt.Dec(r, 2)))
 		}
 	}
 
@@ -173,24 +225,18 @@ func buildAlerts(in alertInput, p config.Profile) []Alert {
 	}
 	if !serious {
 		msg := "Aucun signal d'alerte sur cette séance."
-		if in.dayMode {
+		if in.DayMode {
 			msg = "Aucun signal d'alerte sur cette journée."
 		}
 		add("ok", "ALL_GOOD", "RAS", msg)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return levelOrder[out[i].Level] < levelOrder[out[j].Level] })
-	if out == nil {
-		out = []Alert{}
-	}
 	return out
 }
 
-func driftMethodLabel(m string) string {
+func DriftMethodLabel(m string) string {
 	if m == "pw:hr" {
 		return "Pw:Hr"
 	}
 	return "Pace:Hr"
 }
-
-// DriftMethodLabel exporte le libellé ("Pw:Hr" / "Pace:Hr").
-func DriftMethodLabel(m string) string { return driftMethodLabel(m) }

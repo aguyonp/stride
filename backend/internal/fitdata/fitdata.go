@@ -1,5 +1,5 @@
-// Package fitdata décode les fichiers FIT (lib muktihari/fit) en un modèle interne compact
-// et sans coordonnées GPS. Les valeurs absentes valent NaN.
+// Package fitdata converts FIT files, Garmin detail series and Strava streams into one compact
+// record model without GPS tracks. Absent values are NaN.
 package fitdata
 
 import (
@@ -16,43 +16,47 @@ import (
 	"github.com/muktihari/fit/profile/typedef"
 )
 
-// NaN est la valeur "absente".
 var NaN = math.NaN()
 
-// Activity est le modèle décodé (source FIT ou details API).
 type Activity struct {
-	Source   string // "fit" | "details"
-	Start    time.Time
-	Sport    string
-	SubSport string
-	Session  Session
-	Records  []Record
-	Laps     []Lap
-	Splits   []Split
-	// HRZonesS / PowerZonesS : temps (s) en Z1..Z5 (session), nil si absent.
-	HRZonesS    []float64
-	PowerZonesS []float64
-	// HRZoneHighBpm : bornes hautes des zones FC (FIT), si connues.
+	Source        string // fit | details | strava
+	Start         time.Time
+	Sport         string
+	SubSport      string
+	Session       Session
+	Records       []Record
+	Laps          []Lap
+	Splits        []Split
+	HRZonesS      []float64
+	PowerZonesS   []float64
 	HRZoneHighBpm []float64
 }
 
-// Record : un échantillon (T = secondes écoulées depuis Start, horloge murale).
+// Record is one sample; T is wall-clock seconds since Start.
 type Record struct {
-	T             float64
-	HR            float64
-	CadenceSpm    float64
-	SpeedMS       float64
-	PowerW        float64
-	AltM          float64
-	DistM         float64
-	GCTMs         float64
-	VOCm          float64
-	VRPct         float64
-	StepM         float64
-	GCTBalLeftPct float64
+	T               float64
+	HR              float64
+	CadenceSpm      float64
+	SpeedMS         float64
+	PowerW          float64
+	AltM            float64
+	DistM           float64
+	GCTMs           float64
+	VOCm            float64
+	VRPct           float64
+	StepM           float64
+	GCTBalLeftPct   float64
+	GAPSpeedMS      float64
+	StaminaPct      float64 // potential stamina
+	AvailStaminaPct float64
+	GradePct        float64
 }
 
-// Lap : tour montre.
+func emptyRecord(t float64) Record {
+	return Record{T: t, HR: NaN, CadenceSpm: NaN, SpeedMS: NaN, PowerW: NaN, AltM: NaN, DistM: NaN, GCTMs: NaN, VOCm: NaN,
+		VRPct: NaN, StepM: NaN, GCTBalLeftPct: NaN, GAPSpeedMS: NaN, StaminaPct: NaN, AvailStaminaPct: NaN, GradePct: NaN}
+}
+
 type Lap struct {
 	StartT, EndT      float64
 	TimerS, ElapsedS  float64
@@ -70,7 +74,7 @@ type Lap struct {
 	HasWorkoutStep    bool
 }
 
-// Split : split FIT (rwd_run, rwd_walk, rwd_stand, interval_*…).
+// Split is a FIT split (rwd_run, rwd_walk, rwd_stand, interval_*…).
 type Split struct {
 	Type              string
 	StartT, EndT      float64
@@ -80,7 +84,6 @@ type Split struct {
 	AscentM, DescentM float64
 }
 
-// Session : résumé de session.
 type Session struct {
 	TimerS, ElapsedS, DistM     float64
 	AvgHR, MaxHR                float64
@@ -89,9 +92,15 @@ type Session struct {
 	AvgGCTMs, AvgVOCm, AvgVRPct float64
 	AvgStepM, AvgGCTBal         float64
 	AscentM, DescentM           float64
+	StartLat, StartLon          float64
 }
 
-// HasGCTBalance indique si au moins un record contient l'équilibre G/D.
+func EmptySession() Session {
+	return Session{TimerS: NaN, ElapsedS: NaN, DistM: NaN, AvgHR: NaN, MaxHR: NaN, AvgPower: NaN, NormPower: NaN,
+		AvgCadSpm: NaN, MaxCadSpm: NaN, AvgGCTMs: NaN, AvgVOCm: NaN, AvgVRPct: NaN, AvgStepM: NaN, AvgGCTBal: NaN,
+		AscentM: NaN, DescentM: NaN, StartLat: NaN, StartLon: NaN}
+}
+
 func (a *Activity) HasGCTBalance() bool {
 	for i := range a.Records {
 		if !math.IsNaN(a.Records[i].GCTBalLeftPct) {
@@ -101,13 +110,23 @@ func (a *Activity) HasGCTBalance() bool {
 	return !math.IsNaN(a.Session.AvgGCTBal)
 }
 
-// Decode décode un fichier .fit (premier fichier Activity trouvé).
+// Has reports whether at least one record has a valid value for get.
+func (a *Activity) Has(get func(Record) float64) bool {
+	for i := range a.Records {
+		if v := get(a.Records[i]); !math.IsNaN(v) && !math.IsInf(v, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// Decode decodes the first activity found in a .fit file.
 func Decode(b []byte) (*Activity, error) {
 	dec := decoder.New(bytes.NewReader(b))
 	for dec.Next() {
 		f, err := dec.Decode()
 		if err != nil {
-			return nil, fmt.Errorf("décodage FIT : %w", err)
+			return nil, fmt.Errorf("fit decode: %w", err)
 		}
 		act := filedef.NewActivity(f.Messages...)
 		if len(act.Records) == 0 && len(act.Sessions) == 0 {
@@ -115,7 +134,7 @@ func Decode(b []byte) (*Activity, error) {
 		}
 		return convert(act), nil
 	}
-	return nil, errors.New("aucune activité dans le fichier FIT")
+	return nil, errors.New("fit: no activity in file")
 }
 
 func u8(v uint8) float64 {
@@ -155,7 +174,14 @@ func firstValid(vs ...float64) float64 {
 	return NaN
 }
 
-// cadenceSpm : FIT running cadence en strides/min (+ fractional) → pas/min.
+func degrees(v float64) float64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) > 180 {
+		return NaN
+	}
+	return v
+}
+
+// cadenceSpm converts FIT running cadence (strides/min + fraction) to steps/min.
 func cadenceSpm(c uint8, frac float64) float64 {
 	if c == math.MaxUint8 {
 		return NaN
@@ -185,6 +211,7 @@ func convert(act *filedef.Activity) *Activity {
 	if out.Start.IsZero() && len(act.Records) > 0 {
 		out.Start = act.Records[0].Timestamp
 	}
+	out.Session = EmptySession()
 	if s != nil {
 		out.Session = Session{
 			TimerS:    u32s(s.TotalTimerTime, 1000),
@@ -203,10 +230,9 @@ func convert(act *filedef.Activity) *Activity {
 			AvgGCTBal: s.AvgStanceTimeBalanceScaled(),
 			AscentM:   u16(s.TotalAscent),
 			DescentM:  u16(s.TotalDescent),
+			StartLat:  degrees(s.StartPositionLatDegrees()),
+			StartLon:  degrees(s.StartPositionLongDegrees()),
 		}
-	} else {
-		out.Session = Session{TimerS: NaN, ElapsedS: NaN, DistM: NaN, AvgHR: NaN, MaxHR: NaN, AvgPower: NaN, NormPower: NaN,
-			AvgCadSpm: NaN, MaxCadSpm: NaN, AvgGCTMs: NaN, AvgVOCm: NaN, AvgVRPct: NaN, AvgStepM: NaN, AvgGCTBal: NaN, AscentM: NaN, DescentM: NaN}
 	}
 
 	out.Records = make([]Record, 0, len(act.Records))
@@ -214,20 +240,18 @@ func convert(act *filedef.Activity) *Activity {
 		if r.Timestamp.IsZero() {
 			continue
 		}
-		rec := Record{
-			T:             offset(r.Timestamp, out.Start),
-			HR:            u8(r.HeartRate),
-			CadenceSpm:    cadenceSpm(r.Cadence, r.FractionalCadenceScaled()),
-			SpeedMS:       firstValid(r.EnhancedSpeedScaled(), r.SpeedScaled()),
-			PowerW:        u16(r.Power),
-			AltM:          firstValid(r.EnhancedAltitudeScaled(), r.AltitudeScaled()),
-			DistM:         r.DistanceScaled(),
-			GCTMs:         r.StanceTimeScaled(),
-			VOCm:          r.VerticalOscillationScaled() / 10,
-			VRPct:         r.VerticalRatioScaled(),
-			StepM:         r.StepLengthScaled() / 1000,
-			GCTBalLeftPct: r.StanceTimeBalanceScaled(),
-		}
+		rec := emptyRecord(offset(r.Timestamp, out.Start))
+		rec.HR = u8(r.HeartRate)
+		rec.CadenceSpm = cadenceSpm(r.Cadence, r.FractionalCadenceScaled())
+		rec.SpeedMS = firstValid(r.EnhancedSpeedScaled(), r.SpeedScaled())
+		rec.PowerW = u16(r.Power)
+		rec.AltM = firstValid(r.EnhancedAltitudeScaled(), r.AltitudeScaled())
+		rec.DistM = r.DistanceScaled()
+		rec.GCTMs = r.StanceTimeScaled()
+		rec.VOCm = r.VerticalOscillationScaled() / 10
+		rec.VRPct = r.VerticalRatioScaled()
+		rec.StepM = r.StepLengthScaled() / 1000
+		rec.GCTBalLeftPct = r.StanceTimeBalanceScaled()
 		if rec.HR == 0 {
 			rec.HR = NaN
 		}
@@ -294,24 +318,24 @@ func convert(act *filedef.Activity) *Activity {
 	return out
 }
 
-// zoneTimes convertit un tableau FIT time_in_*_zone (ms) en Z1..Z5 (s).
-// Garmin écrit N+2 cases : [sous Z1, Z1..Z5, au-dessus] → Z5 inclut "au-dessus".
+// zoneTimes converts FIT time_in_*_zone (ms) to Z1..Z5 seconds. Garmin writes N+2 buckets
+// [below Z1, Z1..Z5, above]; "above" is added to Z5.
 func zoneTimes(arr []uint32) []float64 {
 	if len(arr) < 5 {
 		return nil
 	}
 	vals := make([]float64, len(arr))
-	any := false
+	found := false
 	for i, v := range arr {
 		if v == math.MaxUint32 {
 			continue
 		}
 		vals[i] = float64(v) / 1000
 		if vals[i] > 0 {
-			any = true
+			found = true
 		}
 	}
-	if !any {
+	if !found {
 		return nil
 	}
 	if len(vals) == 5 {
