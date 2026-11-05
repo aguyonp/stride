@@ -730,3 +730,121 @@ input[type='range'].pain-range:focus-visible::-webkit-slider-thumb {
     animation: none !important;
   }
 }
+
+/* V3 light UX: grouped collapsible sections, flattened nested cards, readiness tones. */
+.section-group {
+  border-radius: var(--radius-glass);
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--text-1) 2.5%, transparent);
+}
+.section-group > * + * {
+  border-top: 1px solid var(--line);
+}
+.section-body .glass {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  padding: 0;
+  animation: none;
+}
+.section-body .glass-inset {
+  background: color-mix(in oklab, var(--text-1) 3%, transparent);
+}
+.nested-card + .nested-card {
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--line);
+}
+.grid > .nested-card + .nested-card {
+  padding-top: 0;
+  border-top: 0;
+}
+.md-body {
+  line-height: 1.6;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  color: var(--text-1);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 1.1em 0 0.4em;
+}
+.md-body h2 {
+  font-size: 1.05rem;
+}
+.md-body h3,
+.md-body h4 {
+  font-size: 0.95rem;
+}
+.md-body > :first-child {
+  margin-top: 0;
+}
+.md-body p,
+.md-body ul,
+.md-body ol,
+.md-body blockquote,
+.md-body table,
+.md-body pre {
+  margin: 0.55em 0;
+}
+.md-body ul {
+  list-style: disc;
+  padding-left: 1.2em;
+}
+.md-body ol {
+  list-style: decimal;
+  padding-left: 1.3em;
+}
+.md-body li + li {
+  margin-top: 0.2em;
+}
+.md-body strong {
+  color: var(--text-1);
+}
+.md-body code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+  background: var(--track);
+}
+.md-body pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: var(--track);
+}
+.md-body pre code {
+  padding: 0;
+  background: none;
+}
+.md-body blockquote {
+  border-left: 3px solid var(--line-strong);
+  padding-left: 0.8em;
+  color: var(--text-3);
+}
+.md-body table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.md-body th,
+.md-body td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.35em 0.75em 0.35em 0;
+  text-align: left;
+}
+.md-body th {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.md-body hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 1em 0;
+}

@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: ["**"]
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -62,7 +63,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: version
-        run: echo "value=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          v="$(cat VERSION)"
+          case "${GITHUB_REF}" in
+            refs/tags/*)
+              if [ "${GITHUB_REF_NAME}" != "$v" ]; then
+                echo "::error::Tag ${GITHUB_REF_NAME} does not match VERSION file (${v})"; exit 1
+              fi ;;
+            refs/heads/main) v="${v}-pre" ;;
+            *) v="${v}-dev" ;;
+          esac
+          { echo "value=${v}"; echo "commit=${GITHUB_SHA::7}"; echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -73,9 +84,12 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
+          flavor: latest=false
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=dev,enable=${{ github.ref != 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=prerelease,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' }}
             type=sha,prefix=sha-,format=short
       - uses: docker/build-push-action@v7
         with:
@@ -84,6 +98,34 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ steps.version.outputs.value }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.value }}
+            COMMIT=${{ steps.version.outputs.commit }}
+            BUILD_DATE=${{ steps.version.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    name: GitHub release
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Release notes (tag annotation, else changelog from commits)
+        run: |
+          git fetch --force --tags origin
+          notes="$(git tag -l --format='%(contents)' "${GITHUB_REF_NAME}")"
+          [ -n "${notes//[[:space:]]/}" ] || notes="$(scripts/changelog.sh "${GITHUB_REF_NAME}")"
+          {
+            printf '%s\n\n' "$notes"
+            echo "**Images:** ${IMAGE}:${GITHUB_REF_NAME} · ${IMAGE}:latest"
+          } > notes.md
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --verify-tag --latest --title "Stride ${GITHUB_REF_NAME}" --notes-file notes.md

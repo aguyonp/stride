@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"stride/internal/apimeter"
@@ -41,7 +42,9 @@ type ProviderError struct {
 	Timeout       bool
 	CooldownUntil time.Time
 	Status        int
-	Err           error
+	// Detail is a short provider message appended to the French text (LLM errors only).
+	Detail string
+	Err    error
 }
 
 func (e *ProviderError) Error() string {
@@ -52,6 +55,13 @@ func (e *ProviderError) Unwrap() error { return e.Err }
 
 // Message is the French text returned to the client.
 func (e *ProviderError) Message() string {
+	if e.Detail != "" {
+		return strings.TrimSuffix(e.message(), ".") + " : " + e.Detail
+	}
+	return e.message()
+}
+
+func (e *ProviderError) message() string {
 	name := providerName(e.Provider)
 	switch {
 	case e.Unauthorized:
@@ -72,6 +82,10 @@ func providerName(p string) string {
 		return "Strava"
 	case apimeter.OpenMeteo:
 		return "Le service météo"
+	case apimeter.LLM:
+		return "Le fournisseur IA"
+	case apimeter.Webhook:
+		return "Le service de notification"
 	}
 	return "Garmin"
 }

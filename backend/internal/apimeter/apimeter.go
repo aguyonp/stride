@@ -13,6 +13,8 @@ const (
 	Garmin    = "garmin"
 	Strava    = "strava"
 	OpenMeteo = "open-meteo"
+	LLM       = "llm"
+	Webhook   = "webhook"
 )
 
 var ErrCooldown = errors.New("provider cooling down after rate limiting")

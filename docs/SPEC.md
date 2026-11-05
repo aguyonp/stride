@@ -414,8 +414,9 @@ No splits. Structure:
 | `STRIDE_WEATHER` | `open-meteo` | `off` to disable |
 | `STRIDE_SYNC_HOUR`, `STRIDE_SYNC_JITTER_MIN`, `STRIDE_SYNC_JITTER_MAX` | `7`, `30s`, `90s` | morning prefetch |
 | `STRIDE_GARMIN_BASE_URL` | Garmin personal API | tests |
+| `STRIDE_ALLOW_PRIVATE_EGRESS` | `false` | `true` lets user-supplied URLs (LLM `openai_compat` base URL, notification webhooks) reach loopback/private networks (e.g. a local Ollama) |
 | `TZ`, `LOG_LEVEL`, `LOG_FORMAT` | `Europe/Paris`, `info`, `pretty` | |
-| compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID` | `127.0.0.1`, `8080`, `latest`, `65532`, `65532` | published port, image tag (`latest` = main, `dev` = other branches), container user |
+| compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID` | `127.0.0.1`, `8080`, `latest`, `65532`, `65532` | published port, image tag (`latest` / `X.Y.Z` = releases, `prerelease` = main, `dev` = other branches), container user |
 
 ## 10. Domain implementation notes
 
@@ -429,3 +430,105 @@ No splits. Structure:
 - **Shoes**: `distanceKm` sums activities whose notes point to the shoe, or (no note shoe) whose Strava gear matches `stravaGearId`.
 - **History**: `ActivityView.history` lists every activity of the 14 days up to the session; the report table keeps running rows only.
 - **Backup**: notes whose activity is not (yet) in the database are skipped and not counted.
+
+---
+
+## 11. V3 — Light UX, reconciliation, LLM connector, workouts
+
+Rules: **no regression** of V2; migrations are **additive only** (new file `0003_v3.sql` and later; never edit `0001`/`0002`; SQLite `CHECK` changes require a safe table rebuild in the migration); a V2 database must upgrade automatically at startup.
+
+### 11.1 Garmin + Strava reconciliation (zero duplicates)
+- Same activity = same user, |Δstart| ≤ 300 s, compatible sport, distance within max(10 %, 300 m) when both known. Applies in **both orders** (Strava first then Garmin, or Garmin first) and to manual imports. A one-shot dedup pass at startup merges existing duplicate rows (keep the row holding notes; move notes, blobs and plan links).
+- Field precedence on a fused activity: Garmin → physiology, running dynamics (GCT, VO, VR, balance, cadence), Stamina, Training Effect, impact load, FIT, laps; Strava → custom title, description, private note, RPE, Relative Effort, gear. `sources` = `["garmin","strava"]`, `sourceLabel` = `Fusion`. Strava's API exposes no GAP: GAP stays Garmin or computed (say so in `warnings`).
+- Shoes: Garmin gear is **not exposed** by the Personal API (404) → `null` + reason; Strava shoes are imported automatically at each sync (name, brand, model, distance). Dedup: `stravaGearId` first, then normalized name/brand/model; `POST /api/shoes/{id}/merge {intoId}` moves notes and deletes the source. A fused activity whose Strava gear matches a shoe gets that shoe in its notes when the user has not chosen one (`notes.shoeAuto: true`).
+
+### 11.2 External LLM connector (per user)
+- Providers: `gemini` (`POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, header `x-goog-api-key`, `systemInstruction`), `anthropic` (`POST https://api.anthropic.com/v1/messages`, headers `x-api-key`, `anthropic-version: 2023-06-01`, `system`), `openai` (`POST https://api.openai.com/v1/chat/completions`, Bearer), `openai_compat` (Ollama or any OpenAI-compatible server: `{baseUrl}/v1/chat/completions`, Bearer optional). Plain `net/http`, no SDK. The objectivity directive (§6.1) is always the system message **and** stays at the top of the prompt.
+- API key encrypted (AAD `llm:<uid>:key`), never returned (hint only). Calls go through `apimeter` (provider `llm`), timeout 120 s, max output ~4k tokens.
+- **Egress guard** for user-supplied URLs (`openai_compat` base URL, notification webhooks): only `http(s)`, resolve then refuse loopback/private/link-local/metadata IPs at dial time unless `STRIDE_ALLOW_PRIVATE_EGRESS=true` (needed for a local Ollama). No redirects to private addresses.
+
+| Method & path | Body → Response |
+|---|---|
+| `GET /api/llm` | → `LLMConfig` |
+| `PUT /api/llm` | `{provider, model, baseUrl?, apiKey?}` (`apiKey` omitted = keep, `""` = remove) → `LLMConfig` |
+| `DELETE /api/llm` · `POST /api/llm/test` | 204 · `{ok, latencyMs, message}` |
+| `POST /api/llm/analyze` | `{kind: "activity"\|"day"\|"multi", activityId?, date?, activityIds?, weeks?, include?, question?}` → `LLMAnalysis` (412 `PROVIDER_NOT_CONNECTED` when not configured) |
+| `GET /api/llm/analyses?kind=&ref=` | → `LLMAnalysis[]` (latest 20, stored) |
+
+```ts
+interface LLMConfig { configured: boolean; provider: "gemini" | "anthropic" | "openai" | "openai_compat" | null; model: string | null; baseUrl: string | null; keyHint: string | null; updatedAt: string | null }
+interface LLMAnalysis { id: number; kind: string; ref: string; provider: string; model: string; markdown: string; promptTokensEstimate: number; durationMs: number; createdAt: string }
+```
+
+### 11.3 Plan generation, magic import, Garmin workout push
+- Structured workout steps on planned sessions (`PlannedSession` gains `steps`, `source`, `garmin`):
+```ts
+type StepType = "warmup" | "run" | "interval" | "recovery" | "rest" | "cooldown" | "repeat";
+interface WorkoutStep { type: StepType; durationS?: number; distanceM?: number; repeat?: number; steps?: WorkoutStep[]; target?: { kind: "none" | "pace" | "hr" | "cadence" | "power"; min?: number; max?: number }; note?: string }  // pace in s/km, hr bpm, cadence spm, power W
+interface GarminPush { status: "none" | "pushed" | "failed" | "unsupported"; workoutId: number | null; pushedAt: string | null; error: string | null }
+// PlannedSession += { steps: WorkoutStep[]; source: "manual" | "llm" | "import"; garmin: GarminPush }
+```
+- Exchange format imposed on any AI (prompt mode and LLM mode), parsed tolerantly (first ```json block or raw JSON):
+```json
+{"format":"stride-plan","version":1,"sessions":[{"date":"2026-11-10","sport":"run","title":"Footing + 6×1'","instructions":"Cadence 172 spm, relâché","targetDurationS":2700,"targetCadenceSpm":172,"steps":[{"type":"warmup","durationS":600,"target":{"kind":"pace","min":330,"max":360}},{"type":"repeat","repeat":6,"steps":[{"type":"interval","durationS":60,"target":{"kind":"pace","min":250,"max":260}},{"type":"recovery","durationS":90}]},{"type":"cooldown","durationS":600}]}]}
+```
+
+| Method & path | Body → Response |
+|---|---|
+| `POST /api/plan/generate` | `{mode: "prompt"\|"llm", horizon: "session"\|"week", startDate, note?}` → prompt mode `{prompt, tokensEstimate}` (directive + recent sessions, readiness, load ratio, goals, focus, existing plan + strict output contract above); llm mode `{drafts: PlannedSessionInput[], errors: string[], raw}` (not saved) |
+| `POST /api/plan/import` | `{text}` → `{drafts: PlannedSessionInput[], errors: string[]}` (preview, not saved) |
+| `POST /api/plan/bulk` | `{sessions: PlannedSessionInput[]}` → `PlannedSession[]` |
+| `POST /api/plan/{id}/push-garmin` | tries Garmin Connect workout creation + scheduling; → `PlannedSession`; 412 `PROVIDER_NOT_CONNECTED`; when the Personal API refuses (404/403, capability cached 24 h) → 409 `CONFLICT` with `garmin.status = "unsupported"` |
+| `GET /api/plan/{id}/workout.fit` | FIT workout file (`muktihari/fit` encoder), to copy into `GARMIN/NewFiles` on the watch |
+| `GET /api/calendar?from=&to=` | → `{days: [{date, planned: PlannedSession[], done: ActivitySummary[]}]}` (≤ 62 days, month view) |
+
+Reported facts: third-party coverage states the Garmin Training/Courses APIs are business-tier only; the push must degrade gracefully to the FIT download and the structure display.
+
+### 11.4 Efficiency, cumulative impact, readiness
+- **Aerobic efficiency** (run/bike, ≥ 20 min, steady effort: not interval-structured): `efSpeed` = speed (m/min) / avg HR, `efPower` = power (W) / avg HR, on moving running time (pauses excluded). `GET /api/trends/efficiency?weeks=12` → `{points: [{date, activityId, efSpeed, efPower, avgHR, paceSecPerKm}], rollingEfSpeed: (number|null)[], changePct: number|null}`.
+- **Cumulative impact**: `steps` = Σ running cadence × time; `voFactor` = clamp(VO cm / 8, 0.75, 1.5); `descentFactor` = 1 + 0.01 × (D− m per km); `jointIndex` = steps × voFactor × descentFactor / 1000. Distinct from Garmin `impactLoad` (cardio/impact proxy) and from training load.
+- **Readiness banner**: `level` red if (HRV 7-day avg < baseline low, or ≥ 3 of last 7 nights below) **and** load ratio > 1.3; orange if any of: HRV below baseline, load ratio > 1.3, 7-day sleep score avg < 60, RHR +5 bpm; else green; `reasons` FR one-liners. Present on `ActivityView` and `DayView`; when orange/red the prompts get a section right after the directive: `### ⚠️ SIGNAL DE PRÉPARATION PRIORITAIRE`.
+```ts
+// ActivityView += { efficiency: { eligible: boolean; reason: string | null; efSpeed: number | null; efPower: number | null; trendChangePct: number | null } | null; impact: { steps: number | null; stepsPerKm: number | null; voFactor: number | null; descentFactor: number | null; jointIndex: number | null; jointIndex7d: number | null } | null; readiness: ReadinessBanner }
+// DayView += { readiness: ReadinessBanner }
+interface ReadinessBanner { level: "green" | "orange" | "red" | "unknown"; title: string; reasons: string[]; hrv7dAvg: number | null; hrvBaselineLow: number | null; nightsBelowBaseline: number | null; sleep7dAvg: number | null; loadRatio: number | null }
+```
+- Report additions (CHARGE section): `- **Efficience aérobie (EF) :** [X,XX] m/min/bpm | Pw:HR [X,XX] W/bpm (tendance 8 sem. : [±X %])` and `- **Charge d'impact cumulée :** [N] foulées | Indice articulaire [X,X] (OV ×[X,XX] · D- ×[X,XX]) | 7 j : [X,X]`. Multi export weekly table gains `EF moy` and `Indice impacts`.
+
+### 11.5 GPS track overlay
+`GET /api/activities/{id}/track` → `{points: [lat, lon, tS, cadenceSpm|null, gradePct|null][], bounds: {minLat, maxLat, minLon, maxLon}}` (≤ 1500 points, own activities only, never cached publicly). Rendered client-side as a lightweight SVG (no tile server, no external call): colour by cadence (< `cadenceMinSpm` highlighted) or by slope (< −2 % highlighted), collapsible.
+
+### 11.6 Personal notifications
+| Method & path | Body → Response |
+|---|---|
+| `GET /api/notifications` · `POST` · `PATCH /{id}` · `DELETE /{id}` | `NotificationTarget` |
+| `POST /api/notifications/{id}/test` | → `{ok, status, message}` |
+```ts
+interface NotificationTarget { id: number; kind: "discord" | "telegram" | "json"; label: string; enabled: boolean; hint: string; lastStatus: string | null; lastSentAt: string | null; lastError: string | null }
+// create/patch input: { kind, label, enabled, url? (discord/json), botToken? + chatId? (telegram) } — secrets encrypted (AAD notify:<uid>:<id>), never returned
+```
+Sent once per newly synced (and fused) complete activity: FR compact summary (sport, distance, durée, allure, EF, impacts, top alerts) + link `${PUBLIC_URL}/?s=<id>`. Discord `{content}`, Telegram `sendMessage` (Markdown), JSON `{event: "activity.synced", activity, efficiency, impact, alerts, url}`. Egress guard applies.
+
+### 11.7 Rescue import
+`POST /api/imports` multipart field `file` (`.fit` / `.gpx` / `.tcx`, ≤ 25 MB) → `{activityId, merged: boolean}`; GPX/TCX converted to the internal series (HR, cadence, power, altitude, distance when present); deduplicated with the §11.1 rule (merging into an existing activity when it lacks a FIT). UI entry is discreet (Settings › Import de secours).
+
+### 11.8 Light UX (frontend)
+Progressive disclosure: the dashboard first screen shows only the readiness banner, a compact session hero (distance, durée, allure, 3 key signals), the top 3 alerts, the « Ressenti » quick entry and the two AI actions (« Copier le prompt », « Analyser avec mon IA »). Everything else (biomechanics, fatigue drift, slope, splits, charts, map, recovery details, load, cross-load, EF trend, history) lives in collapsible sections / drawers, closed by default except when an alert points to it. More whitespace, fewer borders, clear type scale; usable in 5 s on desktop and mobile PWA.
+
+### 11.9 Backend implementation notes (V3, normative precisions)
+- **Schema** (`0003_v3.sql`): `activities.import_format`, `activities.notified_at`; `activity_notes.shoe_auto`; `shoes.strava_distance_m`; `planned_sessions.steps/source/garmin_*`; `activity_blobs` rebuilt (data kept) to accept `import_fit|import_gpx|import_tcx`; new `llm_configs`, `llm_analyses`, `notification_targets`, `activity_metrics` (persisted EF/impact per activity, recomputed when the bundle or `MetricsVersion` changes). Rows present before V3 get `notified_at` set (never notified).
+- **Additive JSON**: `ActivitySummary.sources` may contain `"import"` and `sourceLabel` may be `"Import"` (rescue import without provider); `ActivityDetail += { garminGear: null; garminGearReason: string }`; `Shoe += { stravaDistanceKm: number | null }` (all-time distance reported by Strava); `ActivityNotes += { shoeAuto: boolean }` (read-only; an auto shoe does not set `hasNotes`). The auto shoe applies to every activity carrying a Strava gear (fused or Strava-only) whose shoe was not chosen by the athlete; changing `shoeId` clears `shoeAuto`.
+- **Dedup**: one-shot at startup (`app_settings.v3_dedup_done`); rows of the same provider never merge; kept row = the one holding notes, else the Garmin one; when both hold notes they are merged field by field (kept row wins); blobs move unless the kept row has the same kind; plan links are computed (no table), nothing to move.
+- **Status codes**: `POST /api/plan/bulk` → 201 (all sessions validated first, none created on error); `POST /api/notifications` → 201; `POST /api/imports` → 201 when created, 200 when merged; `push-garmin` 409 body = `{error, code: "CONFLICT", session: PlannedSession}`; LLM routes answer 412 `PROVIDER_NOT_CONNECTED` when no connector. Plan drafts are `PlannedSession` objects with `id: 0` (`id`, `match`, `garmin` ignored on input).
+- **Garmin push**: create then schedule; a scheduling failure keeps `status: "pushed"` with `error` explaining to schedule from Garmin Connect. FIT targets: pace as custom speed range, HR `bpm + 100`, power `W + 1000`, cadence in spm.
+- **Efficiency**: moving samples = speed ≥ 1 m/s and recording gap ≤ 10 s (summary `moving_s`/distance/avg HR fallback without series); not steady when the FIT has ≥ 2 recovery laps or ≥ 3 active workout-step laps, when the 60 s speed (GAP when known) coefficient of variation > 0.25, or when the matched planned session has `interval`/`repeat` steps. `trendChangePct`/`changePct` = mean `efSpeed` of the last 4 weeks vs the first 4 weeks of the window (8 weeks ending at the activity; `weeks` for the endpoint, running only), ≥ 2 points per side else null; `rollingEfSpeed[i]` = mean over the 28 days ending at point i (null below 2 points).
+- **Impact**: steps from the running cadence series over moving time (else avg cadence × moving time); `voFactor` null when VO is unknown (neutral 1 used in `jointIndex`); D− from the summary, the FIT session or the altitude series; `jointIndex7d` = Σ `jointIndex` of the running activities of the 7 days ending at the activity (inclusive).
+- **Readiness**: `hrvBaselineLow` = latest Garmin `balancedLow` of the 7 days; a night is below when its HRV < that day's (else latest) low; orange "HRV below baseline" = 7-day avg or last night below; RHR +5 = resting HR vs 7-day avg; `unknown` when no HRV, sleep, RHR nor load ratio.
+- **LLM**: `openai` sends `max_completion_tokens`, `openai_compat` `max_tokens`; `baseUrl` stored without trailing `/v1`; `include` accepts a CSV string or an array; `question` is appended as `### QUESTION DE L'ATHLÈTE`; 200 analyses kept per user.
+- **Notifications**: window 48 h after the start; when Garmin and Strava are both connected, a single-source activity waits for the fusion until it is final (2 h after its end); rescue imports are not notified; failures never echo the target URL or token.
+- **Track**: `{points: [], bounds: null}` when no GPS series (FIT, rescue import or Strava `latlng`) is stored; `Cache-Control: private, no-store`.
+
+### 11.10 Version and audit logs
+- `GET /api/version` (user) → `{version, commit, builtAt, go, label}` from `-ldflags -X stride/internal/buildinfo.*` (repo `VERSION` file; CI adds `-dev` off `main`); shown discreetly at the bottom of Settings with a copy button.
+- `app_logs` (migration `0004_logs.sql`): categories `request` (API requests: method, path, status, latency; outbound provider calls via `apimeter`: provider, endpoint template, status, latency — error texts are never stored) and `user_action` (mapped from routed patterns: login, sync, prompt generation, LLM analysis, plan changes, settings…; `POST /api/actions {action: "prompt.copy"|"prompt.download"|"prompt.share"}` for browser-only events). Levels `info` / `error` (HTTP ≥ 400, rate limits, network errors). Asynchronous batched writes (bounded buffer), purge after 14 days and above 100 000 rows.
+- `GET /api/admin/logs?category=all|request|user_action&level=all|error&userId=&before=&limit=` (admin) → `{items, nextBefore, dropped}`.

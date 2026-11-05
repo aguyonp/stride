@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # Stride: React SPA embedded in the Go binary, distroless non-root runtime.
 
-ARG VERSION=2.0.0
+ARG VERSION=dev
+ARG COMMIT=
+ARG BUILD_DATE=
 
 FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 WORKDIR /src/frontend
@@ -13,6 +15,8 @@ RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS backend
 ARG VERSION
+ARG COMMIT
+ARG BUILD_DATE
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src/backend
@@ -26,7 +30,7 @@ RUN rm -rf internal/web/dist
 COPY --from=frontend /src/frontend/dist/ ./internal/web/dist/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stride ./cmd/stride \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X stride/internal/buildinfo.Version=${VERSION} -X stride/internal/buildinfo.Commit=${COMMIT} -X stride/internal/buildinfo.Date=${BUILD_DATE}" -o /out/stride ./cmd/stride \
  && mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot

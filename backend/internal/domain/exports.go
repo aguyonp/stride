@@ -143,6 +143,11 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 		return nil, err
 	}
 	m := &view.MultiExport{From: from, To: to, Weeks: weeks, NextWeeks: 4}
+	pm, err := s.matchPlan(ctx, uid, p, from, to)
+	if err != nil {
+		return nil, err
+	}
+	structured := structuredPlans(pm)
 	alertCount := map[string]*view.AlertCount{}
 	fetches := 0
 	type perWeek struct {
@@ -150,6 +155,9 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 		dist, dur  float64
 		cad, gct   meanAcc
 		pd, pc, pn meanAcc
+		ef         meanAcc
+		joint      float64
+		jointKnown bool
 	}
 	wk := map[string]*perWeek{}
 	for i, a := range rows {
@@ -165,11 +173,13 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 				s.log.Warn("⚠️ Séance non analysée pour l'export", "user", uid, "err", errText(err))
 			}
 		}
+		var mb *bundle
 		if kinds, _ := s.blobKinds(ctx, uid, a.ID); len(kinds) > 1 {
 			b, err := s.loadBundle(ctx, uid, a)
 			if err != nil {
 				return nil, err
 			}
+			mb = b
 			notesAt := ""
 			if n.UpdatedAt != nil {
 				notesAt = *n.UpdatedAt
@@ -210,6 +220,15 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 			w = &perWeek{}
 			wk[weekStart(a.LocalDate)] = w
 		}
+		if mt, err := s.metricsFor(ctx, uid, a, mb); err == nil {
+			if ef := withPlanStructure(mt.Efficiency, structured[a.ID]); ef.Eligible {
+				w.ef.add(ef.EfSpeed, 1)
+			}
+			if mt.Impact != nil && mt.Impact.JointIndex != nil {
+				w.joint += *mt.Impact.JointIndex
+				w.jointKnown = true
+			}
+		}
 		d := analysis.PF0(a.DurationS)
 		w.n++
 		w.dist += analysis.PF0(a.DistanceM)
@@ -240,6 +259,10 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 		if w := wk[ws]; w != nil {
 			t.Sessions, t.DistanceM, t.DurationS = w.n, math.Round(w.dist), math.Round(w.dur)
 			t.CadenceAvg, t.GctAvg = w.cad.mean(0), w.gct.mean(0)
+			t.EfAvg = w.ef.mean(2)
+			if w.jointKnown {
+				t.JointIndex = analysis.Num(w.joint, 1)
+			}
 			t.PainDuring, t.PainCold, t.PainNextMorning = w.pd.mean(1), w.pc.mean(1), w.pn.mean(1)
 		}
 		load, known := 0.0, false
@@ -269,10 +292,6 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 		m.Weekly = append(m.Weekly, t)
 	}
 
-	pm, err := s.matchPlan(ctx, uid, p, from, to)
-	if err != nil {
-		return nil, err
-	}
 	var plannedDist, doneDist float64
 	for _, ps := range pm.planned {
 		if ps.Sport == "rest" || ps.Match == nil {

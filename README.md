@@ -1,6 +1,8 @@
 # Stride
 
-Stride pulls your training and recovery data (Garmin Connect Personal API, Strava, Open-Meteo weather), computes biomechanics, fatigue, load and recovery insights, tracks your plan, goals and pain, and turns any session into a compact Markdown prompt for your AI coach. Multi-user, passkey-only sign-in.
+Stride merges your Garmin and Strava data, computes biomechanics, efficiency, impact, load and readiness, and turns each session into an AI-coach prompt (copied, or sent to your own LLM). Plans export to `.FIT`. Multi-user, passkeys only.
+
+![Stride dashboard (demo data)](docs/screenshot.png)
 
 ## Quick start
 
@@ -12,23 +14,27 @@ mkdir -p data && docker compose up -d
 open http://localhost:8080
 ```
 
-- The **first account becomes admin**; others need an invitation from `/admin` (or open registration).
-- Connect Garmin (personal API key) and/or Strava in the onboarding wizard; both are optional.
-- **Back up `STRIDE_MASTER_KEY`**: it encrypts every stored provider credential.
-- Passkeys require HTTPS except on `localhost`: behind a reverse proxy, set `STRIDE_PUBLIC_URL=https://…`.
-- Private image: `docker login ghcr.io -u <github-user>` with a token that has `read:packages`.
+- **First account = admin**; others join by invitation. Integrations are optional, set per user in the app.
+- **Back up `STRIDE_MASTER_KEY`**: it encrypts every stored credential.
+- Passkeys need HTTPS except on `localhost`. Private image: `docker login ghcr.io` (`read:packages`).
 
-## Images
+## Architecture
 
-CI (`.github/workflows/ci.yml`) runs Go and frontend tests, then pushes a multi-arch image (amd64, arm64) to `ghcr.io/aguyonp/stride`:
+![Architecture](docs/architecture.svg)
 
-| Branch | Tag |
-| --- | --- |
-| `main` | `latest` (production) |
-| any other branch | `dev` |
-| every build | `sha-<commit>` |
+## Release cycle
 
-Run the dev image with `STRIDE_TAG=dev docker compose up -d`; update with `docker compose pull && docker compose up -d`.
+One SemVer string, no `v`: `VERSION` file = git tag = image tag = version in Settings.
+
+| Trigger | Image `ghcr.io/aguyonp/stride` | Version |
+| --- | --- | --- |
+| push to a branch | `dev` | `3.0.0-dev` |
+| merge into `main` | `prerelease` | `3.0.0-pre` |
+| tag `3.0.0` | `latest` + `3.0.0` + GitHub release | `3.0.0` |
+
+1. Bump `VERSION` in your PR (`make changelog` previews the notes), merge, validate `prerelease`.
+2. On an up-to-date `main`, `make release` pushes the tag with its changelog; CI builds `latest` + `3.0.0` and publishes the release (a tag ≠ `VERSION` fails).
+3. Deploy or roll back: `STRIDE_TAG=<tag> docker compose up -d`.
 
 ## Configuration (`.env`)
 
@@ -39,7 +45,7 @@ Run the dev image with `STRIDE_TAG=dev docker compose up -d`; update with `docke
 | `STRIDE_REGISTRATION` | `invite` | `invite` or `open` |
 | `STRIDE_STRAVA_CLIENT_ID` / `_SECRET` / `_WEBHOOK_TOKEN` | — | Enable Strava |
 | `STRIDE_HOST_BIND` / `STRIDE_HOST_PORT` | `127.0.0.1` / `8080` | Published address |
-| `STRIDE_TAG` | `latest` | Image tag |
+| `STRIDE_ALLOW_PRIVATE_EGRESS` | `false` | Allow a local LLM / webhook (e.g. Ollama) |
 
 Full list: [docs/SPEC.md](docs/SPEC.md) §9.
 
@@ -47,7 +53,7 @@ Full list: [docs/SPEC.md](docs/SPEC.md) §9.
 
 ```bash
 make dev            # Go API on :8080 (in-memory cache)
-make dev-frontend   # Vite on :5173, cd frontend && npm run dev:mock for mocked data
+make dev-frontend   # Vite on :5173 (npm run dev:mock for mocked data)
 make test           # Go + frontend tests
 make docker-up      # build the image locally (compose.dev.yml)
 ```

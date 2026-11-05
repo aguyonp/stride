@@ -11,6 +11,7 @@ import {
 } from '@tanstack/react-query'
 import { api, ApiError, type ListActivitiesParams } from './client'
 import type {
+  LogFilter,
   ActivityNotesInput,
   ActivityView,
   AdminSettings,
@@ -55,7 +56,7 @@ export const qk = {
   },
 }
 
-const DOMAIN_ROOTS = new Set(['activities', 'activity', 'report', 'day', 'plan', 'week', 'goals', 'shoes', 'integrations', 'profile', 'sync'])
+const DOMAIN_ROOTS = new Set(['activities', 'activity', 'report', 'day', 'plan', 'week', 'calendar', 'efficiency', 'goals', 'shoes', 'integrations', 'profile', 'sync'])
 
 export function invalidateDomain(qc: QueryClient, roots?: string[]) {
   const set = roots ? new Set(roots) : DOMAIN_ROOTS
@@ -286,7 +287,7 @@ export function useWeekPlan(date: string | null) {
 
 export function usePlanMutations() {
   const qc = useQueryClient()
-  const done = () => void invalidateDomain(qc, ['plan', 'week', 'activity', 'activities', 'day', 'report'])
+  const done = () => void invalidateDomain(qc, ['plan', 'week', 'calendar', 'activity', 'activities', 'day', 'report'])
   return {
     create: useMutation({ mutationFn: (p: PlannedSessionInput) => api.createPlanned(p), onSuccess: done }),
     update: useMutation({ mutationFn: ({ id, ...p }: Partial<PlannedSessionInput> & { id: number }) => api.updatePlanned(id, p), onSuccess: done }),
@@ -334,6 +335,17 @@ export function useAdminSettings() {
 }
 export function useAdminMeter() {
   return useQuery({ queryKey: qk.admin.meter, queryFn: api.adminMeter, refetchInterval: 15_000 })
+}
+export function useAdminLogs(f: LogFilter) {
+  return useInfiniteQuery({
+    queryKey: ['admin', 'logs', f.category, f.level, f.userId ?? 0],
+    queryFn: ({ pageParam }) => api.adminLogs(f, pageParam || undefined),
+    initialPageParam: 0,
+    getNextPageParam: (last) => last.nextBefore ?? undefined,
+  })
+}
+export function useVersion() {
+  return useQuery({ queryKey: ['version'], queryFn: api.version, staleTime: Infinity })
 }
 export function useAdminConnections() {
   return useQuery({ queryKey: qk.admin.connections, queryFn: api.adminConnections })

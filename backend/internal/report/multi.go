@@ -119,7 +119,9 @@ func Multi(m *view.MultiExport, prof athlete.Profile, inc Include) string {
 		if inc.Has(ChipLoad) {
 			cols = append(cols,
 				column{"Load", func(i int) string { return intOr(ws[i].Load) }},
-				column{"Ratio charge", func(i int) string { return decOr(ws[i].LoadRatio, 2) }})
+				column{"Ratio charge", func(i int) string { return decOr(ws[i].LoadRatio, 2) }},
+				column{"EF moy", func(i int) string { return decOr(ws[i].EfAvg, 2) }},
+				column{"Indice impacts", func(i int) string { return decOr(ws[i].JointIndex, 1) }})
 		}
 		if inc.Has(ChipBiomech) {
 			cols = append(cols,

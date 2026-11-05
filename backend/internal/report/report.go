@@ -12,6 +12,7 @@ import (
 	"stride/internal/athlete"
 	f "stride/internal/frfmt"
 	"stride/internal/view"
+	"stride/internal/workout"
 )
 
 // Directive is §6.1, verbatim.
@@ -268,10 +269,94 @@ func describePlanned(ps athlete.PlannedSession, full bool) string {
 	if ps.TargetCadenceSpm != nil {
 		s += " | Cible cadence: " + f.Int(*ps.TargetCadenceSpm) + " spm"
 	}
+	if st := StepsText(ps.Steps); st != "" {
+		s += " | Structure : " + st
+	}
 	if in := compact(ps.Instructions, 160); in != "" {
 		s += " – " + in
 	}
 	return s
+}
+
+var stepLabels = map[string]string{"warmup": "échauffement", "run": "course", "interval": "effort", "recovery": "récup",
+	"rest": "repos", "cooldown": "retour au calme"}
+
+func targetText(t *workout.Target) string {
+	if t == nil || (t.Min == nil && t.Max == nil) {
+		return ""
+	}
+	switch t.Kind {
+	case "pace":
+		return " @ " + paceRange(t.Min, t.Max)
+	case "hr":
+		return " @ " + rangeText(t.Min, t.Max, " bpm")
+	case "cadence":
+		return " @ " + rangeText(t.Min, t.Max, " spm")
+	case "power":
+		return " @ " + rangeText(t.Min, t.Max, " W")
+	}
+	return ""
+}
+
+func rangeText(lo, hi *float64, u string) string {
+	switch {
+	case lo != nil && hi != nil && *lo != *hi:
+		return f.Int(*lo) + "–" + f.Int(*hi) + u
+	case lo != nil:
+		return f.Int(*lo) + u
+	}
+	return f.Int(*hi) + u
+}
+
+// StepsText renders structured steps compactly, e.g. "10' échauffement, 6×(1' effort @ 4:10–4:20/km + 1'30 récup)".
+func StepsText(steps []workout.Step) string {
+	parts := make([]string, 0, len(steps))
+	for _, st := range steps {
+		if st.Type == "repeat" {
+			n := 1
+			if st.Repeat != nil {
+				n = *st.Repeat
+			}
+			parts = append(parts, fmt.Sprintf("%d×(%s)", n, strings.ReplaceAll(StepsText(st.Steps), ", ", " + ")))
+			continue
+		}
+		amount := "lap"
+		switch {
+		case st.DurationS != nil:
+			amount = stepDuration(*st.DurationS)
+		case st.DistanceM != nil:
+			amount = f.Num(*st.DistanceM, 0) + " m"
+			if *st.DistanceM >= 1000 {
+				amount = f.Num(*st.DistanceM/1000, 2) + " km"
+			}
+		}
+		parts = append(parts, amount+" "+stepLabels[st.Type]+targetText(st.Target))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func stepDuration(s float64) string {
+	t := int(s + 0.5)
+	if t%60 == 0 {
+		return fmt.Sprintf("%d'", t/60)
+	}
+	if t < 60 {
+		return fmt.Sprintf("%d\"", t)
+	}
+	return fmt.Sprintf("%d'%02d", t/60, t%60)
+}
+
+// writeReadinessPriority adds the §11.4 priority section (orange / red only), right after the directive.
+func writeReadinessPriority(b *builder, rb analysis.ReadinessBanner) {
+	if rb.Level != "orange" && rb.Level != "red" {
+		return
+	}
+	b.section("⚠️ SIGNAL DE PRÉPARATION PRIORITAIRE")
+	b.line("- **Niveau :** %s %s", analysis.ReadinessEmoji(rb.Level), rb.Title)
+	for _, r := range rb.Reasons {
+		b.raw("- " + r)
+	}
+	b.raw("- **Consigne :** tiens compte de ce signal en priorité dans l'analyse et les recommandations.")
 }
 
 func upcomingText(ups []athlete.PlannedSession) string {

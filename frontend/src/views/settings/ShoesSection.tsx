@@ -1,6 +1,7 @@
-import { Download, Footprints, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Download, Footprints, GitMerge, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useIntegrations, useShoeMutations, useShoes } from '../../api/queries'
+import { useMergeShoe } from '../../api/queriesV3'
 import type { Shoe, ShoeInput, ShoeType } from '../../api/types'
 import { Checkbox } from '../../components/ui/Field'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -15,6 +16,71 @@ import { SHOE_TYPE_LABEL } from '../../lib/labels'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
 
+const norm = (x: string) =>
+  x
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\(strava\)|[^a-z0-9]+/g, '')
+const shoeKey = (s: Shoe) => norm(`${s.brand}${s.model}`) || norm(s.name)
+
+function MergeDialog({ source, shoes, onClose }: { source: Shoe | null; shoes: Shoe[]; onClose: () => void }) {
+  const merge = useMergeShoe()
+  const { toast } = useToast()
+  const others = shoes.filter((x) => x.id !== source?.id)
+  const dup = source ? others.find((x) => shoeKey(x) === shoeKey(source)) : undefined
+  const [into, setInto] = useState<number | null>(null)
+  const target = into ?? dup?.id ?? others[0]?.id ?? null
+  return (
+    <Dialog
+      open={source !== null}
+      onClose={onClose}
+      title="Fusionner une paire"
+      description={source ? `« ${source.name} » sera supprimée ; ses ressentis et son kilométrage passent sur la paire choisie.` : undefined}
+      footer={
+        <div className="flex justify-end gap-2 pb-3">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Annuler
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!source || target === null || merge.isPending}
+            onClick={() =>
+              source &&
+              target !== null &&
+              merge.mutate(
+                { id: source.id, intoId: target },
+                {
+                  onSuccess: () => {
+                    toast({ title: 'Paires fusionnées', tone: 'success' })
+                    onClose()
+                  },
+                },
+              )
+            }
+          >
+            {merge.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <GitMerge className="size-4" aria-hidden="true" />}
+            Fusionner
+          </button>
+        </div>
+      }
+    >
+      <label htmlFor="merge-into" className="mb-1.5 block text-sm font-medium text-ink-2">
+        Fusionner dans
+      </label>
+      <select id="merge-into" className="field" value={target ?? ''} onChange={(e) => setInto(Number(e.target.value))}>
+        {others.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.name} · {fmtNumber(x.distanceKm)} km{x.id === dup?.id ? ' (doublon probable)' : ''}
+          </option>
+        ))}
+      </select>
+      {merge.isError && <InlineError className="mt-3">{merge.error.message}</InlineError>}
+    </Dialog>
+  )
+}
+
 const EMPTY: ShoeInput = { name: '', brand: '', model: '', dropMm: null, type: 'soft', retired: false, note: '' }
 
 export function ShoesSection() {
@@ -24,8 +90,12 @@ export function ShoesSection() {
   const { toast } = useToast()
   const [edit, setEdit] = useState<Shoe | 'new' | null>(null)
   const [del, setDel] = useState<Shoe | null>(null)
+  const [merging, setMerging] = useState<Shoe | null>(null)
   const strava = integ.data?.strava.connected ?? false
   const list = [...(shoes.data ?? [])].sort((a, b) => Number(a.retired) - Number(b.retired) || a.name.localeCompare(b.name, 'fr'))
+  const keyCount = new Map<string, number>()
+  for (const x of list) keyCount.set(shoeKey(x), (keyCount.get(shoeKey(x)) ?? 0) + 1)
+  const isDup = (x: Shoe) => (keyCount.get(shoeKey(x)) ?? 0) > 1
 
   const importStrava = () =>
     m.importStrava.mutate(undefined, {
@@ -77,9 +147,15 @@ export function ShoesSection() {
                   <span className="chip num border border-line bg-track text-ink-2">{fmtNumber(s.distanceKm)} km</span>
                   {s.retired && <span className="chip border border-line bg-track text-ink-3">Retirée</span>}
                   {s.stravaGearId && <span className="chip border border-[#cc3d00]/40 bg-[#cc3d00]/10 text-ink-2">Strava</span>}
+                  {isDup(s) && <span className="chip border border-warn/35 bg-warn/10 text-warn">Doublon probable</span>}
                 </div>
               </div>
               <div className="flex flex-none gap-1">
+                {list.length > 1 && (
+                  <button type="button" className={cn('icon-btn size-9', isDup(s) && 'text-warn')} onClick={() => setMerging(s)} aria-label={`Fusionner ${s.name} dans une autre paire`}>
+                    <GitMerge className="size-4" />
+                  </button>
+                )}
                 <button type="button" className="icon-btn size-9" onClick={() => setEdit(s)} aria-label={`Modifier ${s.name}`}>
                   <Pencil className="size-4" />
                 </button>
@@ -92,6 +168,7 @@ export function ShoesSection() {
         </ul>
       )}
 
+      <MergeDialog key={merging?.id ?? 'none'} source={merging} shoes={list} onClose={() => setMerging(null)} />
       <ShoeDialog key={edit === null ? 'closed' : edit === 'new' ? 'new' : edit.id} shoe={edit} onClose={() => setEdit(null)} />
       <ConfirmDialog
         open={del !== null}

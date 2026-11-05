@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"stride/internal/workout"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -176,13 +178,31 @@ func (r Repo) DeleteGoal(ctx context.Context, uid, id int64) error {
 
 // ---------- plan ----------
 
-const planCols = `id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions`
+const planCols = `id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions,
+	steps, source, garmin_status, garmin_workout_id, garmin_pushed_at, garmin_error`
 
 func scanPlanned(sc interface{ Scan(...any) error }) (PlannedSession, error) {
 	var p PlannedSession
 	var d, dist, pmin, pmax, cad sql.NullFloat64
-	err := sc.Scan(&p.ID, &p.Date, &p.Sport, &p.Title, &d, &dist, &pmin, &pmax, &cad, &p.Instructions)
+	var steps string
+	var wid, pushed sql.NullInt64
+	var gerr sql.NullString
+	err := sc.Scan(&p.ID, &p.Date, &p.Sport, &p.Title, &d, &dist, &pmin, &pmax, &cad, &p.Instructions,
+		&steps, &p.Source, &p.Garmin.Status, &wid, &pushed, &gerr)
 	p.TargetDurationS, p.TargetDistanceM, p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm = nf(d), nf(dist), nf(pmin), nf(pmax), nf(cad)
+	_ = json.Unmarshal([]byte(steps), &p.Steps)
+	if p.Steps == nil {
+		p.Steps = []workout.Step{}
+	}
+	if wid.Valid {
+		v := wid.Int64
+		p.Garmin.WorkoutID = &v
+	}
+	if pushed.Valid {
+		v := rfc(pushed.Int64)
+		p.Garmin.PushedAt = &v
+	}
+	p.Garmin.Error = ns(gerr)
 	return p, err
 }
 
@@ -232,9 +252,9 @@ func (r Repo) CreatePlanned(ctx context.Context, uid int64, p *PlannedSession) e
 		return err
 	}
 	now := r.ts()
-	res, err := r.DB.ExecContext(ctx, `INSERT INTO planned_sessions (user_id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, p.Date, p.Sport, p.Title, p.TargetDurationS, p.TargetDistanceM,
-		p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm, p.Instructions, now, now)
+	res, err := r.DB.ExecContext(ctx, `INSERT INTO planned_sessions (user_id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions, steps, source, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, p.Date, p.Sport, p.Title, p.TargetDurationS, p.TargetDistanceM,
+		p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm, p.Instructions, stepsJSON(p.Steps), p.Source, now, now)
 	if err != nil {
 		return err
 	}
@@ -247,9 +267,28 @@ func (r Repo) UpdatePlanned(ctx context.Context, uid int64, p *PlannedSession) e
 		return err
 	}
 	return affected(r.DB.ExecContext(ctx, `UPDATE planned_sessions SET date = ?, sport = ?, title = ?, target_duration_s = ?, target_distance_m = ?,
-		target_pace_min = ?, target_pace_max = ?, target_cadence = ?, instructions = ?, updated_at = ? WHERE user_id = ? AND id = ?`,
+		target_pace_min = ?, target_pace_max = ?, target_cadence = ?, instructions = ?, steps = ?, source = ?, updated_at = ? WHERE user_id = ? AND id = ?`,
 		p.Date, p.Sport, p.Title, p.TargetDurationS, p.TargetDistanceM, p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm,
-		p.TargetCadenceSpm, p.Instructions, r.ts(), uid, p.ID))
+		p.TargetCadenceSpm, p.Instructions, stepsJSON(p.Steps), p.Source, r.ts(), uid, p.ID))
+}
+
+func stepsJSON(steps []workout.Step) string {
+	if len(steps) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(steps)
+	return string(b)
+}
+
+// SetGarminPush records the outcome of a Garmin workout push.
+func (r Repo) SetGarminPush(ctx context.Context, uid, id int64, status string, workoutID *int64, errMsg *string) error {
+	var pushed any
+	if status == "pushed" {
+		pushed = r.ts()
+	}
+	return affected(r.DB.ExecContext(ctx, `UPDATE planned_sessions SET garmin_status = ?, garmin_workout_id = COALESCE(?, garmin_workout_id),
+		garmin_pushed_at = COALESCE(?, garmin_pushed_at), garmin_error = ?, updated_at = ? WHERE user_id = ? AND id = ?`,
+		status, workoutID, pushed, errMsg, r.ts(), uid, id))
 }
 
 func (r Repo) DeletePlanned(ctx context.Context, uid, id int64) error {
@@ -260,7 +299,7 @@ func (r Repo) DeletePlanned(ctx context.Context, uid, id int64) error {
 
 // A shoe's distance sums the activities whose note points to it, or (without a note shoe)
 // whose Strava gear matches it.
-const shoeSelect = `SELECT s.id, s.name, s.brand, s.model, s.drop_mm, s.type, s.strava_gear_id, s.retired, s.note,
+const shoeSelect = `SELECT s.id, s.name, s.brand, s.model, s.drop_mm, s.type, s.strava_gear_id, s.retired, s.note, s.strava_distance_m,
 	COALESCE((SELECT SUM(a.distance_m) FROM activities a LEFT JOIN activity_notes n ON n.activity_id = a.id
 		WHERE a.user_id = s.user_id AND (n.shoe_id = s.id OR (n.shoe_id IS NULL AND s.strava_gear_id IS NOT NULL AND a.strava_gear = s.strava_gear_id))), 0)
 	FROM shoes s`
@@ -271,8 +310,13 @@ func scanShoe(sc interface{ Scan(...any) error }) (Shoe, error) {
 	var gear sql.NullString
 	var retired int
 	var distM float64
-	err := sc.Scan(&s.ID, &s.Name, &s.Brand, &s.Model, &drop, &s.Type, &gear, &retired, &s.Note, &distM)
+	var stravaM sql.NullFloat64
+	err := sc.Scan(&s.ID, &s.Name, &s.Brand, &s.Model, &drop, &s.Type, &gear, &retired, &s.Note, &stravaM, &distM)
 	s.DropMm, s.StravaGearID, s.Retired = nf(drop), ns(gear), retired != 0
+	if stravaM.Valid {
+		km := float64(int64(stravaM.Float64/100+0.5)) / 10
+		s.StravaDistanceKm = &km
+	}
 	s.DistanceKm = float64(int64(distM/100+0.5)) / 10
 	return s, err
 }
@@ -356,7 +400,7 @@ func (r Repo) Notes(ctx context.Context, uid int64, aids []int64) (map[int64]Act
 	for _, id := range aids {
 		args = append(args, id)
 	}
-	rows, err := r.DB.QueryContext(ctx, `SELECT activity_id, pain_during, pain_cold, pain_next_morning, rpe, shoe_id, tags, note, updated_at
+	rows, err := r.DB.QueryContext(ctx, `SELECT activity_id, pain_during, pain_cold, pain_next_morning, rpe, shoe_id, tags, note, updated_at, shoe_auto
 		FROM activity_notes WHERE user_id = ? AND activity_id IN (`+ph+`)`, args...)
 	if err != nil {
 		return nil, err
@@ -368,14 +412,16 @@ func (r Repo) Notes(ctx context.Context, uid int64, aids []int64) (map[int64]Act
 		var pd, pc, pn, rpe sql.NullFloat64
 		var shoe sql.NullInt64
 		var tags string
+		var auto int
 		n := ActivityNotes{}
-		if err := rows.Scan(&aid, &pd, &pc, &pn, &rpe, &shoe, &tags, &n.Note, &upd); err != nil {
+		if err := rows.Scan(&aid, &pd, &pc, &pn, &rpe, &shoe, &tags, &n.Note, &upd, &auto); err != nil {
 			return nil, err
 		}
 		n.PainDuring, n.PainCold, n.PainNextMorning, n.RPE = nf(pd), nf(pc), nf(pn), nf(rpe)
 		if shoe.Valid {
 			id := shoe.Int64
 			n.ShoeID = &id
+			n.ShoeAuto = auto != 0
 			shoeIDs[id] = true
 		}
 		_ = json.Unmarshal([]byte(tags), &n.Tags)
@@ -438,7 +484,8 @@ func (r Repo) PutNotes(ctx context.Context, uid, aid int64, n *ActivityNotes) er
 	_, err := r.DB.ExecContext(ctx, `INSERT INTO activity_notes (activity_id, user_id, pain_during, pain_cold, pain_next_morning, rpe, shoe_id, tags, note, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (activity_id) DO UPDATE SET pain_during = excluded.pain_during, pain_cold = excluded.pain_cold,
-		pain_next_morning = excluded.pain_next_morning, rpe = excluded.rpe, shoe_id = excluded.shoe_id, tags = excluded.tags,
+		pain_next_morning = excluded.pain_next_morning, rpe = excluded.rpe,
+		shoe_auto = CASE WHEN excluded.shoe_id IS activity_notes.shoe_id THEN activity_notes.shoe_auto ELSE 0 END, shoe_id = excluded.shoe_id, tags = excluded.tags,
 		note = excluded.note, updated_at = excluded.updated_at WHERE activity_notes.user_id = excluded.user_id`,
 		aid, uid, n.PainDuring, n.PainCold, n.PainNextMorning, n.RPE, n.ShoeID, string(tags), n.Note, r.ts())
 	return err

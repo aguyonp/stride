@@ -110,7 +110,7 @@ export interface MeterSnapshot {
 
 /* ---------------------------------- Domain (§3.2) ---------------------------------- */
 
-export type Source = 'garmin' | 'strava'
+export type Source = 'garmin' | 'strava' | 'import'
 export interface Freshness {
   source: 'db' | 'cache' | 'live'
   updatedAt: string
@@ -463,8 +463,9 @@ export interface ActivityNotes {
   tags: string[]
   note: string
   updatedAt: string | null
+  shoeAuto?: boolean
 }
-export type ActivityNotesInput = Partial<Omit<ActivityNotes, 'shoe' | 'updatedAt'>>
+export type ActivityNotesInput = Partial<Omit<ActivityNotes, 'shoe' | 'updatedAt' | 'shoeAuto'>>
 
 export interface HistoryRow {
   activityId: number
@@ -521,8 +522,11 @@ export interface PlannedSession {
   targetCadenceSpm: number | null
   instructions: string
   match: PlanMatch | null
+  steps: WorkoutStep[]
+  source: PlanSource
+  garmin: GarminPush
 }
-export type PlannedSessionInput = Omit<PlannedSession, 'id' | 'match'>
+export type PlannedSessionInput = Omit<PlannedSession, 'id' | 'match' | 'steps' | 'source' | 'garmin'> & { steps?: WorkoutStep[]; source?: PlanSource }
 
 export interface WeekPlan {
   weekStart: string
@@ -533,7 +537,7 @@ export interface WeekPlan {
 export interface ActivityView {
   generatedAt: string
   freshness: Freshness
-  sourceLabel: 'Garmin' | 'Strava' | 'Fusion'
+  sourceLabel: 'Garmin' | 'Strava' | 'Fusion' | 'Import'
   activity: ActivityDetail & {
     gapSecPerKm: number | null
     stamina: Stamina | null
@@ -555,6 +559,9 @@ export interface ActivityView {
   alerts: Alert[]
   warnings: string[]
   dataSources: string[]
+  efficiency?: ActivityEfficiency | null
+  impact?: ActivityImpact | null
+  readiness?: ReadinessBanner
 }
 
 export interface DaySummary {
@@ -595,6 +602,7 @@ export interface DayView {
   upcoming: PlannedSession[]
   alerts: Alert[]
   warnings: string[]
+  readiness?: ReadinessBanner
 }
 
 export type FocusArea = 'none' | 'knee_pfps' | 'achilles' | 'shin_splints' | 'other'
@@ -650,4 +658,197 @@ export interface MultiExportResponse {
 
 export interface RestoreResult {
   imported: { goals: number; plan: number; shoes: number; notes: number; checkins: number; profile: number | boolean }
+}
+
+/* ---------------------------------- V3 (§11) ---------------------------------- */
+
+export type LLMProvider = 'gemini' | 'anthropic' | 'openai' | 'openai_compat'
+export interface LLMConfig {
+  configured: boolean
+  provider: LLMProvider | null
+  model: string | null
+  baseUrl: string | null
+  keyHint: string | null
+  updatedAt: string | null
+}
+export interface LLMConfigInput {
+  provider: LLMProvider
+  model: string
+  baseUrl?: string
+  apiKey?: string
+}
+export interface LLMTestResult {
+  ok: boolean
+  latencyMs: number
+  message: string
+}
+type LLMAnalysisKind = 'activity' | 'day' | 'multi'
+export interface LLMAnalyzeRequest {
+  kind: LLMAnalysisKind
+  activityId?: number
+  date?: string
+  activityIds?: number[]
+  weeks?: number
+  include?: IncludeKey[]
+  question?: string
+}
+export interface LLMAnalysis {
+  id: number
+  kind: string
+  ref: string
+  provider: string
+  model: string
+  markdown: string
+  promptTokensEstimate: number
+  durationMs: number
+  createdAt: string
+}
+
+export type StepType = 'warmup' | 'run' | 'interval' | 'recovery' | 'rest' | 'cooldown' | 'repeat'
+export type TargetKind = 'none' | 'pace' | 'hr' | 'cadence' | 'power'
+export interface WorkoutStep {
+  type: StepType
+  durationS?: number
+  distanceM?: number
+  repeat?: number
+  steps?: WorkoutStep[]
+  target?: { kind: TargetKind; min?: number; max?: number }
+  note?: string
+}
+type PlanSource = 'manual' | 'llm' | 'import'
+export interface GarminPush {
+  status: 'none' | 'pushed' | 'failed' | 'unsupported'
+  workoutId: number | null
+  pushedAt: string | null
+  error: string | null
+}
+export interface PlanGenerateRequest {
+  mode: 'prompt' | 'llm'
+  horizon: 'session' | 'week'
+  startDate: string
+  note?: string
+}
+export interface PlanPromptResponse {
+  prompt: string
+  tokensEstimate: number
+}
+export interface PlanDraftsResponse {
+  drafts: PlannedSessionInput[]
+  errors: string[]
+  raw?: string
+}
+export interface CalendarDay {
+  date: string
+  planned: PlannedSession[]
+  done: ActivitySummary[]
+}
+
+export interface ActivityEfficiency {
+  eligible: boolean
+  reason: string | null
+  efSpeed: number | null
+  efPower: number | null
+  trendChangePct: number | null
+}
+export interface ActivityImpact {
+  steps: number | null
+  stepsPerKm: number | null
+  voFactor: number | null
+  descentFactor: number | null
+  jointIndex: number | null
+  jointIndex7d: number | null
+}
+interface EfficiencyPoint {
+  date: string
+  activityId: number
+  efSpeed: number | null
+  efPower: number | null
+  avgHR: number | null
+  paceSecPerKm: number | null
+}
+export interface EfficiencyTrend {
+  points: EfficiencyPoint[]
+  rollingEfSpeed: (number | null)[]
+  changePct: number | null
+}
+type ReadinessLevel = 'green' | 'orange' | 'red' | 'unknown'
+export interface ReadinessBanner {
+  level: ReadinessLevel
+  title: string
+  reasons: string[]
+  hrv7dAvg: number | null
+  hrvBaselineLow: number | null
+  nightsBelowBaseline: number | null
+  sleep7dAvg: number | null
+  loadRatio: number | null
+}
+
+export type TrackPoint = [lat: number, lon: number, tS: number, cadenceSpm: number | null, gradePct: number | null]
+export interface ActivityTrack {
+  points: TrackPoint[]
+  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number } | null
+}
+
+export type NotificationKind = 'discord' | 'telegram' | 'json'
+export interface NotificationTarget {
+  id: number
+  kind: NotificationKind
+  label: string
+  enabled: boolean
+  hint: string
+  lastStatus: string | null
+  lastSentAt: string | null
+  lastError: string | null
+}
+export interface NotificationInput {
+  kind: NotificationKind
+  label: string
+  enabled: boolean
+  url?: string
+  botToken?: string
+  chatId?: string
+}
+export interface NotificationTestResult {
+  ok: boolean
+  status: number | string
+  message: string
+}
+export interface ImportResult {
+  activityId: number
+  merged: boolean
+}
+
+export interface BuildInfo {
+  version: string
+  commit: string
+  builtAt: string
+  go: string
+  label: string
+}
+
+type LogCategory = 'request' | 'user_action'
+export interface LogEntry {
+  id: number
+  at: string
+  category: LogCategory
+  level: 'info' | 'error'
+  userId: number | null
+  userName: string | null
+  method: string
+  target: string
+  provider: string
+  status: number
+  durationMs: number
+  action: string
+  message: string
+}
+export interface LogPage {
+  items: LogEntry[]
+  nextBefore: number | null
+  dropped: number
+}
+export interface LogFilter {
+  category: 'all' | LogCategory
+  level: 'all' | 'error'
+  userId: number | null
 }

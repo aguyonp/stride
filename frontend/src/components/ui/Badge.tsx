@@ -10,7 +10,7 @@ const LEVEL_TEXT: Record<AlertLevel, string> = {
   danger: 'text-danger',
 }
 
-export const LEVEL_BG: Record<AlertLevel, string> = {
+const LEVEL_BG: Record<AlertLevel, string> = {
   ok: 'bg-ok/12 border-ok/25',
   info: 'bg-info/12 border-info/25',
   warn: 'bg-warn/12 border-warn/30',

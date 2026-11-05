@@ -28,6 +28,8 @@ Aucun split disponible.
 - **Dérive cardiaque :** N/D | **Stamina Fenix 8 :** N/D
 - **Charge séance :** Garmin Load N/D | Impact Load: N/D | TE Aérobie: N/D | Strava Relative Effort: N/D
 - **Ratio de charge global :** N/D
+- **Efficience aérobie (EF) :** N/D
+- **Charge d'impact cumulée :** N/D
 - **Charge croisée (48h) :** Vélo: aucune sortie | Escaliers (J-1/J): N/D | Pas (J-1): N/D | Stress J-1: N/D
 
 ### RÉCUPÉRATION & PRÉPARATION (NUIT PRÉCÉDENTE)

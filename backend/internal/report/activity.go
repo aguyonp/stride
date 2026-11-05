@@ -13,6 +13,7 @@ import (
 // Activity renders the single-session prompt (§6.2).
 func Activity(v *view.ActivityView, prof athlete.Profile, inc Include) string {
 	b := newBuilder()
+	writeReadinessPriority(b, v.Readiness)
 	if inc.Has(ChipPlan) {
 		writeContext(b, prof, v.Goals, plannedTodayText(v), v.Upcoming)
 	}
@@ -263,6 +264,8 @@ func writeLoad(b *builder, v *view.ActivityView) {
 	} else {
 		b.raw("- **Ratio de charge global :** " + f.ND)
 	}
+	b.raw(efficiencyText(v.Efficiency))
+	b.raw(impactText(v.Impact))
 	cl := v.CrossLoad
 	b.line("- **Charge croisée (48h) :** Vélo: %s | Escaliers (J-1/J): %s | Pas (J-1): %s | Stress J-1: %s",
 		bikeText(cl.Bike), floorsText(cl.Floors.PrevDayUp, cl.Floors.DayUp), intOr(cl.Steps.PrevDay), outOf100(cl.StressPrevDay))
@@ -280,4 +283,28 @@ func floorsText(prev, day *float64) string {
 		return f.ND
 	}
 	return intOr(prev) + " / " + intOr(day) + " étages"
+}
+
+func efficiencyText(ef *analysis.Efficiency) string {
+	if ef == nil || ef.EfSpeed == nil {
+		reason := ""
+		if ef != nil && ef.Reason != nil {
+			reason = " (" + *ef.Reason + ")"
+		}
+		return "- **Efficience aérobie (EF) :** " + f.ND + reason
+	}
+	trend := f.ND
+	if ef.TrendChangePct != nil {
+		trend = f.Signed(*ef.TrendChangePct, 0) + " %"
+	}
+	return fmt.Sprintf("- **Efficience aérobie (EF) :** %s m/min/bpm | Pw:HR %s W/bpm (tendance 8 sem. : %s)",
+		decOr(ef.EfSpeed, 2), decOr(ef.EfPower, 2), trend)
+}
+
+func impactText(im *analysis.Impact) string {
+	if im == nil || im.Steps == nil {
+		return "- **Charge d'impact cumulée :** " + f.ND
+	}
+	return fmt.Sprintf("- **Charge d'impact cumulée :** %s foulées | Indice articulaire %s (OV ×%s · D- ×%s) | 7 j : %s",
+		intOr(im.Steps), decOr(im.JointIndex, 1), decOr(im.VoFactor, 2), decOr(im.DescentFactor, 2), decOr(im.JointIndex7d, 1))
 }

@@ -1,6 +1,24 @@
 import type {
+  BuildInfo,
+  LogFilter,
+  LogPage,
   ActivityListResponse,
   ActivityNotes,
+  ActivityTrack,
+  CalendarDay,
+  EfficiencyTrend,
+  ImportResult,
+  LLMAnalysis,
+  LLMAnalyzeRequest,
+  LLMConfig,
+  LLMConfigInput,
+  LLMTestResult,
+  NotificationInput,
+  NotificationTarget,
+  NotificationTestResult,
+  PlanDraftsResponse,
+  PlanGenerateRequest,
+  PlanPromptResponse,
   ActivityNotesInput,
   ActivityView,
   AdminConnection,
@@ -67,7 +85,7 @@ function isErrorBody(v: unknown): v is ApiErrorBody {
 
 type Body = unknown
 
-async function send(path: string, opts: { method?: string; body?: Body; accept?: string; rawBody?: BodyInit } = {}): Promise<Response> {
+async function send(path: string, opts: { method?: string; body?: Body; accept?: string; rawBody?: BodyInit; form?: FormData } = {}): Promise<Response> {
   const method = (opts.method ?? 'GET').toUpperCase()
   const headers: Record<string, string> = { Accept: opts.accept ?? 'application/json' }
   if (!SAFE_METHODS.has(method)) headers['X-Stride-CSRF'] = '1'
@@ -77,6 +95,7 @@ async function send(path: string, opts: { method?: string; body?: Body; accept?:
     headers['Content-Type'] = 'application/json'
     body = JSON.stringify(opts.body)
   }
+  if (opts.form) body = opts.form
   let res: Response
   try {
     res = await transport(path, { method, headers, body, credentials: 'same-origin' })
@@ -160,6 +179,14 @@ export const api = {
   adminSettings: () => json<AdminSettings>('/api/admin/settings'),
   adminUpdateSettings: (body: AdminSettings) => json<AdminSettings>('/api/admin/settings', { method: 'PUT', body }),
   adminMeter: () => json<MeterSnapshot>('/api/admin/meter'),
+  adminLogs: (f: LogFilter, before?: number) => {
+    const q = new URLSearchParams({ category: f.category, level: f.level, limit: '100' })
+    if (f.userId) q.set('userId', String(f.userId))
+    if (before) q.set('before', String(before))
+    return json<LogPage>(`/api/admin/logs?${q.toString()}`)
+  },
+  version: () => json<BuildInfo>('/api/version'),
+  trackAction: (action: 'prompt.copy' | 'prompt.download' | 'prompt.share') => json<void>('/api/actions', { method: 'POST', body: { action } }),
   adminFlushCache: () => json<{ removed: number }>('/api/admin/cache/flush', { method: 'POST' }),
   adminConnections: () => json<AdminConnection[]>('/api/admin/connections'),
   adminResync: (id: number) => json<void>(`/api/admin/users/${id}/resync`, { method: 'POST' }),
@@ -218,6 +245,41 @@ export const api = {
   },
   restore: (mode: 'merge' | 'replace', backup: string) =>
     send(`/api/backup/restore${qs({ mode })}`, { method: 'POST', rawBody: backup }).then((r) => r.json() as Promise<RestoreResult>),
+
+  llm: () => json<LLMConfig>('/api/llm'),
+  saveLlm: (body: LLMConfigInput) => json<LLMConfig>('/api/llm', { method: 'PUT', body }),
+  deleteLlm: () => json<void>('/api/llm', { method: 'DELETE' }),
+  testLlm: () => json<LLMTestResult>('/api/llm/test', { method: 'POST' }),
+  analyze: (body: LLMAnalyzeRequest) => json<LLMAnalysis>('/api/llm/analyze', { method: 'POST', body }),
+  analyses: (kind: string, ref: string) => json<LLMAnalysis[]>(`/api/llm/analyses${qs({ kind, ref })}`),
+
+  planGenerate: <T extends PlanPromptResponse | PlanDraftsResponse>(body: PlanGenerateRequest) => json<T>('/api/plan/generate', { method: 'POST', body }),
+  planImport: (text: string) => json<PlanDraftsResponse>('/api/plan/import', { method: 'POST', body: { text } }),
+  planBulk: (sessions: PlannedSessionInput[]) => json<PlannedSession[]>('/api/plan/bulk', { method: 'POST', body: { sessions } }),
+  pushGarmin: (id: number) => json<PlannedSession>(`/api/plan/${id}/push-garmin`, { method: 'POST' }),
+  workoutFitUrl: (id: number) => `/api/plan/${id}/workout.fit`,
+  workoutFit: async (id: number) => {
+    const res = await send(`/api/plan/${id}/workout.fit`, { accept: 'application/octet-stream' })
+    return { blob: await res.blob(), filename: filenameFrom(res, `stride-workout-${id}.fit`) }
+  },
+  calendar: (from: string, to: string) => json<{ days: CalendarDay[] }>(`/api/calendar${qs({ from, to })}`),
+
+  efficiencyTrend: (weeks = 12) => json<EfficiencyTrend>(`/api/trends/efficiency${qs({ weeks })}`),
+  track: (id: number) => json<ActivityTrack>(`/api/activities/${id}/track`),
+
+  notifications: () => json<NotificationTarget[]>('/api/notifications'),
+  createNotification: (body: NotificationInput) => json<NotificationTarget>('/api/notifications', { method: 'POST', body }),
+  updateNotification: (id: number, body: Partial<NotificationInput>) => json<NotificationTarget>(`/api/notifications/${id}`, { method: 'PATCH', body }),
+  deleteNotification: (id: number) => json<void>(`/api/notifications/${id}`, { method: 'DELETE' }),
+  testNotification: (id: number) => json<NotificationTestResult>(`/api/notifications/${id}/test`, { method: 'POST' }),
+
+  importFile: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await send('/api/imports', { method: 'POST', form })
+    return (await res.json()) as ImportResult
+  },
+  mergeShoe: (id: number, intoId: number) => json<Shoe | void>(`/api/shoes/${id}/merge`, { method: 'POST', body: { intoId } }),
 }
 
 /** Full-page navigation to the Strava OAuth flow (the mock resolves the redirect locally). */

@@ -6,4 +6,6 @@ services:
     build:
       context: .
       args:
-        VERSION: local
+        VERSION: ${STRIDE_BUILD_VERSION:-local}
+        COMMIT: ${STRIDE_COMMIT:-}
+        BUILD_DATE: ${STRIDE_BUILD_DATE:-}

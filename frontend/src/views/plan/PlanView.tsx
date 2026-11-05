@@ -1,8 +1,13 @@
-import { CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Plus, Target } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Plus, Sparkles, Target } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGoalMutations, useGoals, usePlanMutations, useProfile, useWeekPlan } from '../../api/queries'
 import type { ActivitySummary, Goal, PlannedSession, WeekPlan } from '../../api/types'
 import { DoneActivityRow } from '../../components/plan/DoneActivityRow'
+import { GenerateDialog } from '../../components/plan/GenerateDialog'
+import { MonthCalendar } from '../../components/plan/MonthCalendar'
+import { PlannedSessionDetail } from '../../components/plan/PlannedSessionDetail'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
+import { useStoredState } from '../../hooks/useStoredState'
 import { GoalDialog } from '../../components/plan/GoalDialog'
 import { GoalRow } from '../../components/plan/GoalRow'
 import { PlannedSessionCard } from '../../components/plan/PlannedSessionCard'
@@ -15,7 +20,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { cn } from '../../lib/cn'
-import { addDays, capitalize, fmtDateLong, fmtHM, fmtKm, fmtWeekdayShort, mondayOf, parseLocal, todayISO } from '../../lib/format'
+import { addDays, capitalize, fmtDateLong, fmtHM, fmtKm, fmtMonthYear, fmtWeekdayShort, mondayOf, parseLocal, todayISO } from '../../lib/format'
 import { PLAN_SPORT_LABEL } from '../../lib/labels'
 
 type DayEntry = WeekPlan['days'][number]
@@ -79,9 +84,10 @@ interface DayProps {
   onAdd: (date: string) => void
   onEdit: (s: PlannedSession) => void
   onDelete: (s: PlannedSession) => void
+  onOpen: (s: PlannedSession) => void
 }
 
-function DayBlock({ day, today, layout, onAdd, onEdit, onDelete }: DayProps) {
+function DayBlock({ day, today, layout, onAdd, onEdit, onDelete, onOpen }: DayProps) {
   const isToday = day.date === today
   const past = day.date < today
   const matchedIds = new Set(day.planned.map((p) => p.match?.activityId).filter((id): id is number => id !== null && id !== undefined))
@@ -95,7 +101,7 @@ function DayBlock({ day, today, layout, onAdd, onEdit, onDelete }: DayProps) {
   return (
     <section
       aria-label={`${longLabel}${isToday ? ', aujourd’hui' : ''}`}
-      className={cn('glass min-w-0 p-3', isToday && 'ring-2 ring-accent/60', past && !isToday && 'opacity-90', layout === 'row' && 'sm:p-4')}
+      className={cn('min-w-0 rounded-2xl border border-line bg-white/[0.02] p-3', isToday && 'border-accent/50 ring-1 ring-accent/40', past && !isToday && 'opacity-90', layout === 'row' && 'sm:p-4')}
     >
       <header className="mb-2.5 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-1.5">
@@ -119,6 +125,7 @@ function DayBlock({ day, today, layout, onAdd, onEdit, onDelete }: DayProps) {
               doneActivity={s.match?.activityId ? (byId.get(s.match.activityId) ?? null) : null}
               onEdit={() => onEdit(s)}
               onDelete={() => onDelete(s)}
+              onOpen={() => onOpen(s)}
             />
           ))}
           {extras.map((a) => (
@@ -164,6 +171,20 @@ export default function PlanView() {
   const [goalDialog, setGoalDialog] = useState<{ open: boolean; goal: Goal | null }>({ open: false, goal: null })
   const [deleteSession, setDeleteSession] = useState<PlannedSession | null>(null)
   const [deleteGoal, setDeleteGoal] = useState<Goal | null>(null)
+  const [mode, setMode] = useStoredState<'week' | 'month'>('stride.plan.view', 'week', (v) => (v === 'month' || v === 'week' ? v : undefined))
+  const [genOpen, setGenOpen] = useState(false)
+  const [detail, setDetail] = useState<PlannedSession | null>(null)
+  const month = (anchor ?? today).slice(0, 7)
+  const shiftMonth = (n: number) => {
+    const p = parseLocal(`${month}-01`)
+    if (!p) return
+    const d = new Date(p.y, p.mo - 1 + n, 1)
+    setAnchor(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`)
+  }
+  const monthTitle = (() => {
+    const p = parseLocal(`${month}-01`)
+    return p ? capitalize(fmtMonthYear(p.y, p.mo - 1)) : month
+  })()
 
   const data = week.data && week.data.weekStart === weekStart ? week.data : undefined
   const days = data?.days ?? emptyWeek(weekStart)
@@ -203,11 +224,14 @@ export default function PlanView() {
     <div className="animate-in">
       <PageHeader
         title="Planning & objectifs"
-        subtitle="Planifie ta semaine, compare le prévu au réalisé et garde tes objectifs en vue."
+        subtitle="Planifie, génère avec ton IA, envoie sur ta montre et compare le prévu au réalisé."
         actions={
           <>
             <button type="button" className="btn btn-ghost" onClick={() => setGoalDialog({ open: true, goal: null })}>
               <Target className="size-4" aria-hidden="true" /> Nouvel objectif
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setGenOpen(true)}>
+              <Sparkles className="size-4 text-accent" aria-hidden="true" /> Générer
             </button>
             <button type="button" className="btn btn-primary" onClick={() => addSession(defaultAddDate)}>
               <CalendarPlus className="size-4" aria-hidden="true" /> Planifier une séance
@@ -219,24 +243,44 @@ export default function PlanView() {
       <Card
         as="section"
         aria-label="Semaine affichée"
-        title={<span className="num">{weekLabel(weekStart)}</span>}
-        subtitle={weekStart === currentWeek ? 'Semaine en cours' : weekStart < currentWeek ? 'Semaine passée' : 'Semaine à venir'}
+        title={<span className="num">{mode === 'month' ? monthTitle : weekLabel(weekStart)}</span>}
+        subtitle={mode === 'month' ? 'Prévu vs réalisé sur le mois' : weekStart === currentWeek ? 'Semaine en cours' : weekStart < currentWeek ? 'Semaine passée' : 'Semaine à venir'}
         icon={<CalendarRange className="size-4" />}
         action={
-          <div className="flex items-center gap-1.5">
-            <button type="button" className="icon-btn size-9" onClick={() => setAnchor(addDays(weekStart, -7))} aria-label="Semaine précédente">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SegmentedControl
+              ariaLabel="Affichage"
+              size="sm"
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'week', label: 'Semaine', icon: <CalendarRange /> },
+                { value: 'month', label: 'Mois', icon: <CalendarDays /> },
+              ]}
+            />
+            <button type="button" className="icon-btn size-9" onClick={() => (mode === 'month' ? shiftMonth(-1) : setAnchor(addDays(weekStart, -7)))} aria-label={mode === 'month' ? 'Mois précédent' : 'Semaine précédente'}>
               <ChevronLeft className="size-4" />
             </button>
-            <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={() => setAnchor(null)} disabled={weekStart === currentWeek}>
-              Cette semaine
+            <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs max-sm:hidden" onClick={() => setAnchor(null)} disabled={mode === 'month' ? month === today.slice(0, 7) : weekStart === currentWeek}>
+              Aujourd’hui
             </button>
-            <button type="button" className="icon-btn size-9" onClick={() => setAnchor(addDays(weekStart, 7))} aria-label="Semaine suivante">
+            <button type="button" className="icon-btn size-9" onClick={() => (mode === 'month' ? shiftMonth(1) : setAnchor(addDays(weekStart, 7)))} aria-label={mode === 'month' ? 'Mois suivant' : 'Semaine suivante'}>
               <ChevronRight className="size-4" />
             </button>
           </div>
         }
       >
-        {week.isError && !data ? (
+        {mode === 'month' ? (
+          <MonthCalendar
+            month={month}
+            today={today}
+            onOpenSession={setDetail}
+            onPickDay={(d) => {
+              setAnchor(d)
+              setMode('week')
+            }}
+          />
+        ) : week.isError && !data ? (
           <InlineError>{week.error.message}</InlineError>
         ) : (
           <div aria-live="polite" aria-busy={week.isFetching}>
@@ -245,15 +289,15 @@ export default function PlanView() {
         )}
       </Card>
 
-      <div className={cn('mt-4 transition-opacity', stale && 'is-refetching')} aria-busy={week.isFetching}>
+      <div className={cn('mt-4 transition-opacity', stale && 'is-refetching', mode === 'month' && 'hidden')} aria-busy={week.isFetching}>
         <div className="hidden gap-3 xl:grid xl:grid-cols-7">
           {days.map((d) => (
-            <DayBlock key={d.date} day={d} today={today} layout="column" onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} />
+            <DayBlock key={d.date} day={d} today={today} layout="column" onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} onOpen={setDetail} />
           ))}
         </div>
         <div className="space-y-3 xl:hidden">
           {days.map((d) => (
-            <DayBlock key={d.date} day={d} today={today} layout="row" onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} />
+            <DayBlock key={d.date} day={d} today={today} layout="row" onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} onOpen={setDetail} />
           ))}
         </div>
         {data && data.days.every((d) => d.planned.length === 0) && (
@@ -325,6 +369,8 @@ export default function PlanView() {
         defaultDate={sessionDialog.date}
         onClose={() => setSessionDialog((s) => ({ ...s, open: false }))}
       />
+      {genOpen && <GenerateDialog open={genOpen} onClose={() => setGenOpen(false)} today={today} />}
+      <PlannedSessionDetail session={detail} onClose={() => setDetail(null)} onEdit={editSession} onDelete={setDeleteSession} />
       <GoalDialog open={goalDialog.open} goal={goalDialog.goal} onClose={() => setGoalDialog((s) => ({ ...s, open: false }))} />
       <ConfirmDialog
         open={deleteSession !== null}

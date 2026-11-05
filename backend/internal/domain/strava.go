@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"stride/internal/apimeter"
@@ -107,6 +108,10 @@ func (s *Services) processStravaEvent(ctx context.Context, ev strava.WebhookEven
 	}
 	_, _ = s.db().ExecContext(ctx, `UPDATE activities SET bundle_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`, s.now().Unix(), s.now().Unix(), id, uid)
 	s.log.Info("🔗 Activité Strava enregistrée", "user", uid, "aspect", ev.AspectType)
+	if err := s.autoAssignShoes(ctx, uid); err != nil {
+		s.log.Warn("⚠️ Association automatique des chaussures en échec", "user", uid, "err", errText(err))
+	}
+	s.notifyPending(ctx, uid)
 	return nil
 }
 
@@ -153,33 +158,50 @@ func (s *Services) ImportStravaShoes(ctx context.Context, uid int64) ([]athlete.
 			continue
 		}
 		gid := g.ID
+		name := g.Name
+		if name == "" {
+			name = strings.TrimSpace(g.BrandName + " " + g.ModelName)
+		}
 		var cur *athlete.Shoe
 		for i := range existing {
 			if existing[i].StravaGearID != nil && *existing[i].StravaGearID == gid {
 				cur = &existing[i]
 			}
 		}
-		name := g.Name
-		if name == "" {
-			name = (g.BrandName + " " + g.ModelName)
+		if cur == nil {
+			for i := range existing {
+				if existing[i].StravaGearID == nil && sameShoe(existing[i], name, g.BrandName, g.ModelName) {
+					cur = &existing[i]
+					cur.StravaGearID = &gid
+					break
+				}
+			}
 		}
 		if cur == nil {
 			sh := athlete.Shoe{Name: name, Brand: g.BrandName, Model: g.ModelName, Type: "soft", StravaGearID: &gid, Retired: g.Retired, Note: g.Description}
 			if err := r.CreateShoe(ctx, uid, &sh); err != nil {
 				return nil, err
 			}
-			continue
+			existing = append(existing, sh)
+			cur = &existing[len(existing)-1]
+		} else {
+			cur.Name, cur.Retired = name, g.Retired
+			if g.BrandName != "" {
+				cur.Brand = g.BrandName
+			}
+			if g.ModelName != "" {
+				cur.Model = g.ModelName
+			}
+			if err := r.UpdateShoe(ctx, uid, cur); err != nil {
+				return nil, err
+			}
 		}
-		cur.Name, cur.Retired = name, g.Retired
-		if g.BrandName != "" {
-			cur.Brand = g.BrandName
-		}
-		if g.ModelName != "" {
-			cur.Model = g.ModelName
-		}
-		if err := r.UpdateShoe(ctx, uid, cur); err != nil {
+		if _, err := s.db().ExecContext(ctx, `UPDATE shoes SET strava_distance_m = ? WHERE id = ? AND user_id = ?`, g.DistanceM, cur.ID, uid); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.autoAssignShoes(ctx, uid); err != nil {
+		return nil, err
 	}
 	return r.Shoes(ctx, uid)
 }

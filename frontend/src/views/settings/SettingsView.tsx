@@ -1,4 +1,4 @@
-import { CircleUser, DatabaseBackup, Footprints, KeyRound, Monitor, Moon, Palette, Plug, Sun, UserRound, type LucideIcon } from 'lucide-react'
+import { Bell, Bot, CircleUser, DatabaseBackup, FileUp, Footprints, KeyRound, Monitor, Moon, Palette, Plug, Sun, UserRound, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Me } from '../../api/types'
 import { consumeStravaResult } from '../../components/profile/StravaConnect'
@@ -10,19 +10,26 @@ import { useTheme, type ThemePref } from '../../hooks/useTheme'
 import { cn } from '../../lib/cn'
 import { AccountSection } from './AccountSection'
 import { BackupSection } from './BackupSection'
+import { ImportSection } from './ImportSection'
 import { IntegrationsSection } from './IntegrationsSection'
+import { LlmSection } from './LlmSection'
+import { NotificationsSection } from './NotificationsSection'
 import { PasskeysSection } from './PasskeysSection'
 import { ProfileSection } from './ProfileSection'
 import { Section } from './Section'
 import { ShoesSection } from './ShoesSection'
+import { VersionFooter } from './VersionFooter'
 
 const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'profil', label: 'Profil & seuils', icon: UserRound },
   { id: 'apparence', label: 'Apparence', icon: Palette },
   { id: 'integrations', label: 'Intégrations', icon: Plug },
+  { id: 'ia', label: 'IA', icon: Bot },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'chaussures', label: 'Chaussures', icon: Footprints },
   { id: 'passkeys', label: 'Passkeys', icon: KeyRound },
   { id: 'sauvegarde', label: 'Sauvegarde', icon: DatabaseBackup },
+  { id: 'import', label: 'Import de secours', icon: FileUp },
   { id: 'compte', label: 'Compte', icon: CircleUser },
 ]
 
@@ -78,7 +85,7 @@ export default function SettingsView({ me }: { me: Me }) {
 
   return (
     <div>
-      <PageHeader title="Réglages" subtitle="Profil, intégrations, équipement, sécurité et données." />
+      <PageHeader title="Réglages" subtitle="Profil, intégrations, IA, notifications, équipement, sécurité et données." />
       <nav aria-label="Sections des réglages" className="scroll-thin -mx-4 mb-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:hidden">
         <ul className="flex w-max gap-2">
           {SECTIONS.map((s) => (
@@ -124,10 +131,14 @@ export default function SettingsView({ me }: { me: Me }) {
             />
           </Section>
           <IntegrationsSection />
+          <LlmSection />
+          <NotificationsSection />
           <ShoesSection />
           <PasskeysSection />
           <BackupSection />
+          <ImportSection />
           <AccountSection me={me} />
+          <VersionFooter />
         </div>
       </div>
     </div>

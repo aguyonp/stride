@@ -50,11 +50,12 @@ type Record struct {
 	StaminaPct      float64 // potential stamina
 	AvailStaminaPct float64
 	GradePct        float64
+	Lat, Lon        float64 // degrees; only served by the track endpoint
 }
 
 func emptyRecord(t float64) Record {
 	return Record{T: t, HR: NaN, CadenceSpm: NaN, SpeedMS: NaN, PowerW: NaN, AltM: NaN, DistM: NaN, GCTMs: NaN, VOCm: NaN,
-		VRPct: NaN, StepM: NaN, GCTBalLeftPct: NaN, GAPSpeedMS: NaN, StaminaPct: NaN, AvailStaminaPct: NaN, GradePct: NaN}
+		VRPct: NaN, StepM: NaN, GCTBalLeftPct: NaN, GAPSpeedMS: NaN, StaminaPct: NaN, AvailStaminaPct: NaN, GradePct: NaN, Lat: NaN, Lon: NaN}
 }
 
 type Lap struct {
@@ -252,6 +253,7 @@ func convert(act *filedef.Activity) *Activity {
 		rec.VRPct = r.VerticalRatioScaled()
 		rec.StepM = r.StepLengthScaled() / 1000
 		rec.GCTBalLeftPct = r.StanceTimeBalanceScaled()
+		rec.Lat, rec.Lon = degrees(r.PositionLatDegrees()), degrees(r.PositionLongDegrees())
 		if rec.HR == 0 {
 			rec.HR = NaN
 		}

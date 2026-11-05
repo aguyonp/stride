@@ -16,6 +16,8 @@ import (
 const (
 	csrfHeader   = "X-Stride-CSRF"
 	maxBodyBytes = 16 << 20
+	// maxImportBodyBytes fits a 25 MB rescue import plus the multipart envelope.
+	maxImportBodyBytes = 27 << 20
 )
 
 type statusWriter struct {
@@ -155,7 +157,11 @@ func withCSRF(next http.Handler) http.Handler {
 func withBodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil && r.Body != http.NoBody {
-			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+			limit := int64(maxBodyBytes)
+			if r.Method == http.MethodPost && r.URL.Path == "/api/imports" {
+				limit = maxImportBodyBytes
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})

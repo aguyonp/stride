@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"stride/internal/workout"
 )
 
 type Goal struct {
@@ -32,18 +34,31 @@ type PlanMatch struct {
 }
 
 type PlannedSession struct {
-	ID                    int64      `json:"id"`
-	Date                  string     `json:"date"`
-	Sport                 string     `json:"sport"`
-	Title                 string     `json:"title"`
-	TargetDurationS       *float64   `json:"targetDurationS"`
-	TargetDistanceM       *float64   `json:"targetDistanceM"`
-	TargetPaceMinSecPerKm *float64   `json:"targetPaceMinSecPerKm"`
-	TargetPaceMaxSecPerKm *float64   `json:"targetPaceMaxSecPerKm"`
-	TargetCadenceSpm      *float64   `json:"targetCadenceSpm"`
-	Instructions          string     `json:"instructions"`
-	Match                 *PlanMatch `json:"match"`
+	ID                    int64          `json:"id"`
+	Date                  string         `json:"date"`
+	Sport                 string         `json:"sport"`
+	Title                 string         `json:"title"`
+	TargetDurationS       *float64       `json:"targetDurationS"`
+	TargetDistanceM       *float64       `json:"targetDistanceM"`
+	TargetPaceMinSecPerKm *float64       `json:"targetPaceMinSecPerKm"`
+	TargetPaceMaxSecPerKm *float64       `json:"targetPaceMaxSecPerKm"`
+	TargetCadenceSpm      *float64       `json:"targetCadenceSpm"`
+	Instructions          string         `json:"instructions"`
+	Steps                 []workout.Step `json:"steps"`
+	Source                string         `json:"source"` // manual | llm | import
+	Garmin                GarminPush     `json:"garmin"`
+	Match                 *PlanMatch     `json:"match"`
 }
+
+// GarminPush is the state of the Garmin Connect workout push of a planned session.
+type GarminPush struct {
+	Status    string  `json:"status"` // none | pushed | failed | unsupported
+	WorkoutID *int64  `json:"workoutId"`
+	PushedAt  *string `json:"pushedAt"`
+	Error     *string `json:"error"`
+}
+
+var PlanSources = []string{"manual", "llm", "import"}
 
 type Shoe struct {
 	ID           int64    `json:"id"`
@@ -55,7 +70,9 @@ type Shoe struct {
 	StravaGearID *string  `json:"stravaGearId"`
 	Retired      bool     `json:"retired"`
 	DistanceKm   float64  `json:"distanceKm"`
-	Note         string   `json:"note"`
+	// StravaDistanceKm is the total distance reported by Strava for this gear (all-time).
+	StravaDistanceKm *float64 `json:"stravaDistanceKm"`
+	Note             string   `json:"note"`
 }
 
 type ActivityNotes struct {
@@ -65,14 +82,16 @@ type ActivityNotes struct {
 	RPE             *float64 `json:"rpe"`
 	ShoeID          *int64   `json:"shoeId"`
 	Shoe            *Shoe    `json:"shoe"`
-	Tags            []string `json:"tags"`
-	Note            string   `json:"note"`
-	UpdatedAt       *string  `json:"updatedAt"`
+	// ShoeAuto is true when the shoe was assigned from the Strava gear, not by the athlete.
+	ShoeAuto  bool     `json:"shoeAuto"`
+	Tags      []string `json:"tags"`
+	Note      string   `json:"note"`
+	UpdatedAt *string  `json:"updatedAt"`
 }
 
 func (n ActivityNotes) IsEmpty() bool {
 	return n.PainDuring == nil && n.PainCold == nil && n.PainNextMorning == nil && n.RPE == nil &&
-		n.ShoeID == nil && len(n.Tags) == 0 && strings.TrimSpace(n.Note) == ""
+		(n.ShoeID == nil || n.ShoeAuto) && len(n.Tags) == 0 && strings.TrimSpace(n.Note) == ""
 }
 
 type DailyCheckin struct {
@@ -173,7 +192,20 @@ func (ps *PlannedSession) Normalize() error {
 	ps.Title = strings.TrimSpace(ps.Title)
 	ps.Instructions = strings.TrimSpace(ps.Instructions)
 	ps.Match = nil
+	ps.Steps = workout.Normalize(ps.Steps)
+	if ps.Source == "" {
+		ps.Source = "manual"
+	}
+	if ps.Garmin.Status == "" {
+		ps.Garmin.Status = "none"
+	}
 	var errs []error
+	if !oneOf(ps.Source, PlanSources) {
+		errs = append(errs, fmt.Errorf("source invalide (%s)", strings.Join(PlanSources, ", ")))
+	}
+	for _, e := range workout.Validate(ps.Steps, "") {
+		errs = append(errs, errors.New(e))
+	}
 	if !ValidDate(ps.Date) {
 		errs = append(errs, errors.New("date attendue au format AAAA-MM-JJ"))
 	}
@@ -306,13 +338,13 @@ func Patch(dst any, body []byte, allowed, readOnly []string) error {
 
 var (
 	GoalFields      = []string{"title", "kind", "targetValue", "targetUnit", "targetDate", "status", "note"}
-	PlanFields      = []string{"date", "sport", "title", "targetDurationS", "targetDistanceM", "targetPaceMinSecPerKm", "targetPaceMaxSecPerKm", "targetCadenceSpm", "instructions"}
+	PlanFields      = []string{"date", "sport", "title", "targetDurationS", "targetDistanceM", "targetPaceMinSecPerKm", "targetPaceMaxSecPerKm", "targetCadenceSpm", "instructions", "steps", "source"}
 	ShoeFields      = []string{"name", "brand", "model", "dropMm", "type", "stravaGearId", "retired", "note"}
 	NotesFields     = []string{"painDuring", "painCold", "painNextMorning", "rpe", "shoeId", "tags", "note"}
 	CheckinFields   = []string{"trainingReadiness", "readinessStatus", "note"}
 	GoalReadOnly    = []string{"id"}
-	PlanReadOnly    = []string{"id", "match"}
-	ShoeReadOnly    = []string{"id", "distanceKm"}
-	NotesReadOnly   = []string{"shoe", "updatedAt"}
+	PlanReadOnly    = []string{"id", "match", "garmin"}
+	ShoeReadOnly    = []string{"id", "distanceKm", "stravaDistanceKm"}
+	NotesReadOnly   = []string{"shoe", "shoeAuto", "updatedAt"}
 	CheckinReadOnly = []string{"date", "updatedAt"}
 )

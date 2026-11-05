@@ -104,12 +104,14 @@ func sourceLabel(a *activityRow) string {
 		return "Fusion"
 	case a.StravaID != nil:
 		return "Strava"
+	case a.GarminID == nil && a.ImportFormat != nil:
+		return "Import"
 	}
 	return "Garmin"
 }
 
 func detailOf(a *activityRow, b *bundle, sm view.ActivitySummary) view.ActivityDetail {
-	d := view.ActivityDetail{ActivitySummary: sm}
+	d := view.ActivityDetail{ActivitySummary: sm, GarminGearReason: "Matériel non exposé par l'API personnelle Garmin (404) : chaussures issues de Strava ou saisies dans Stride"}
 	if it := b.listItem; it != nil {
 		d.LocationName, d.MovingDurationS, d.MaxHR = it.LocationName, analysis.PR(it.MovingDuration, 1), analysis.PR(it.MaxHR, 0)
 		d.NormPower, d.MaxCadenceSpm = analysis.PR(it.NormPower, 0), analysis.PR(it.MaxCadenceSpm, 0)
@@ -445,6 +447,13 @@ func (s *Services) ActivityView(ctx context.Context, uid, id int64) (*view.Activ
 		Recovery: rc, LoadRatio: lr, FloorsPrevDay: analysis.PF(cl.Floors.PrevDayUp), FloorsDay: math.NaN(), Plans: plans,
 		PainDuring: analysis.PF(notes.PainDuring), PainNextMorning: analysis.PF(notes.PainNextMorning),
 	}, p)
+	if ef, imp, err := s.activityMetrics(ctx, uid, a, b, p, structuredPlans(pm)[a.ID]); err == nil {
+		v.Efficiency, v.Impact = ef, imp
+	} else {
+		s.log.Warn("⚠️ Efficience / impacts indisponibles", "user", uid, "err", errText(err))
+		warnings = append(warnings, "Efficience et charge d'impact indisponibles")
+	}
+	v.Readiness = analysis.BuildReadinessBanner(wr.w, lr, rc)
 	v.Warnings = uniq(append(append(append(warnings, b.warnings...), c.Warnings...), wr.warnings...))
 	srcs := append([]string{}, b.sources...)
 	if b.listItem != nil {
@@ -549,6 +558,7 @@ func (s *Services) DayView(ctx context.Context, uid int64, date string) (*view.D
 	lr := analysis.ComputeLoadRatio(loads, date, "", p.Thresholds.LoadRatioMax)
 	v.Alerts = analysis.BuildAlerts(analysis.AlertInput{DayMode: true, Recovery: rc, LoadRatio: lr, FloorsDay: analysis.PF(v.Day.FloorsUp),
 		ElevLossM: math.NaN(), FadePct: math.NaN(), FloorsPrevDay: math.NaN(), Plans: plans, PainDuring: math.NaN(), PainNextMorning: math.NaN()}, p)
+	v.Readiness = analysis.BuildReadinessBanner(wr.w, lr, rc)
 	v.Freshness = fr.view(s.now())
 	return v, nil
 }

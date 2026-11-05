@@ -102,4 +102,4 @@ export const FRESHNESS_LABEL: Record<Freshness['source'], { label: string; hint:
   live: { label: 'Synchro live', hint: 'Un appel Garmin / Strava a été fait pour cette réponse.' },
 }
 
-export const SOURCE_LABEL: Record<string, string> = { garmin: 'Garmin', strava: 'Strava' }
+export const SOURCE_LABEL: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', import: 'Import' }
