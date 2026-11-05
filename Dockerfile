@@ -3,7 +3,7 @@
 
 ARG VERSION=2.0.0
 
-FROM node:24-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
@@ -11,8 +11,10 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY frontend/ ./
 RUN npm run build
 
-FROM golang:1.27-alpine AS backend
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS backend
 ARG VERSION
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src/backend
 ENV CGO_ENABLED=0
 COPY backend/go.mod backend/go.sum ./
@@ -24,10 +26,13 @@ RUN rm -rf internal/web/dist
 COPY --from=frontend /src/frontend/dist/ ./internal/web/dist/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stride ./cmd/stride \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stride ./cmd/stride \
  && mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
+LABEL org.opencontainers.image.title="Stride" \
+      org.opencontainers.image.source="https://github.com/aguyonp/stride" \
+      org.opencontainers.image.description="Sports telemetry to AI-coach prompts (Garmin, Strava)"
 COPY --from=backend /out/stride /app/stride
 COPY --from=backend --chown=65532:65532 /out/data /data
 # readable by any UID (compose may run as the host user); the default /home/nonroot is not

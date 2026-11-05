@@ -27,3 +27,5 @@ docs/
 Makefile
 compose.yml
 README.md
+compose.dev.yml
+.github

@@ -5,7 +5,9 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 # the backend reads ENV_FILE (default ./.env relative to backend/)
 ENV_FILE_ARG := $(if $(wildcard .env),ENV_FILE=../.env,)
 
-.PHONY: help dev dev-frontend frontend-build build test docker-up docker-down logs keygen clean
+COMPOSE_DEV := docker compose -f compose.yml -f compose.dev.yml
+
+.PHONY: help dev dev-frontend frontend-build build test up docker-up docker-down logs keygen clean
 
 help:
 	@echo "make keygen        how to generate STRIDE_MASTER_KEY"
@@ -13,7 +15,8 @@ help:
 	@echo "make dev-frontend  Vite on :5173 (proxy /api -> :8080)"
 	@echo "make build         $(BIN) with the embedded SPA"
 	@echo "make test          go vet + go test + vitest"
-	@echo "make docker-up     build and start docker compose (stride + valkey)"
+	@echo "make up            pull and start the published image (STRIDE_TAG=latest|dev)"
+	@echo "make docker-up     build locally and start docker compose (stride + valkey)"
 	@echo "make logs          follow the stride container logs"
 
 keygen:
@@ -41,11 +44,15 @@ build: frontend-build
 
 test:
 	cd backend && go vet ./... && go test ./...
-	cd frontend && npx vitest run
+	cd frontend && npm test
+
+up:
+	mkdir -p data
+	docker compose pull && docker compose up -d
 
 docker-up:
 	mkdir -p data
-	STRIDE_UID=$$(id -u) STRIDE_GID=$$(id -g) STRIDE_VERSION=$(VERSION) docker compose up -d --build
+	STRIDE_UID=$$(id -u) STRIDE_GID=$$(id -g) $(COMPOSE_DEV) up -d --build
 
 docker-down:
 	docker compose down

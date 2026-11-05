@@ -1,17 +1,12 @@
 services:
   stride:
-    build:
-      context: .
-      args:
-        VERSION: ${STRIDE_VERSION:-2.0.0}
-    image: stride:${STRIDE_VERSION:-2.0.0}
+    image: ghcr.io/aguyonp/stride:${STRIDE_TAG:-latest}
     env_file: .env
     environment:
-      # forced so a local .env cannot break the container layout
       STRIDE_LISTEN_ADDR: ":8080"
       STRIDE_DATA_DIR: /data
       STRIDE_VALKEY_URL: redis://valkey:6379/0
-    # Linux: ./data must belong to this UID/GID (make docker-up sets the current user)
+    # Linux: ./data must belong to this UID/GID
     user: "${STRIDE_UID:-65532}:${STRIDE_GID:-65532}"
     volumes:
       - ./data:/data
