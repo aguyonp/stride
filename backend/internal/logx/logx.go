@@ -1,11 +1,8 @@
-// Package logx fournit un handler slog lisible (emoji + couleurs si TTY) ou JSON.
+// Package logx provides a readable slog handler (emoji, colours on a TTY) or one JSON object per line.
 //
-// Format pretty :
+//	2026-11-03 18:42:01 INFO  🌐 GET /api/activities 200 · 42ms key=value
 //
-//	2026-11-03 18:42:01 INFO  🌐 GET /api/activities 200 · 42ms
-//
-// Les attributs éventuels sont ajoutés en fin de ligne sous la forme key=value.
-// Toute clé d'attribut sensible (authorization, token, apiKey, password…) est masquée.
+// Values of sensitive attribute keys (authorization, token, cookie, invite code…) are masked.
 package logx
 
 import (
@@ -19,7 +16,6 @@ import (
 	"time"
 )
 
-// Options de construction du logger.
 type Options struct {
 	Level  string // debug|info|warn|error
 	Format string // pretty|json
@@ -27,7 +23,6 @@ type Options struct {
 	Color  *bool // nil = auto (TTY)
 }
 
-// New construit un *slog.Logger selon les options.
 func New(o Options) *slog.Logger {
 	out := o.Out
 	if out == nil {
@@ -49,7 +44,7 @@ func New(o Options) *slog.Logger {
 	return slog.New(&prettyHandler{mu: &sync.Mutex{}, out: out, level: lvl, color: color})
 }
 
-// ParseLevel convertit une chaîne en niveau slog (défaut info).
+// ParseLevel defaults to info.
 func ParseLevel(s string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "debug":
@@ -78,11 +73,15 @@ func isTTY(w io.Writer) bool {
 	return st.Mode()&os.ModeCharDevice != 0
 }
 
-var sensitiveKeys = []string{"authorization", "token", "jwt", "apikey", "api_key", "password", "secret", "bearer"}
+var sensitiveKeys = []string{"authorization", "token", "jwt", "apikey", "api_key", "password", "secret", "bearer", "cookie", "invite", "masterkey", "master_key", "privatekey"}
 
-// IsSensitiveKey indique si une clé d'attribut doit être masquée.
+var sensitiveExact = map[string]bool{"code": true, "state": true, "challenge": true, "key": true}
+
 func IsSensitiveKey(k string) bool {
 	lk := strings.ToLower(k)
+	if sensitiveExact[lk] {
+		return true
+	}
 	for _, s := range sensitiveKeys {
 		if strings.Contains(lk, s) {
 			return true
@@ -224,7 +223,7 @@ func levelLabel(l slog.Level) (string, string) {
 	}
 }
 
-// Ms formate une durée en millisecondes lisibles ("42ms", "1.3s").
+// Ms formats a duration as "42ms" or "1.3s".
 func Ms(d time.Duration) string {
 	if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
