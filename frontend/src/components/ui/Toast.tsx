@@ -1,8 +1,8 @@
-import { CircleCheck, OctagonAlert, X } from 'lucide-react'
+import { CircleCheck, Info, OctagonAlert, X } from 'lucide-react'
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 
-type Tone = 'success' | 'error'
+type Tone = 'success' | 'error' | 'info'
 interface ToastItem {
   id: number
   title: string
@@ -18,7 +18,7 @@ const ToastContext = createContext<ToastApi | null>(null)
 
 export function useToast(): ToastApi {
   const ctx = useContext(ToastContext)
-  if (!ctx) throw new Error('useToast hors ToastProvider')
+  if (!ctx) throw new Error('useToast outside ToastProvider')
   return ctx
 }
 
@@ -42,11 +42,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      {/* Zone live toujours présente pour que les lecteurs d'écran annoncent les messages. */}
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="pointer-events-none fixed inset-x-0 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-[60] flex flex-col items-center gap-2 px-4 lg:right-6 lg:bottom-6 lg:left-auto lg:items-end"
+        className="pointer-events-none fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-[60] flex flex-col items-center gap-2 px-4 lg:top-auto lg:right-6 lg:bottom-6 lg:left-auto lg:items-end"
       >
         {items.map((t) => (
           <div
@@ -58,6 +57,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             {t.tone === 'success' ? (
               <CircleCheck className="mt-0.5 size-5 flex-none text-ok" aria-hidden="true" />
+            ) : t.tone === 'info' ? (
+              <Info className="mt-0.5 size-5 flex-none text-info" aria-hidden="true" />
             ) : (
               <OctagonAlert className="mt-0.5 size-5 flex-none text-danger" aria-hidden="true" />
             )}

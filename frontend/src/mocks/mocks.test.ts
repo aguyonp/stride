@@ -1,59 +1,78 @@
-import { describe, expect, it } from 'vitest'
-import type { Profile } from '../api/types'
-import { buildActivityAnalysis, buildDayAnalysis } from './analysis'
-import { getCatalog } from './catalog'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { ALL_INCLUDE } from '../lib/include'
 import { todayISO } from '../lib/format'
+import { db, resetDb, userData } from './db'
+import { visibleItems } from './domain'
+import { setFlags } from './flags'
+import { activityReport, dayReport, DIRECTIVE, multiReport } from './report'
+import { buildActivityView, buildDayView } from './view'
 
-const profile: Profile = {
-  injuredSide: 'left',
-  cadenceTargetMin: 175,
-  cadenceTargetMax: 182,
-  gctBalanceAlertPct: 1.5,
-  verticalOscillationAlertCm: 9,
-  descentAlertM: 30,
-  rhrAlertDeltaBpm: 5,
-  pace10kMinSecPerKm: 215,
-  pace10kMaxSecPerKm: 220,
-  paceMarathonMinSecPerKm: 230,
-  paceMarathonMaxSecPerKm: 240,
+function setup(flags: string[]) {
+  setFlags(flags)
+  resetDb()
+  const me = db().users.find((u) => (flags.includes('user') ? u.role === 'user' : u.role === 'admin'))!
+  const d = userData(me.id)
+  const run = visibleItems(d).find((i) => i.isRunning)!
+  return { d, run, view: buildActivityView(run, d) }
 }
-const now = new Date()
 
-describe('fixtures', () => {
-  const runs = getCatalog().filter((it) => it.summary.isRunning)
+describe('session prompt', () => {
+  beforeEach(() => resetDb())
 
-  it('la dernière course est un run/walk ~7 km / 42:10, équilibre G/D indisponible', () => {
-    const a = buildActivityAnalysis(runs[0], 'sfp', 0, profile, { now })
-    expect(a.activity.durationS).toBe(2530)
-    expect(a.activity.distanceM).toBeGreaterThan(6800)
-    expect(a.activity.distanceM).toBeLessThan(7300)
-    expect(a.segments.primary).toBe('blocks')
-    expect(a.segments.blocks.map((b) => b.label).slice(0, 3)).toEqual(['Bloc 1', 'Pause 1', 'Bloc 2'])
-    expect(a.segments.laps[0].label).toBe('Km 1')
-    expect(a.biomechanics.gctBalance.available).toBe(false)
-    expect(a.alerts.some((x) => x.code === 'GCT_BALANCE_NA' && x.level === 'info')).toBe(true)
-    expect(a.report).toContain('### BIOMÉCANIQUE ROTULE & IMPACTS')
-    expect(a.report).toContain('N/D (non mesuré par le capteur)')
-    expect(a.series.tS.length).toBeLessThanOrEqual(400)
+  it('starts with the verbatim directive and gates sections by chips', () => {
+    const { d, view } = setup(['admin', 'fusion'])
+    const full = activityReport(view, d, ALL_INCLUDE)
+    expect(full.startsWith(DIRECTIVE)).toBe(true)
+    for (const h of ['### CONTEXTE & OBJECTIFS', '### RAPPORT SÉANCE', '### BIOMÉCANIQUE & DÉRIVE DE FATIGUE', '### DÉTAIL DES INTERVALLES', '### CHARGE, STAMINA', '### RÉCUPÉRATION & PRÉPARATION', '### HISTORIQUE 14 JOURS', '### ALERTES AUTOMATIQUES']) {
+      expect(full).toContain(h)
+    }
+    const min = activityReport(view, d, [])
+    expect(min.startsWith(DIRECTIVE)).toBe(true)
+    expect(min).toContain('### RAPPORT SÉANCE')
+    expect(min).toContain('### ALERTES AUTOMATIQUES')
+    expect(min).not.toContain('### BIOMÉCANIQUE')
+    expect(min).not.toContain('### HISTORIQUE 14 JOURS')
+    expect(min).not.toContain('Ressenti & Douleur')
   })
 
-  it('la variante a un équilibre G/D mesuré et des alertes danger', () => {
-    const a = buildActivityAnalysis(runs[1], 'sfp', 14, profile, { now })
-    expect(a.biomechanics.gctBalance.available).toBe(true)
-    expect(a.biomechanics.gctBalance.leftPct).toBeGreaterThan(48.5)
-    expect(a.biomechanics.gctBalance.leftPct).toBeLessThan(50)
-    expect(a.alerts[0].level).toBe('danger')
-    expect(a.history?.length).toBeGreaterThan(0)
-    expect(a.report).toContain('### HISTORIQUE 14 JOURS')
+  it('never hard-codes the cadence target and keeps the Stamina label', () => {
+    const { d, view } = setup(['admin', 'fusion'])
+    const md = activityReport(view, d, ALL_INCLUDE)
+    const th = d.profile.thresholds
+    expect(md).toMatch(new RegExp(`${th.cadenceTargetMin}\\s*[-–]\\s*${th.cadenceTargetMax}`))
+    expect(md).toContain('Stamina Fenix 8')
+  })
+})
+
+describe('Strava-only views', () => {
+  it('returns null Garmin metrics with reasons and a Strava label', () => {
+    const { view } = setup(['user', 'strava'])
+    expect(view.sourceLabel).toBe('Strava')
+    expect(view.biomechanics.groundContactTimeMs).toBeNull()
+    expect(view.biomechanics.gctBalance.available).toBe(false)
+    expect(view.biomechanics.gctBalance.reason).toMatch(/Garmin/)
+    expect(view.recovery).toBeNull()
+    expect(view.warnings.join(' ')).toMatch(/GAP/)
+  })
+})
+
+describe('day and multi-session prompts', () => {
+  it('day report has the health section and no splits', () => {
+    const { d } = setup(['admin', 'fusion'])
+    const md = dayReport(buildDayView(todayISO(), d), d, ALL_INCLUDE)
+    expect(md.startsWith(DIRECTIVE)).toBe(true)
+    expect(md).toContain('### BILAN SANTÉ & CHARGE QUOTIDIENNE')
+    expect(md).not.toContain('### DÉTAIL DES INTERVALLES')
   })
 
-  it('performance et jour', () => {
-    const p = buildActivityAnalysis(runs[0], 'performance', 0, profile, { now })
-    expect(p.performance?.timeInZonesS).toHaveLength(5)
-    expect(p.report).toContain('### PERFORMANCE')
-    const d = buildDayAnalysis(todayISO(), 0, profile, { now })
-    expect(d.alerts.some((x) => x.code === 'FLOORS_HIGH')).toBe(true)
-    expect(d.recovery.trend).toHaveLength(7)
-    expect(d.report).toContain('### TENDANCE 7 JOURS')
+  it('multi export summarises N weeks with the request section', () => {
+    const { d } = setup(['admin', 'fusion'])
+    const { markdown, sessions } = multiReport(d, { weeks: 4, include: ALL_INCLUDE })
+    expect(markdown.startsWith(DIRECTIVE)).toBe(true)
+    expect(sessions).toBeGreaterThan(0)
+    expect(markdown).toContain('### RÉCAPITULATIF DES SÉANCES')
+    expect(markdown).toContain('### TENDANCES HEBDOMADAIRES')
+    expect(markdown).toContain('### DEMANDE')
+    expect(markdown).not.toContain('### DÉTAIL DES INTERVALLES')
   })
 })

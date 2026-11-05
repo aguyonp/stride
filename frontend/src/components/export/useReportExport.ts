@@ -6,7 +6,7 @@ import { useToast } from '../ui/Toast'
 export interface ReportPayload {
   report: string
   tokens: number
-  filename: string // patella-YYYY-MM-DD-mode.md
+  filename: string
   title: string
 }
 
@@ -17,7 +17,7 @@ export function useReportExport(payload: ReportPayload | null, onCopyFailed?: ()
     if (!payload) return
     const ok = await copyText(payload.report)
     if (ok) {
-      toast({ title: `Rapport copié ✓ · ≈ ${fmtNumber(payload.tokens)} tokens`, description: 'Colle-le dans ta conversation IA.' })
+      toast({ title: `Prompt copié ✓ · ≈ ${fmtNumber(payload.tokens)} tokens`, description: 'Colle-le dans ta conversation IA.' })
     } else {
       toast({ tone: 'error', title: 'Copie impossible', description: 'Le navigateur bloque le presse-papiers : sélectionne le texte dans l’aperçu.' })
       onCopyFailed?.()
@@ -27,7 +27,7 @@ export function useReportExport(payload: ReportPayload | null, onCopyFailed?: ()
   const download = useCallback(() => {
     if (!payload) return
     downloadText(payload.filename, payload.report)
-    toast({ title: 'Rapport téléchargé', description: payload.filename })
+    toast({ title: 'Fichier téléchargé', description: payload.filename })
   }, [payload, toast])
 
   const share = useCallback(async () => {

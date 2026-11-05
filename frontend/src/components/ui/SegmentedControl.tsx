@@ -1,11 +1,11 @@
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 
-export interface SegmentOption<T extends string> {
+interface SegmentOption<T extends string> {
   value: T
   label: ReactNode
   icon?: ReactNode
-  /** Libellé accessible si `label` est abrégé visuellement. */
+  /** Accessible name when `label` is visually abbreviated. */
   ariaLabel?: string
 }
 
@@ -18,10 +18,7 @@ interface SegmentedControlProps<T extends string> {
   size?: 'sm' | 'md'
 }
 
-/**
- * Contrôle segmenté accessible (radiogroup) : flèches ←/→, Début/Fin,
- * tabindex itinérant, indicateur glissant.
- */
+/** Accessible radiogroup with roving tabindex, arrow keys and a sliding indicator. */
 export function SegmentedControl<T extends string>({ options, value, onChange, ariaLabel, className, size = 'md' }: SegmentedControlProps<T>) {
   const refs = useRef<(HTMLButtonElement | null)[]>([])
   const index = Math.max(0, options.findIndex((o) => o.value === value))

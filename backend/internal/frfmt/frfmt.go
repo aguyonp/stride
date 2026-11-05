@@ -1,5 +1,5 @@
-// Package frfmt formate nombres, durées, allures et dates à la française
-// (virgule décimale, séparateur de milliers = espace, "N/D" si absent).
+// Package frfmt formats numbers, durations, paces and dates the French way
+// (decimal comma, space as thousands separator, "N/D" when absent).
 package frfmt
 
 import (
@@ -9,13 +9,10 @@ import (
 	"strings"
 )
 
-// ND est la valeur affichée quand une donnée est absente.
 const ND = "N/D"
 
-// Valid indique si v est une valeur exploitable (non NaN / Inf).
 func Valid(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
-// P convertit un pointeur en float (NaN si nil).
 func P(p *float64) float64 {
 	if p == nil {
 		return math.NaN()
@@ -23,25 +20,22 @@ func P(p *float64) float64 {
 	return *p
 }
 
-// round arrondit à n décimales (demi vers l'extérieur).
 func round(v float64, n int) float64 {
 	p := math.Pow(10, float64(n))
 	return math.Round(v*p) / p
 }
 
-// Dec formate avec n décimales et une virgule ("8,1"). Pas de séparateur de milliers.
 func Dec(v float64, n int) string {
 	if !Valid(v) {
 		return ND
 	}
 	r := round(v, n)
 	if r == 0 {
-		r = 0 // évite "-0"
+		r = 0 // avoid "-0"
 	}
 	return strings.Replace(strconv.FormatFloat(r, 'f', n, 64), ".", ",", 1)
 }
 
-// Int formate un entier arrondi avec séparateur de milliers ("8 432").
 func Int(v float64) string {
 	if !Valid(v) {
 		return ND
@@ -65,7 +59,6 @@ func Int(v float64) string {
 	return b.String()
 }
 
-// Signed formate avec signe explicite ("+3,2", "-1,0", "+4").
 func Signed(v float64, n int) string {
 	if !Valid(v) {
 		return ND
@@ -77,7 +70,6 @@ func Signed(v float64, n int) string {
 	return "-" + Dec(math.Abs(r), n)
 }
 
-// Duration formate des secondes en "42:10" ou "1:02:10".
 func Duration(s float64) string {
 	if !Valid(s) || s < 0 {
 		return ND
@@ -90,7 +82,6 @@ func Duration(s float64) string {
 	return fmt.Sprintf("%d:%02d", m, sec)
 }
 
-// PaceShort formate une allure en s/km : "5:43".
 func PaceShort(secPerKm float64) string {
 	if !Valid(secPerKm) || secPerKm <= 0 {
 		return ND
@@ -99,7 +90,6 @@ func PaceShort(secPerKm float64) string {
 	return fmt.Sprintf("%d:%02d", t/60, t%60)
 }
 
-// Pace formate une allure en s/km : "5:43/km".
 func Pace(secPerKm float64) string {
 	if !Valid(secPerKm) || secPerKm <= 0 {
 		return ND
@@ -107,7 +97,6 @@ func Pace(secPerKm float64) string {
 	return PaceShort(secPerKm) + "/km"
 }
 
-// SleepHM formate une durée de sommeil : "1h22", "7h05".
 func SleepHM(s float64) string {
 	if !Valid(s) || s < 0 {
 		return ND
@@ -116,7 +105,6 @@ func SleepHM(s float64) string {
 	return fmt.Sprintf("%dh%02d", t/60, t%60)
 }
 
-// Km formate des mètres en kilomètres avec n décimales : "7,02 km".
 func Km(m float64, n int) string {
 	if !Valid(m) {
 		return ND
@@ -124,7 +112,6 @@ func Km(m float64, n int) string {
 	return Dec(m/1000, n) + " km"
 }
 
-// DateTime convertit "2026-11-02T18:30:12" (ou avec espace) en "02/11/2026 18:30".
 func DateTime(local string) string {
 	local = strings.Replace(strings.TrimSpace(local), " ", "T", 1)
 	if len(local) < 16 {
@@ -133,7 +120,6 @@ func DateTime(local string) string {
 	return Date(local[:10]) + " " + local[11:16]
 }
 
-// Date convertit "2026-11-02" en "02/11/2026".
 func Date(d string) string {
 	if len(d) < 10 {
 		return ND
@@ -141,7 +127,6 @@ func Date(d string) string {
 	return d[8:10] + "/" + d[5:7] + "/" + d[0:4]
 }
 
-// DayMonth convertit "2026-11-02" en "02/11".
 func DayMonth(d string) string {
 	if len(d) < 10 {
 		return ND
@@ -149,7 +134,6 @@ func DayMonth(d string) string {
 	return d[8:10] + "/" + d[5:7]
 }
 
-// Or retourne s si v est valide, sinon N/D.
 func Or(v float64, f func(float64) string) string {
 	if !Valid(v) {
 		return ND
@@ -157,7 +141,6 @@ func Or(v float64, f func(float64) string) string {
 	return f(v)
 }
 
-// Unit formate "v unité" (entier) ou N/D.
 func Unit(v float64, unit string) string {
 	if !Valid(v) {
 		return ND
@@ -165,7 +148,6 @@ func Unit(v float64, unit string) string {
 	return Int(v) + " " + unit
 }
 
-// UnitDec formate "v,d unité" ou N/D.
 func UnitDec(v float64, n int, unit string) string {
 	if !Valid(v) {
 		return ND
@@ -173,7 +155,6 @@ func UnitDec(v float64, n int, unit string) string {
 	return Dec(v, n) + " " + unit
 }
 
-// Num formate avec au plus maxDec décimales, sans zéros inutiles ("9", "1,5").
 func Num(v float64, maxDec int) string {
 	if !Valid(v) {
 		return ND

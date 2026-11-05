@@ -1,23 +1,26 @@
 package httpapi
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"time"
 
-	"patella/internal/logx"
+	"stride/internal/httpx"
+	"stride/internal/logx"
 )
 
-// statusWriter capture le statut et la taille de la réponse.
+const (
+	csrfHeader   = "X-Stride-CSRF"
+	maxBodyBytes = 16 << 20
+)
+
 type statusWriter struct {
 	http.ResponseWriter
 	status int
-	bytes  int
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -31,9 +34,7 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	n, err := w.ResponseWriter.Write(b)
-	w.bytes += n
-	return n, err
+	return w.ResponseWriter.Write(b)
 }
 
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
@@ -44,7 +45,30 @@ func (w *statusWriter) Flush() {
 	}
 }
 
-// withLogging : 🌐 GET /api/activities 200 · 42ms (health et assets statiques en debug).
+var sensitiveParams = []string{"code", "state", "token", "invite", "challenge", "secret", "key"}
+
+// redactedQuery keeps parameter names but masks values that may carry secrets (OAuth code, invite, hub.*).
+func redactedQuery(raw string) string {
+	q, err := url.ParseQuery(raw)
+	if err != nil {
+		return "…"
+	}
+	parts := make([]string, 0, len(q))
+	for k, vs := range q {
+		v := strings.Join(vs, ",")
+		lk := strings.ToLower(k)
+		for _, s := range sensitiveParams {
+			if strings.Contains(lk, s) {
+				v = "•••"
+				break
+			}
+		}
+		parts = append(parts, k+"="+v)
+	}
+	return strings.Join(parts, "&")
+}
+
+// withLogging logs "🌐 GET /api/activities 200 · 42ms" (health checks and static files at debug level).
 func withLogging(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -54,24 +78,26 @@ func withLogging(log *slog.Logger, next http.Handler) http.Handler {
 			sw.status = http.StatusOK
 		}
 		path := r.URL.Path
-		if r.URL.RawQuery != "" && strings.HasPrefix(path, "/api/") {
-			path += "?" + r.URL.RawQuery
+		isAPI := strings.HasPrefix(path, "/api/")
+		if isAPI && r.URL.RawQuery != "" {
+			path += "?" + redactedQuery(r.URL.RawQuery)
 		}
 		msg := fmt.Sprintf("🌐 %s %s %d · %s", r.Method, path, sw.status, logx.Ms(time.Since(start)))
 		lvl := slog.LevelInfo
 		switch {
 		case sw.status >= 500:
 			lvl = slog.LevelError
+		case sw.status == http.StatusUnauthorized:
+			lvl = slog.LevelInfo
 		case sw.status >= 400:
 			lvl = slog.LevelWarn
-		case r.URL.Path == "/api/health" || !strings.HasPrefix(r.URL.Path, "/api/"):
+		case !isAPI:
 			lvl = slog.LevelDebug
 		}
 		log.Log(r.Context(), lvl, msg)
 	})
 }
 
-// withRecover convertit une panique en 500 JSON.
 func withRecover(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -79,44 +105,58 @@ func withRecover(log *slog.Logger, next http.Handler) http.Handler {
 				if v == http.ErrAbortHandler {
 					panic(v)
 				}
-				log.Error(fmt.Sprintf("❌ panique sur %s %s : %v", r.Method, r.URL.Path, v), "stack", string(debug.Stack()))
-				writeError(w, http.StatusInternalServerError, "INTERNAL", "Erreur interne du serveur.")
+				log.Error(fmt.Sprintf("❌ Panique sur %s %s : %v", r.Method, r.URL.Path, v), "stack", string(debug.Stack()))
+				httpx.Fail(w, http.StatusInternalServerError, httpx.CodeInternal, "Erreur interne du serveur.")
 			}
 		}()
 		next.ServeHTTP(w, r)
 	})
 }
 
-// withBasicAuth protège tout sauf /api/health (comparaison en temps constant).
-func withBasicAuth(user, pass string, next http.Handler) http.Handler {
-	uh := sha256.Sum256([]byte(user))
-	ph := sha256.Sum256([]byte(pass))
+// csp allows only same-origin resources; inline styles stay allowed for React style props and font loaders.
+const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+	"font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; " +
+	"base-uri 'self'; frame-ancestors 'none'"
+
+func withSecurityHeaders(https bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/health" {
-			next.ServeHTTP(w, r)
-			return
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), "+
+			"publickey-credentials-create=(self), publickey-credentials-get=(self)")
+		if https {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
 		}
-		u, p, ok := r.BasicAuth()
-		gu := sha256.Sum256([]byte(u))
-		gp := sha256.Sum256([]byte(p))
-		uOK := subtle.ConstantTimeCompare(gu[:], uh[:])
-		pOK := subtle.ConstantTimeCompare(gp[:], ph[:])
-		if !ok || uOK&pOK != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Patella", charset="UTF-8"`)
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentification requise.")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isSafeMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
+}
+
+// withCSRF requires X-Stride-CSRF: 1 on state-changing /api/ calls, except the public Strava webhook.
+func withCSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && !isSafeMethod(r.Method) &&
+			!(r.Method == http.MethodPost && r.URL.Path == "/api/webhooks/strava") &&
+			r.Header.Get(csrfHeader) != "1" {
+			httpx.Fail(w, http.StatusForbidden, httpx.CodeForbidden, "Requête refusée : en-tête X-Stride-CSRF manquant.")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// withSecurityHeaders ajoute quelques en-têtes de sécurité de base.
-func withSecurityHeaders(next http.Handler) http.Handler {
+func withBodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("X-Frame-Options", "DENY")
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		}
 		next.ServeHTTP(w, r)
 	})
 }

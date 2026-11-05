@@ -11,40 +11,33 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 )
 
-const fitAccept = "application/zip, application/x-zip-compressed, application/octet-stream"
+// Endpoint templates (no ids, no dates) used for metering and logs.
+const (
+	EPActivityList   = "/activitylist-service/activities/search/activities"
+	EPActivity       = "/activity-service/activity/{id}"
+	EPDetails        = "/activity-service/activity/{id}/details"
+	EPFIT            = "/download-service/files/activity/{id}"
+	EPSleepRange     = "/sleep-service/sleep/dailySleepSummariesByDate"
+	EPHRVDay         = "/hrv-service/hrv/{date}"
+	EPHRVRange       = "/hrv-service/hrv/daily/{start}/{end}"
+	EPDailySummaries = "/usersummary-service/v2/dailysummaries"
+	EPUserSummary    = "/usersummary-service/usersummary/daily"
+	EPHRZones        = "/biometric-service/heartRateZones/v2"
+)
 
-// getJSON récupère (avec cache) et décode une réponse JSON.
-// Corps vide / 204 → ErrNoData.
-func (c *Client) getJSON(ctx context.Context, pathQ, key string, pol policy, persist func([]byte) bool, out any) error {
-	b, err := c.cached(ctx, key, pol, func(ctx context.Context) ([]byte, error) {
-		return c.get(ctx, pathQ, "application/json", "data")
-	}, persist)
-	if err != nil {
-		return err
-	}
-	if len(bytes.TrimSpace(b)) == 0 {
-		return ErrNoData
-	}
-	if err := json.Unmarshal(b, out); err != nil {
-		return fmt.Errorf("décodage JSON %s : %w", strings.SplitN(pathQ, "?", 2)[0], err)
-	}
-	return nil
-}
+const jsonAccept = "application/json"
 
-// ListQuery : paramètres de la liste d'activités.
 type ListQuery struct {
-	Start        int
-	Limit        int
-	StartDate    string // YYYY-MM-DD (optionnel)
-	EndDate      string
-	ActivityType string
+	Start     int
+	Limit     int
+	StartDate string
+	EndDate   string
 }
 
-// ListActivities : /activitylist-service/activities/search/activities (mémoire 2 min).
-func (c *Client) ListActivities(ctx context.Context, q ListQuery) ([]ActivityListItem, error) {
+// ListActivities returns the raw JSON array of the activity search.
+func (c *Client) ListActivities(ctx context.Context, q ListQuery) ([]byte, error) {
 	if q.Limit <= 0 {
 		q.Limit = 20
 	}
@@ -57,26 +50,25 @@ func (c *Client) ListActivities(ctx context.Context, q ListQuery) ([]ActivityLis
 	if q.EndDate != "" {
 		v.Set("endDate", q.EndDate)
 	}
-	if q.ActivityType != "" {
-		v.Set("activityType", q.ActivityType)
-	}
-	key := fmt.Sprintf("activities/s%d_l%d_%s_%s_%s", q.Start, q.Limit, safeKey(q.StartDate), safeKey(q.EndDate), safeKey(q.ActivityType))
-	var out []ActivityListItem
-	err := c.getJSON(ctx, "/activitylist-service/activities/search/activities?"+v.Encode(), key, policy{ttl: TTLActivityList}, nil, &out)
+	b, err := c.get(ctx, "list", EPActivityList, EPActivityList+"?"+v.Encode(), jsonAccept)
 	if errors.Is(err, ErrNoData) {
-		return nil, nil
+		return []byte("[]"), nil
 	}
-	return out, err
+	return b, err
 }
 
-// ListActivitiesRange retourne toutes les activités entre deux dates (pagination par 100).
-func (c *Client) ListActivitiesRange(ctx context.Context, from, to string) ([]ActivityListItem, error) {
+// ListActivitiesRange pages through the search (100 per page) between two local dates.
+func (c *Client) ListActivitiesRange(ctx context.Context, from, to string) ([]json.RawMessage, error) {
 	const page = 100
-	var all []ActivityListItem
-	for p := 0; p < 10; p++ {
-		items, err := c.ListActivities(ctx, ListQuery{Start: p * page, Limit: page, StartDate: from, EndDate: to})
+	var all []json.RawMessage
+	for p := 0; p < 20; p++ {
+		b, err := c.ListActivities(ctx, ListQuery{Start: p * page, Limit: page, StartDate: from, EndDate: to})
 		if err != nil {
 			return nil, err
+		}
+		var items []json.RawMessage
+		if err := json.Unmarshal(b, &items); err != nil {
+			return nil, fmt.Errorf("garmin: decode activity list: %w", err)
 		}
 		all = append(all, items...)
 		if len(items) < page {
@@ -86,69 +78,31 @@ func (c *Client) ListActivitiesRange(ctx context.Context, from, to string) ([]Ac
 	return all, nil
 }
 
-// Activity : /activity-service/activity/{id}. Disque (immuable) si l'activité est
-// terminée depuis plus de 2 h (évite de figer un résumé encore en cours de calcul).
-func (c *Client) Activity(ctx context.Context, id int64) (*ActivityDetail, error) {
-	var out ActivityDetail
-	persist := func(b []byte) bool {
-		var d ActivityDetail
-		if json.Unmarshal(b, &d) != nil {
-			return false
-		}
-		start, ok := d.StartGMT()
-		if !ok {
-			return false
-		}
-		dur := 0.0
-		if d.Summary.ElapsedDuration != nil {
-			dur = *d.Summary.ElapsedDuration
-		} else if d.Summary.Duration != nil {
-			dur = *d.Summary.Duration
-		}
-		end := start.Add(time.Duration(dur * float64(time.Second)))
-		return c.now().Sub(end) > 2*time.Hour
-	}
-	err := c.getJSON(ctx, fmt.Sprintf("/activity-service/activity/%d", id), fmt.Sprintf("activity/%d.json", id), policy{disk: true, ttl: TTLWellness}, persist, &out)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
+func (c *Client) Activity(ctx context.Context, id int64) ([]byte, error) {
+	return c.get(ctx, "activity", EPActivity, fmt.Sprintf("/activity-service/activity/%d", id), jsonAccept)
 }
 
-// ActivityDetails : /activity-service/activity/{id}/details (disque, immuable).
-func (c *Client) ActivityDetails(ctx context.Context, id int64, maxChartSize int) (*ActivityDetails, error) {
-	if maxChartSize <= 0 {
-		maxChartSize = 100000
-	}
-	var out ActivityDetails
-	err := c.getJSON(ctx, fmt.Sprintf("/activity-service/activity/%d/details?maxChartSize=%d", id, maxChartSize),
-		fmt.Sprintf("details/%d_%d.json", id, maxChartSize), policy{disk: true, ttl: TTLWellness}, nil, &out)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
+func (c *Client) ActivityDetails(ctx context.Context, id int64) ([]byte, error) {
+	return c.get(ctx, "details", EPDetails, fmt.Sprintf("/activity-service/activity/%d/details?maxChartSize=100000", id), jsonAccept)
 }
 
-// ActivityFIT télécharge le FIT (zip) avec l'en-tête Accept exact, le décompresse et le met
-// en cache disque (DATA_DIR/cache/fit/{id}.fit, immuable). Retourne les octets du .fit.
+// ActivityFIT downloads the original file (zip) with the exact Accept header Garmin requires
+// and returns the extracted .fit bytes.
 func (c *Client) ActivityFIT(ctx context.Context, id int64) ([]byte, error) {
-	return c.cached(ctx, fmt.Sprintf("fit/%d.fit", id), policy{disk: true, ttl: TTLWellness}, func(ctx context.Context) ([]byte, error) {
-		raw, err := c.get(ctx, fmt.Sprintf("/download-service/files/activity/%d", id), fitAccept, "fit")
-		if err != nil {
-			return nil, err
-		}
-		return extractFIT(raw)
-	}, nil)
+	raw, err := c.get(ctx, "fit", EPFIT, fmt.Sprintf("/download-service/files/activity/%d", id), fitAccept)
+	if err != nil {
+		return nil, err
+	}
+	return extractFIT(raw)
 }
 
-// extractFIT retourne le premier .fit d'un zip (ou les octets tels quels si c'est déjà un FIT).
 func extractFIT(raw []byte) ([]byte, error) {
 	if len(raw) >= 12 && string(raw[8:12]) == ".FIT" {
 		return raw, nil
 	}
 	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
-		return nil, fmt.Errorf("archive FIT illisible : %w", err)
+		return nil, fmt.Errorf("garmin: unreadable FIT archive: %w", err)
 	}
 	var chosen *zip.File
 	for _, f := range zr.File {
@@ -161,7 +115,7 @@ func extractFIT(raw []byte) ([]byte, error) {
 		chosen = zr.File[0]
 	}
 	if chosen == nil {
-		return nil, errors.New("archive FIT vide")
+		return nil, errors.New("garmin: empty FIT archive")
 	}
 	rc, err := chosen.Open()
 	if err != nil {
@@ -171,79 +125,26 @@ func extractFIT(raw []byte) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(rc, maxBodyBytes))
 }
 
-// DailySleep : /sleep-service/sleep/dailySleep?date=.
-func (c *Client) DailySleep(ctx context.Context, date string) (*DailySleep, error) {
-	var out DailySleep
-	err := c.getJSON(ctx, "/sleep-service/sleep/dailySleep?date="+url.QueryEscape(date), "sleep/"+safeKey(date)+".json", c.wellnessPolicy(date), nil, &out)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
+func (c *Client) SleepRange(ctx context.Context, start, end string) ([]byte, error) {
+	return c.get(ctx, "sleep", EPSleepRange, fmt.Sprintf("%s?startDate=%s&endDate=%s", EPSleepRange, url.QueryEscape(start), url.QueryEscape(end)), jsonAccept)
 }
 
-// SleepRange : /sleep-service/sleep/dailySleepSummariesByDate.
-func (c *Client) SleepRange(ctx context.Context, start, end string) ([]DailySleep, error) {
-	var out []DailySleep
-	err := c.getJSON(ctx, fmt.Sprintf("/sleep-service/sleep/dailySleepSummariesByDate?startDate=%s&endDate=%s", url.QueryEscape(start), url.QueryEscape(end)),
-		fmt.Sprintf("sleeprange/%s_%s.json", safeKey(start), safeKey(end)), c.wellnessPolicy(end), nil, &out)
-	return out, err
+func (c *Client) HRVDay(ctx context.Context, date string) ([]byte, error) {
+	return c.get(ctx, "hrv", EPHRVDay, "/hrv-service/hrv/"+url.PathEscape(date), jsonAccept)
 }
 
-// HRVDay : /hrv-service/hrv/{date} (204 → ErrNoData).
-func (c *Client) HRVDay(ctx context.Context, date string) (*HRVDay, error) {
-	var out HRVDay
-	err := c.getJSON(ctx, "/hrv-service/hrv/"+url.PathEscape(date), "hrv/"+safeKey(date)+".json", c.wellnessPolicy(date), nil, &out)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
+func (c *Client) HRVRange(ctx context.Context, start, end string) ([]byte, error) {
+	return c.get(ctx, "hrv", EPHRVRange, fmt.Sprintf("/hrv-service/hrv/daily/%s/%s", url.PathEscape(start), url.PathEscape(end)), jsonAccept)
 }
 
-// HRVRange : /hrv-service/hrv/daily/{start}/{end}.
-func (c *Client) HRVRange(ctx context.Context, start, end string) ([]HRVSummary, error) {
-	var out HRVRange
-	err := c.getJSON(ctx, fmt.Sprintf("/hrv-service/hrv/daily/%s/%s", url.PathEscape(start), url.PathEscape(end)),
-		fmt.Sprintf("hrvrange/%s_%s.json", safeKey(start), safeKey(end)), c.wellnessPolicy(end), nil, &out)
-	return out.HrvSummaries, err
+func (c *Client) DailySummaries(ctx context.Context, start, end string) ([]byte, error) {
+	return c.get(ctx, "summaries", EPDailySummaries, fmt.Sprintf("%s?startDate=%s&endDate=%s", EPDailySummaries, url.QueryEscape(start), url.QueryEscape(end)), jsonAccept)
 }
 
-// BodyBattery : /wellness-service/wellness/bodyBattery/reports/daily.
-func (c *Client) BodyBattery(ctx context.Context, start, end string) ([]BodyBatteryDay, error) {
-	var out []BodyBatteryDay
-	err := c.getJSON(ctx, fmt.Sprintf("/wellness-service/wellness/bodyBattery/reports/daily?startDate=%s&endDate=%s", url.QueryEscape(start), url.QueryEscape(end)),
-		fmt.Sprintf("bodybattery/%s_%s.json", safeKey(start), safeKey(end)), c.wellnessPolicy(end), nil, &out)
-	return out, err
+func (c *Client) UserSummaryDaily(ctx context.Context, date string) ([]byte, error) {
+	return c.get(ctx, "usersummary", EPUserSummary, EPUserSummary+"?calendarDate="+url.QueryEscape(date), jsonAccept)
 }
 
-// DailySummaries : /usersummary-service/v2/dailysummaries.
-func (c *Client) DailySummaries(ctx context.Context, start, end string) ([]DailySummary, error) {
-	var out DailySummaries
-	err := c.getJSON(ctx, fmt.Sprintf("/usersummary-service/v2/dailysummaries?startDate=%s&endDate=%s", url.QueryEscape(start), url.QueryEscape(end)),
-		fmt.Sprintf("dailysummaries/%s_%s.json", safeKey(start), safeKey(end)), c.wellnessPolicy(end), nil, &out)
-	return out.Data, err
-}
-
-// Steps : /usersummary-service/stats/steps/daily/{start}/{end}.
-func (c *Client) Steps(ctx context.Context, start, end string) ([]StepsDay, error) {
-	var out []StepsDay
-	err := c.getJSON(ctx, fmt.Sprintf("/usersummary-service/stats/steps/daily/%s/%s", url.PathEscape(start), url.PathEscape(end)),
-		fmt.Sprintf("steps/%s_%s.json", safeKey(start), safeKey(end)), c.wellnessPolicy(end), nil, &out)
-	return out, err
-}
-
-// DailyHeartRate : /wellness-service/wellness/dailyHeartRate?date=.
-func (c *Client) DailyHeartRate(ctx context.Context, date string) (*DailyHeartRate, error) {
-	var out DailyHeartRate
-	err := c.getJSON(ctx, "/wellness-service/wellness/dailyHeartRate?date="+url.QueryEscape(date), "dailyhr/"+safeKey(date)+".json", c.wellnessPolicy(date), nil, &out)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// HRZones : /biometric-service/heartRateZones/v2 (mémoire 1 h).
-func (c *Client) HRZones(ctx context.Context) ([]HRZoneConfig, error) {
-	var out []HRZoneConfig
-	err := c.getJSON(ctx, "/biometric-service/heartRateZones/v2", "hrzones", policy{ttl: TTLProfile}, nil, &out)
-	return out, err
+func (c *Client) HRZones(ctx context.Context) ([]byte, error) {
+	return c.get(ctx, "hrzones", EPHRZones, EPHRZones, jsonAccept)
 }

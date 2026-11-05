@@ -1,8 +1,8 @@
-// Helpers de formatage FR. Toute valeur null/undefined/NaN → "N/D" (jamais 0).
+// French formatting helpers. null/undefined/NaN → "N/D" (never 0).
 
 export const ND = 'N/D'
-const NBSP = ' ' // espace insécable avant les unités
-const MINUS = '−' // vrai signe moins
+const NBSP = '\u00a0'
+const MINUS = '−'
 
 type Num = number | null | undefined
 
@@ -21,27 +21,27 @@ function nf(min: number, max: number): Intl.NumberFormat {
   return f
 }
 
-/** Nombre FR : virgule décimale, séparateur de milliers fin insécable. `fmtNumber(8432) = "8 432"` */
+/** `fmtNumber(8432) = "8 432"`, decimal comma. */
 export function fmtNumber(v: Num, decimals = 0, opts: { trim?: boolean } = {}): string {
   if (!isNum(v)) return ND
   const out = nf(opts.trim ? 0 : decimals, decimals).format(v)
   return out.replace('-', MINUS)
 }
 
-/** Valeur + unité, ex. `fmtUnit(248, 'ms') = "248 ms"`. */
+/** `fmtUnit(248, 'ms') = "248 ms"`. */
 export function fmtUnit(v: Num, unit: string, decimals = 0): string {
   if (!isNum(v)) return ND
   return `${fmtNumber(v, decimals)}${NBSP}${unit}`
 }
 
-/** Distance en km avec virgule : `fmtKm(7020) = "7,02 km"`. */
+/** `fmtKm(7020) = "7,02 km"`. */
 export function fmtKm(meters: Num, decimals = 2, withUnit = true): string {
   if (!isNum(meters)) return ND
   const s = fmtNumber(meters / 1000, decimals)
   return withUnit ? `${s}${NBSP}km` : s
 }
 
-/** Durée chrono : `42:10`, `1:02:10`. */
+/** `42:10`, `1:02:10`. */
 export function fmtDuration(seconds: Num): string {
   if (!isNum(seconds)) return ND
   const total = Math.round(Math.abs(seconds))
@@ -53,7 +53,7 @@ export function fmtDuration(seconds: Num): string {
   return `${sign}${m}:${String(s).padStart(2, '0')}`
 }
 
-/** Durée longue lisible : `1h22`, `7h12`, `45 min`. */
+/** `1h22`, `45 min`. */
 export function fmtHM(seconds: Num): string {
   if (!isNum(seconds)) return ND
   const totalMin = Math.round(seconds / 60)
@@ -63,7 +63,7 @@ export function fmtHM(seconds: Num): string {
   return `${h}h${String(m).padStart(2, '0')}`
 }
 
-/** Allure `m:ss` (sans unité) : `fmtPaceValue(343) = "5:43"`. */
+/** `fmtPaceValue(343) = "5:43"`. */
 export function fmtPaceValue(secPerKm: Num): string {
   if (!isNum(secPerKm) || secPerKm <= 0) return ND
   let m = Math.floor(secPerKm / 60)
@@ -75,13 +75,13 @@ export function fmtPaceValue(secPerKm: Num): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-/** Allure avec unité : `fmtPace(343) = "5:43/km"`. */
+/** `fmtPace(343) = "5:43/km"`. */
 export function fmtPace(secPerKm: Num): string {
   const v = fmtPaceValue(secPerKm)
   return v === ND ? ND : `${v}/km`
 }
 
-/** Analyse une allure saisie `m:ss` → secondes/km, ou null si invalide. */
+/** Parses `m:ss` → seconds per km, null when invalid. */
 export function parsePace(input: string): number | null {
   const m = /^\s*(\d{1,2})\s*[:'’]\s*([0-5]\d)\s*$/.exec(input)
   if (!m) return null
@@ -89,13 +89,13 @@ export function parsePace(input: string): number | null {
   return v > 0 ? v : null
 }
 
-/** Pourcentage FR : `fmtPct(49.2) = "49,2 %"`. */
+/** `fmtPct(49.2) = "49,2 %"`. */
 export function fmtPct(v: Num, decimals = 1): string {
   if (!isNum(v)) return ND
   return `${fmtNumber(v, decimals)}${NBSP}%`
 }
 
-/** Valeur signée : `fmtSigned(4) = "+4"`, `fmtSigned(-3.2, 1) = "−3,2"`. */
+/** `fmtSigned(4) = "+4"`, `fmtSigned(-3.2, 1) = "−3,2"`. */
 export function fmtSigned(v: Num, decimals = 0): string {
   if (!isNum(v)) return ND
   const abs = fmtNumber(Math.abs(v), decimals)
@@ -103,9 +103,6 @@ export function fmtSigned(v: Num, decimals = 0): string {
   return `${v > 0 ? '+' : MINUS}${abs}`
 }
 
-/* ------------------------------------------------------------------ */
-/* Dates                                                              */
-/* ------------------------------------------------------------------ */
 
 interface LocalParts {
   y: number
@@ -115,7 +112,7 @@ interface LocalParts {
   mi: number
 }
 
-/** Parse "2026-11-02T18:30:12" ou "2026-11-02" sans conversion de fuseau. */
+/** Parses "2026-11-02T18:30:12" or "2026-11-02" without time zone conversion. */
 export function parseLocal(s: string): LocalParts | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(s)
   if (!m) return null
@@ -130,13 +127,12 @@ export function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Date du jour au format ISO, dans le fuseau donné (sinon celui du navigateur). */
+/** Today's ISO date in the given time zone (browser's otherwise). */
 export function todayISO(timezone?: string, now: Date = new Date()): string {
   if (timezone) {
     try {
       return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
     } catch {
-      /* fuseau invalide → navigateur */
     }
   }
   return toISODate(now)
@@ -149,7 +145,7 @@ export function addDays(iso: string, n: number): string {
   return toISODate(d)
 }
 
-/** Différence en jours calendaires (b − a). */
+/** Calendar days b − a. */
 export function diffDays(aIso: string, bIso: string): number {
   const a = parseLocal(aIso)
   const b = parseLocal(bIso)
@@ -170,10 +166,7 @@ function hhmm(p: LocalParts): string {
   return `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}`
 }
 
-/**
- * Date relative FR : « aujourd'hui 18:30 », « hier 18:30 », « lundi 18:30 » (< 7 j),
- * « 28 oct. 18:30 », « 28 oct. 2025 ».
- */
+/** « aujourd'hui 18:30 », « hier 18:30 », « lundi 18:30 », « 28 oct. 18:30 », « 28 oct. 2025 ». */
 export function fmtRelative(startLocal: string, now: Date = new Date()): string {
   const p = parseLocal(startLocal)
   if (!p) return ND
@@ -188,7 +181,7 @@ export function fmtRelative(startLocal: string, now: Date = new Date()): string 
   return F_DAY_MONTH_YEAR.format(partsToDate(p))
 }
 
-/** « lundi 2 novembre » (+ année si différente de l'année courante). */
+/** « lundi 2 novembre » (+ year when not the current one). */
 export function fmtDateLong(iso: string, now: Date = new Date()): string {
   const p = parseLocal(iso)
   if (!p) return ND
@@ -219,13 +212,13 @@ export function fmtMonthYear(year: number, month0: number): string {
   return F_MONTH_YEAR.format(new Date(year, month0, 1))
 }
 
-/** Heure locale « 18:30 » depuis startLocal. */
+/** « 18:30 » from startLocal. */
 export function fmtTimeOfDay(startLocal: string): string {
   const p = parseLocal(startLocal)
   return p ? hhmm(p) : ND
 }
 
-/** RFC3339 → « 4 nov. à 18:00 » (heure du navigateur). */
+/** RFC3339 → « 4 nov. à 18:00 » (browser time). */
 export function fmtDateTime(rfc3339: string | null | undefined): string {
   if (!rfc3339) return ND
   const d = new Date(rfc3339)
@@ -233,7 +226,54 @@ export function fmtDateTime(rfc3339: string | null | undefined): string {
   return `${F_DAY_MONTH.format(d)} à ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-/** Capitalise la première lettre (« lundi » → « Lundi »). */
+
 export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/** RFC3339 → "18:42" (browser time zone). */
+export function fmtClock(rfc3339: string | null | undefined): string {
+  if (!rfc3339) return ND
+  const d = new Date(rfc3339)
+  if (Number.isNaN(d.getTime())) return ND
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/** RFC3339 → "18:42" today, "hier 18:42", "4 nov. 18:42". */
+export function fmtWhen(rfc3339: string | null | undefined, now: Date = new Date()): string {
+  if (!rfc3339) return ND
+  const d = new Date(rfc3339)
+  if (Number.isNaN(d.getTime())) return ND
+  const days = diffDays(toISODate(d), toISODate(now))
+  const t = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  if (days === 0) return t
+  if (days === 1) return `hier ${t}`
+  return `${F_DAY_MONTH.format(d)} ${t}`
+}
+
+/** Monday (ISO) of the week containing `iso`. */
+export function mondayOf(iso: string): string {
+  const p = parseLocal(iso)
+  if (!p) return iso
+  const d = new Date(p.y, p.mo - 1, p.d)
+  const offset = (d.getDay() + 6) % 7
+  return toISODate(new Date(p.y, p.mo - 1, p.d - offset))
+}
+
+/** ≈ chars / 4, the rule of thumb used by the backend. */
+export function estimateTokens(text: string | null | undefined): number {
+  return text ? Math.ceil(text.length / 4) : 0
+}
+
+/** Seconds → "m:ss" input value, empty when null. */
+export function paceInput(secPerKm: number | null | undefined): string {
+  return isNum(secPerKm) && secPerKm > 0 ? fmtPaceValue(secPerKm) : ''
+}
+
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
 }

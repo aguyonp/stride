@@ -4,26 +4,31 @@ import (
 	"math"
 	"sort"
 
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
+	"stride/internal/athlete"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
 )
 
-// Seuils de détection course vs marche/arrêt.
 const (
-	runMinSpeedMS    = 1.8 // m/s
+	runMinSpeedMS    = 1.8
 	runMinCadenceSpm = 130
 	maxRecordWeightS = 5.0
 	gctNAReason      = "Non mesuré : nécessite HRM-Pro / HRM 600 / Running Dynamics Pod"
+	// NoGarminReason is the reason given for Garmin-only metrics of Strava-only users.
+	NoGarminReason = "Garmin non connecté"
 )
 
-// session regroupe les données dérivées d'une activité décodée.
+// session holds the per-record masks derived from a decoded activity.
 type session struct {
 	act       *fitdata.Activity
 	isRunning bool
-	w         []float64 // poids temporel de chaque record (s)
-	run       []bool    // record de course (hors marche/arrêt)
+	w         []float64 // time weight of each record (s)
+	run       []bool    // running record (walk/stand excluded)
 	pauses    [][2]float64
+	grade     []float64 // smoothed grade (%)
+	gap       []float64 // grade-adjusted speed (m/s)
+
+	gapRecorded, gapModeled bool
 }
 
 func newSession(a *fitdata.Activity, isRunning bool) *session {
@@ -39,7 +44,7 @@ func newSession(a *fitdata.Activity, isRunning bool) *session {
 			w = 0
 		}
 		if w > maxRecordWeightS {
-			w = 1 // trou d'enregistrement (auto-pause) : ne pas sur-pondérer
+			w = 1 // recording gap (auto-pause): do not overweight
 		}
 		s.w[i] = w
 	}
@@ -52,6 +57,7 @@ func newSession(a *fitdata.Activity, isRunning bool) *session {
 	for i, r := range a.Records {
 		s.run[i] = s.isRunRecord(r)
 	}
+	s.computeGrades()
 	return s
 }
 
@@ -70,7 +76,6 @@ func (s *session) isRunRecord(r fitdata.Record) bool {
 	}
 	cad, spd := r.CadenceSpm, r.SpeedMS
 	if !s.isRunning {
-		// hors course : "en mouvement" (vitesse ≥ 0,5 m/s, ou FC seule si pas de vitesse)
 		if valid(spd) {
 			return spd >= 0.5
 		}
@@ -88,7 +93,6 @@ func (s *session) isRunRecord(r fitdata.Record) bool {
 	return true
 }
 
-// runMean : moyenne pondérée d'un champ sur les records de course.
 func (s *session) runMean(get func(fitdata.Record) float64) float64 {
 	var acc wacc
 	for i, r := range s.act.Records {
@@ -99,7 +103,6 @@ func (s *session) runMean(get func(fitdata.Record) float64) float64 {
 	return acc.mean()
 }
 
-// runTime : temps total (s) des records de course.
 func (s *session) runTime() float64 {
 	t := 0.0
 	for i := range s.act.Records {
@@ -110,9 +113,22 @@ func (s *session) runTime() float64 {
 	return t
 }
 
-// computeBiomech calcule la dynamique de course (course uniquement).
-func computeBiomech(s *session, det *garmin.ActivityDetail, p config.Profile, isRun bool) Biomechanics {
+// stepLength returns the measured step length, or speed / cadence when the sensor gives none.
+func stepLength(r fitdata.Record) float64 {
+	if valid(r.StepM) && r.StepM > 0 {
+		return r.StepM
+	}
+	if valid(r.SpeedMS) && valid(r.CadenceSpm) && r.CadenceSpm > 0 && r.SpeedMS > 0 {
+		return r.SpeedMS * 60 / r.CadenceSpm
+	}
+	return nan
+}
+
+func computeBiomech(s *session, det *garmin.ActivityDetail, th athlete.Thresholds, isRun, garminConnected bool) Biomechanics {
 	b := Biomechanics{GctBalance: GctBalance{Available: false, Reason: strp(gctNAReason)}}
+	if !garminConnected {
+		b.GctBalance.Reason = strp(NoGarminReason)
+	}
 	if !isRun {
 		b.GctBalance.Reason = strp("Non applicable : activité hors course à pied")
 		return b
@@ -129,21 +145,19 @@ func computeBiomech(s *session, det *garmin.ActivityDetail, p config.Profile, is
 	}
 	cad, cadMax, inTarget, below := nan, nan, nan, nan
 	gct, vo, vr, stride, bal := nan, nan, nan, nan, nan
+	ss := fitdata.EmptySession()
 	if s != nil && len(s.act.Records) > 0 {
+		ss = s.act.Session
 		cad = s.runMean(func(r fitdata.Record) float64 { return r.CadenceSpm })
 		cadMax = s.smoothedRunMax(func(r fitdata.Record) float64 { return r.CadenceSpm }, 5)
-		inTarget, below = s.cadenceShares(p.CadenceTargetMin, p.CadenceTargetMax)
+		inTarget, below = s.cadenceShares(th.CadenceTargetMin, th.CadenceTargetMax)
 		gct = s.runMean(func(r fitdata.Record) float64 { return r.GCTMs })
 		vo = s.runMean(func(r fitdata.Record) float64 { return r.VOCm })
 		vr = s.runMean(func(r fitdata.Record) float64 { return r.VRPct })
 		stride = s.runMean(func(r fitdata.Record) float64 { return r.StepM })
 		bal = s.runMean(func(r fitdata.Record) float64 { return r.GCTBalLeftPct })
-	}
-	var ss fitdata.Session
-	if s != nil {
+	} else if s != nil {
 		ss = s.act.Session
-	} else {
-		ss = fitdata.Session{AvgCadSpm: nan, MaxCadSpm: nan, AvgGCTMs: nan, AvgVOCm: nan, AvgVRPct: nan, AvgStepM: nan, AvgGCTBal: nan}
 	}
 	cad = first(cad, api(func(m *garmin.ActivitySumDTO) *float64 { return m.AverageRunCadence }), ss.AvgCadSpm)
 	cadMax = first(cadMax, api(func(m *garmin.ActivitySumDTO) *float64 { return m.MaxRunCadence }), ss.MaxCadSpm)
@@ -152,9 +166,12 @@ func computeBiomech(s *session, det *garmin.ActivityDetail, p config.Profile, is
 	vr = first(vr, api(func(m *garmin.ActivitySumDTO) *float64 { return m.VerticalRatio }), ss.AvgVRPct)
 	strideAPI := api(func(m *garmin.ActivitySumDTO) *float64 { return m.StrideLength })
 	if valid(strideAPI) {
-		strideAPI /= 100 // cm → m
+		strideAPI /= 100
 	}
 	stride = first(stride, strideAPI, ss.AvgStepM)
+	if !valid(stride) && s != nil {
+		stride = s.runMean(stepLength)
+	}
 	bal = first(bal, ss.AvgGCTBal)
 
 	b.CadenceAvgSpm = num(cad, 0)
@@ -166,13 +183,12 @@ func computeBiomech(s *session, det *garmin.ActivityDetail, p config.Profile, is
 	b.VerticalRatioPct = num(vr, 1)
 	b.StrideLengthM = num(stride, 2)
 	if valid(bal) && bal > 0 && bal < 100 {
-		b.GctBalance = gctBalance(bal, p)
+		b.GctBalance = gctBalance(bal, th)
 	}
 	return b
 }
 
-// gctBalance construit l'équilibre G/D à partir du % gauche.
-func gctBalance(left float64, p config.Profile) GctBalance {
+func gctBalance(left float64, th athlete.Thresholds) GctBalance {
 	l := roundTo(left, 1)
 	r := roundTo(100-left, 1)
 	gap := roundTo(math.Abs(l-r), 1)
@@ -184,16 +200,16 @@ func gctBalance(left float64, p config.Profile) GctBalance {
 		g.WeakerSide = strp("right")
 	}
 	lvl := "ok"
-	if gap > 2*p.GctBalanceAlertPct {
+	if gap > 2*th.GctBalanceGapPct {
 		lvl = "danger"
-	} else if gap > p.GctBalanceAlertPct {
+	} else if gap > th.GctBalanceGapPct {
 		lvl = "warn"
 	}
 	g.Alert = &lvl
 	return g
 }
 
-// cadenceShares : % du temps de course dans la cible et sous 170 spm.
+// cadenceShares returns the share of running time inside [min, max] and below 170 spm.
 func (s *session) cadenceShares(min, max float64) (float64, float64) {
 	tot, in, below := 0.0, 0.0, 0.0
 	for i, r := range s.act.Records {
@@ -216,8 +232,7 @@ func (s *session) cadenceShares(min, max float64) (float64, float64) {
 	return in / tot * 100, below / tot * 100
 }
 
-// smoothedRunMax : maximum d'une moyenne glissante (k records consécutifs de course),
-// pour ignorer les pics isolés.
+// smoothedRunMax is the max of a k-record moving average over running records (ignores spikes).
 func (s *session) smoothedRunMax(get func(fitdata.Record) float64, k int) float64 {
 	var vals []float64
 	best := nan
@@ -245,7 +260,7 @@ func (s *session) smoothedRunMax(get func(fitdata.Record) float64, k int) float6
 	return best
 }
 
-// computeDrift : dérive cardiaque sur la course uniquement (≥ 10 min de course).
+// computeDrift is the cardiac decoupling over running records (>= 10 min of running).
 func computeDrift(s *session) *Drift {
 	if s == nil {
 		return nil
@@ -268,7 +283,7 @@ func computeDrift(s *session) *Drift {
 		method = "pw:hr"
 	}
 	if !s.isRunning && method != "pw:hr" {
-		return nil // hors course, l'allure ne reflète pas l'effort (kayak, rando, ski…)
+		return nil
 	}
 	var pts []pt
 	tot := 0.0
@@ -331,8 +346,7 @@ func computeDrift(s *session) *Drift {
 	}
 }
 
-// targetPaceTime : temps et distance passés dans une plage d'allure (records de course,
-// vitesse lissée sur 5 records).
+// targetPaceTime returns time and distance spent in a pace range (running records, speed smoothed over 5 records).
 func targetPaceTime(s *session, minSec, maxSec float64) (float64, float64) {
 	if s == nil {
 		return 0, 0
@@ -365,13 +379,13 @@ func targetPaceTime(s *session, minSec, maxSec float64) (float64, float64) {
 	return secs, dist
 }
 
-// zonesFromRecords calcule le temps en Z1..Z5 à partir des planchers de zones.
+// zonesFromRecords computes time in Z1..Z5 from zone floors.
 func zonesFromRecords(s *session, floors []float64) []float64 {
 	if s == nil || len(floors) != 5 || !sort.Float64sAreSorted(floors) {
 		return nil
 	}
 	out := make([]float64, 5)
-	any := false
+	found := false
 	for i, r := range s.act.Records {
 		if !valid(r.HR) {
 			continue
@@ -385,10 +399,10 @@ func zonesFromRecords(s *session, floors []float64) []float64 {
 		}
 		if z >= 0 {
 			out[z] += s.w[i]
-			any = true
+			found = true
 		}
 	}
-	if !any {
+	if !found {
 		return nil
 	}
 	for i := range out {

@@ -5,20 +5,20 @@ import (
 	"math"
 	"sort"
 
-	"patella/internal/fitdata"
+	"stride/internal/fitdata"
 )
 
 const minSegmentS = 20.0
 
-// windowStats : statistiques recalculées sur les records d'une fenêtre [t0, t1].
+// windowStats are recomputed from the records of a window [t0, t1].
 type windowStats struct {
-	avgHR, maxHR, avgPower, avgCad, gct, vo, bal float64
-	distM, ascent, descent                       float64
-	n                                            int
+	avgHR, maxHR, avgPower, avgCad, gct, vo, bal, gap float64
+	distM, ascent, descent                            float64
+	n                                                 int
 }
 
 func (s *session) window(t0, t1 float64, runOnly bool) windowStats {
-	var hr, pw, cad, gct, vo, bal wacc
+	var hr, pw, cad, gct, vo, bal, gap wacc
 	ws := windowStats{maxHR: nan, distM: nan, ascent: nan, descent: nan}
 	d0, d1 := nan, nan
 	prevAlt := nan
@@ -43,6 +43,9 @@ func (s *session) window(t0, t1 float64, runOnly bool) windowStats {
 		gct.add(r.GCTMs, w)
 		vo.add(r.VOCm, w)
 		bal.add(r.GCTBalLeftPct, w)
+		if i < len(s.gap) && valid(r.SpeedMS) && r.SpeedMS >= 0.5 {
+			gap.add(s.gap[i], w)
+		}
 		if valid(r.DistM) {
 			if !valid(d0) {
 				d0 = r.DistM
@@ -50,7 +53,7 @@ func (s *session) window(t0, t1 float64, runOnly bool) windowStats {
 			d1 = r.DistM
 		}
 		if valid(r.AltM) {
-			// hystérésis de 1 m pour limiter le bruit barométrique
+			// 1 m hysteresis against barometric noise
 			if !valid(prevAlt) {
 				prevAlt = r.AltM
 			} else if dz := r.AltM - prevAlt; math.Abs(dz) >= 1 {
@@ -64,7 +67,7 @@ func (s *session) window(t0, t1 float64, runOnly bool) windowStats {
 		}
 	}
 	ws.avgHR, ws.avgPower, ws.avgCad = hr.mean(), pw.mean(), cad.mean()
-	ws.gct, ws.vo, ws.bal = gct.mean(), vo.mean(), bal.mean()
+	ws.gct, ws.vo, ws.bal, ws.gap = gct.mean(), vo.mean(), bal.mean(), gap.mean()
 	if valid(d0) && valid(d1) {
 		ws.distM = d1 - d0
 	}
@@ -74,14 +77,6 @@ func (s *session) window(t0, t1 float64, runOnly bool) windowStats {
 	return ws
 }
 
-func pauseKindLabel(kind string) string {
-	if kind == "stand" {
-		return "Arrêt"
-	}
-	return "Marche"
-}
-
-// buildSegment assemble un segment à partir d'une fenêtre et des valeurs de résumé.
 func (s *session) buildSegment(kind, label string, t0, t1, durS, distM, asc, desc float64) Segment {
 	ws := s.window(t0, t1, false)
 	if !valid(distM) {
@@ -112,16 +107,19 @@ func (s *session) buildSegment(kind, label string, t0, t1, durS, distM, asc, des
 	if kind != "stand" && distM >= 10 && durS > 0 {
 		seg.PaceSecPerKm = num(durS/distM*1000, 0)
 	}
+	if s.isRunning && kind != "stand" && kind != "walk" && seg.PaceSecPerKm != nil {
+		seg.GapSecPerKm = num(paceFromSpeed(ws.gap), 0)
+	}
 	return seg
 }
 
-// rawBlock : fenêtre course/pause avant consolidation.
+// rawBlock is a run/pause window before consolidation.
 type rawBlock struct {
 	kind            string // run | walk | stand
 	t0, t1          float64
 	durS, distM     float64
 	ascent, descent float64
-	walkS, standS   float64 // pour choisir le type dominant d'une pause fusionnée
+	walkS, standS   float64 // picks the dominant kind of a merged pause
 }
 
 func (r rawBlock) isPause() bool { return r.kind != "run" }
@@ -136,7 +134,6 @@ func addNaN(a, b float64) float64 {
 	return a + b
 }
 
-// merge fusionne une suite de blocs en un seul, de nature `kind`.
 func mergeRaw(kind string, bs ...rawBlock) rawBlock {
 	out := rawBlock{kind: kind, t0: bs[0].t0, t1: bs[len(bs)-1].t1, distM: nan, ascent: nan, descent: nan}
 	for _, b := range bs {
@@ -156,19 +153,17 @@ func mergeRaw(kind string, bs ...rawBlock) rawBlock {
 	return out
 }
 
-// Seuils de consolidation des splits rwd_* (Garmin découpe des micro-pauses de 1-3 s).
+// Consolidation thresholds of the rwd_* splits (Garmin cuts 1-3 s micro-pauses).
 const (
-	minPauseS = 10.0 // pause plus courte → absorbée dans la course
-	minRunS   = 20.0 // course plus courte entre deux pauses → absorbée dans la pause
+	minPauseS = 10.0 // shorter pause → absorbed by the run
+	minRunS   = 20.0 // shorter run between two pauses → absorbed by the pause
 )
 
-// consolidate : fusionne les pauses adjacentes, absorbe les micro-pauses dans la course
-// et les micro-blocs de course entre deux pauses.
+// consolidate merges adjacent pauses, absorbs micro-pauses into the run and micro-runs into pauses.
 func consolidate(in []rawBlock) []rawBlock {
 	bs := append([]rawBlock{}, in...)
 	for changed := true; changed; {
 		changed = false
-		// 1) pauses adjacentes → une seule pause ; courses adjacentes → une seule course
 		for i := 1; i < len(bs); i++ {
 			if bs[i].isPause() == bs[i-1].isPause() {
 				kind := bs[i].kind
@@ -181,7 +176,6 @@ func consolidate(in []rawBlock) []rawBlock {
 				i--
 			}
 		}
-		// 2) micro-pause → absorbée par la course voisine (et fusion course+course)
 		for i := 0; i < len(bs) && len(bs) > 1; i++ {
 			if !bs[i].isPause() || bs[i].durS >= minPauseS {
 				continue
@@ -203,7 +197,6 @@ func consolidate(in []rawBlock) []rawBlock {
 		if changed {
 			continue
 		}
-		// 3) micro-bloc de course coincé entre deux pauses → absorbé dans la pause
 		for i := 1; i+1 < len(bs); i++ {
 			if bs[i].isPause() || bs[i].durS >= minRunS || !bs[i-1].isPause() || !bs[i+1].isPause() {
 				continue
@@ -217,7 +210,7 @@ func consolidate(in []rawBlock) []rawBlock {
 	return bs
 }
 
-// blocksFromSplits : blocs course/marche/arrêt depuis les splits FIT rwd_*.
+// blocksFromSplits builds run/walk/stand blocks from the FIT rwd_* splits.
 func blocksFromSplits(s *session) []Segment {
 	var sp []fitdata.Split
 	for _, x := range s.act.Splits {
@@ -241,7 +234,7 @@ func blocksFromSplits(s *session) []Segment {
 		}
 		dur := first(x.TimerS, t1-x.StartT)
 		if kind != "run" {
-			dur = first(x.ElapsedS, x.TimerS, t1-x.StartT) // durée réelle de la pause (auto-pause)
+			dur = first(x.ElapsedS, x.TimerS, t1-x.StartT) // real pause duration (auto-pause)
 		}
 		rb := rawBlock{kind: kind, t0: x.StartT, t1: t1, durS: dur, distM: x.DistM, ascent: x.AscentM, descent: x.DescentM}
 		switch kind {
@@ -255,10 +248,9 @@ func blocksFromSplits(s *session) []Segment {
 	return s.labelBlocks(consolidate(alignPauses(raws)))
 }
 
-// alignPauses : une pause couvre tout le temps réel entre les blocs de course voisins,
-// arrêt du chrono compris (les splits rwd_stand ne couvrent que la fin de l'arrêt et leur
-// « elapsed » ne correspond à aucune fenêtre). Les fins de split sont inclusives (1 s d'écart
-// entre deux splits contigus) : seul un vrai trou (> maxSplitGapS) est comblé.
+// alignPauses makes a pause cover the whole wall-clock gap between the neighbouring runs, timer
+// stop included (rwd_stand only covers the end of a stop). Split ends are inclusive (1 s apart
+// when contiguous): only a real gap (> 2 s) is filled.
 func alignPauses(bs []rawBlock) []rawBlock {
 	const maxSplitGapS = 2.0
 	for i := range bs {
@@ -286,7 +278,6 @@ func alignPauses(bs []rawBlock) []rawBlock {
 	return bs
 }
 
-// labelBlocks construit les segments « Bloc n » / « Pause n ».
 func (s *session) labelBlocks(raws []rawBlock) []Segment {
 	var out []Segment
 	nRun, nPause := 0, 0
@@ -307,8 +298,8 @@ func (s *session) labelBlocks(raws []rawBlock) []Segment {
 	return out
 }
 
-// detectBlocks : détection maison course/marche/arrêt sur les records (lissage 10 s,
-// segments ≥ 20 s, trous d'enregistrement > 10 s = arrêt).
+// detectBlocks classifies run/walk/stand from the records (10 s smoothing, segments >= 20 s,
+// recording gaps > 10 s = stop).
 func detectBlocks(s *session) []Segment {
 	recs := s.act.Records
 	if len(recs) < 30 {
@@ -352,7 +343,6 @@ func detectBlocks(s *session) []Segment {
 		}
 		segs = append(segs, raw{kind: k, t0: start, t1: t})
 	}
-	// fusion des segments trop courts dans le voisin le plus long
 	for changed := true; changed && len(segs) > 1; {
 		changed = false
 		for i := 0; i < len(segs); i++ {
@@ -372,7 +362,6 @@ func detectBlocks(s *session) []Segment {
 			changed = true
 			break
 		}
-		// re-fusion des voisins de même nature
 		for i := 1; i < len(segs); i++ {
 			if segs[i].kind == segs[i-1].kind {
 				segs[i-1].t1 = segs[i].t1
@@ -406,7 +395,7 @@ func detectBlocks(s *session) []Segment {
 	return s.labelBlocks(raws)
 }
 
-// lapsFromFIT : laps montre (« Km n » si déclenchés à la distance, sinon « Lap n »).
+// lapsFromFIT returns the watch laps ("Km n" when triggered by distance, else "Lap n").
 func lapsFromFIT(s *session) []Segment {
 	laps := s.act.Laps
 	if len(laps) == 0 {
@@ -445,7 +434,7 @@ func lapsFromFIT(s *session) []Segment {
 			t1 = t0 + first(l.ElapsedS, l.TimerS, 0)
 		}
 		seg := s.buildSegment(kind, label, t0, t1, first(l.TimerS, l.ElapsedS), l.DistM, l.AscentM, l.DescentM)
-		// valeurs de résumé du lap, prioritaires quand présentes
+		// lap summary values win when present
 		if v := num(l.AvgHR, 0); v != nil {
 			seg.AvgHR = v
 		}
@@ -475,7 +464,7 @@ func lapsFromFIT(s *session) []Segment {
 	return out
 }
 
-// syntheticKmLaps : découpage par kilomètre quand aucun lap n'est disponible (source details).
+// syntheticKmLaps splits by kilometre when no lap exists (details or Strava source).
 func syntheticKmLaps(s *session) []Segment {
 	recs := s.act.Records
 	if len(recs) == 0 {
@@ -514,13 +503,12 @@ func (s *session) timerBetween(i0, i1 int) float64 {
 	return t
 }
 
-// buildSegments choisit blocs et laps ; primary = blocks si ≥ 2 segments course/marche.
+// buildSegments picks blocks and laps; primary = blocks when there are >= 2 run/walk blocks.
 func buildSegments(s *session) Segments {
 	seg := Segments{Primary: "laps", Blocks: []Segment{}, Laps: []Segment{}}
 	if s == nil {
 		return seg
 	}
-	// Blocs course/marche : course à pied uniquement (pas de sens pour vélo, kayak, ski…).
 	var blocks []Segment
 	if s.isRunning {
 		blocks = blocksFromSplits(s)
@@ -540,16 +528,8 @@ func buildSegments(s *session) Segments {
 	return seg
 }
 
-// primarySegments retourne la liste utilisée par le rapport.
-func (sg Segments) primarySegments() []Segment {
-	if sg.Primary == "blocks" {
-		return sg.Blocks
-	}
-	return sg.Laps
-}
-
-// fadeEnd : allure du dernier bloc de course > 8 % plus lente que la moyenne des
-// précédents avec une FC ≥ → retourne le % de ralentissement (sinon NaN).
+// fadeEnd returns the slowdown % of the last running block when it is > 8 % slower than the
+// previous ones with a heart rate at least as high (NaN otherwise).
 func fadeEnd(sg Segments) float64 {
 	var runs []Segment
 	for _, b := range sg.Blocks {

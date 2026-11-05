@@ -11,10 +11,10 @@ import (
 	"github.com/muktihari/fit/profile/mesgdef"
 	"github.com/muktihari/fit/profile/typedef"
 
-	"patella/internal/garmin"
+	"stride/internal/garmin"
 )
 
-// buildFIT encode un FIT d'activité synthétique (aucune position GPS).
+// buildFIT encodes a synthetic activity FIT file (no GPS position).
 func buildFIT(t *testing.T, withBalance bool) []byte {
 	t.Helper()
 	start := time.Date(2026, 11, 2, 17, 30, 0, 0, time.UTC)

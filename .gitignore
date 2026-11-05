@@ -12,6 +12,7 @@ bin/
 .build/
 
 # Outils / OS
+.claude/
 .code-review-graph/
 .DS_Store
 .idea/

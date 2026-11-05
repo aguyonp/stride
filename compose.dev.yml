@@ -1,0 +1,9 @@
+# Local build instead of the published image:
+#   docker compose -f compose.yml -f compose.dev.yml up -d --build
+services:
+  stride:
+    image: stride:local
+    build:
+      context: .
+      args:
+        VERSION: local

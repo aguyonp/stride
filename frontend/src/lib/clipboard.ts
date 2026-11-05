@@ -1,23 +1,17 @@
-/**
- * Copie dans le presse-papiers.
- * `navigator.clipboard` n'existe qu'en contexte sécurisé (HTTPS / localhost) :
- * en HTTP sur une IP LAN on bascule sur textarea + execCommand('copy').
- */
+/** Clipboard copy; falls back to textarea + execCommand outside secure contexts (HTTP on a LAN IP). */
 export async function copyText(text: string): Promise<boolean> {
   if (window.isSecureContext && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      /* permission refusée → fallback */
     }
   }
   return legacyCopy(text)
 }
 
 function legacyCopy(text: string): boolean {
-  // Si une <dialog> modale est ouverte, le reste du document est inerte :
-  // le textarea doit être inséré dans la dialog pour pouvoir être sélectionné.
+  // An open modal <dialog> makes the rest of the document inert: insert the textarea inside it.
   const host = document.querySelector<HTMLDialogElement>('dialog[open]') ?? document.body
   const ta = document.createElement('textarea')
   ta.value = text
@@ -30,7 +24,7 @@ function legacyCopy(text: string): boolean {
     width: '1px',
     height: '1px',
     opacity: '0',
-    fontSize: '16px', // évite le zoom iOS
+    fontSize: '16px',
     pointerEvents: 'none',
   })
   host.appendChild(ta)

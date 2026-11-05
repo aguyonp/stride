@@ -1,38 +1,40 @@
 package analysis
 
 import (
+	"math"
 	"strings"
 
-	"patella/internal/config"
-	"patella/internal/frfmt"
-	"patella/internal/garmin"
+	"stride/internal/athlete"
+	"stride/internal/frfmt"
+	"stride/internal/garmin"
 )
 
-// rangeLabel : "3:35–3:40".
 func rangeLabel(minSec, maxSec float64) string {
 	return frfmt.PaceShort(minSec) + "–" + frfmt.PaceShort(maxSec)
 }
 
-// computeACWR : charge aiguë (7 j) / chronique (moyenne hebdo sur 28 j), activités
-// démarrées jusqu'à `untilLocal` inclus.
-func computeACWR(acts []garmin.ActivityListItem, date, untilLocal string) *ACWR {
+// DatedLoad is the training load of one activity.
+type DatedLoad struct {
+	Date       string // local date
+	StartLocal string
+	Load       float64
+}
+
+// ComputeLoadRatio returns acute (7 d) / chronic (28 d ÷ 4) load for activities started up to
+// untilLocal (inclusive; "" = whole day). Nil when the chronic load is zero.
+func ComputeLoadRatio(loads []DatedLoad, date, untilLocal string, maxRatio float64) *LoadRatio {
 	from7, from28 := dateAdd(date, -6), dateAdd(date, -27)
 	acute, total28 := 0.0, 0.0
-	for i := range acts {
-		a := &acts[i]
-		if a.TrainingLoad == nil {
+	for _, l := range loads {
+		if l.Date > date || l.Date < from28 {
 			continue
 		}
-		d := a.LocalDate()
-		if d > date || d < from28 {
+		if untilLocal != "" && l.StartLocal > untilLocal {
 			continue
 		}
-		if untilLocal != "" && garmin.NormalizeLocal(a.StartTimeLocal) > untilLocal {
-			continue
-		}
-		total28 += *a.TrainingLoad
-		if d >= from7 {
-			acute += *a.TrainingLoad
+		total28 += l.Load
+		if l.Date >= from7 {
+			acute += l.Load
 		}
 	}
 	chronic := total28 / 4
@@ -40,19 +42,29 @@ func computeACWR(acts []garmin.ActivityListItem, date, untilLocal string) *ACWR 
 		return nil
 	}
 	ratio := acute / chronic
+	if maxRatio <= 0 {
+		maxRatio = 1.3
+	}
 	verdict := "optimal"
 	switch {
-	case ratio > 1.5:
+	case ratio > math.Max(1.5, maxRatio+0.2):
 		verdict = "danger"
-	case ratio > 1.3:
+	case ratio > maxRatio:
 		verdict = "high"
 	case ratio < 0.8:
 		verdict = "low"
 	}
-	return &ACWR{Acute7d: roundTo(acute, 0), Chronic28d: roundTo(chronic, 0), Ratio: num(ratio, 2), Verdict: verdict}
+	return &LoadRatio{Acute: roundTo(acute, 0), Chronic: roundTo(chronic, 0), Ratio: num(ratio, 2), Verdict: verdict, Source: "computed"}
 }
 
-// bestEfforts depuis les champs fastestSplit_* de la liste.
+// ACWRFrom exposes a load ratio in the V1 Performance.acwr shape.
+func ACWRFrom(lr *LoadRatio) *ACWR {
+	if lr == nil {
+		return nil
+	}
+	return &ACWR{Acute7d: lr.Acute, Chronic28d: lr.Chronic, Ratio: lr.Ratio, Verdict: lr.Verdict}
+}
+
 func bestEfforts(it *garmin.ActivityListItem) []BestEffort {
 	out := []BestEffort{}
 	if it == nil {
@@ -72,8 +84,8 @@ func bestEfforts(it *garmin.ActivityListItem) []BestEffort {
 	return out
 }
 
-// pickZones choisit la config de zones FC la plus pertinente (course, sinon défaut).
-func pickZones(zs []garmin.HRZoneConfig) []float64 {
+// PickZones chooses the running HR zones (DEFAULT otherwise).
+func PickZones(zs []garmin.HRZoneConfig) []float64 {
 	var def []float64
 	for i := range zs {
 		f := zs[i].Floors()
@@ -91,15 +103,11 @@ func pickZones(zs []garmin.HRZoneConfig) []float64 {
 	return def
 }
 
-func buildPerformance(s *session, det *garmin.ActivityDetail, it *garmin.ActivityListItem, w *wellness, p config.Profile, hrZones []float64, untilLocal string) *Performance {
-	perf := &Performance{TargetPaces: []TargetPace{}, BestEfforts: bestEfforts(it)}
-	var sm *garmin.ActivitySumDTO
-	if det != nil {
-		sm = &det.Summary
-	}
+func buildPerformance(s *session, det *garmin.ActivityDetail, it *garmin.ActivityListItem, targets []athlete.PaceTarget, hrZones, zoneFloors []float64) Performance {
+	perf := Performance{TargetPaces: []TargetPace{}, BestEfforts: bestEfforts(it), HrZoneFloorsBpm: zoneFloors}
 	avgP, normP := nan, nan
-	if sm != nil {
-		avgP, normP = pf(sm.AveragePower), pf(sm.NormalizedPower)
+	if det != nil {
+		avgP, normP = pf(det.Summary.AveragePower), pf(det.Summary.NormalizedPower)
 	}
 	if s != nil {
 		avgP = first(avgP, s.act.Session.AvgPower)
@@ -114,24 +122,11 @@ func buildPerformance(s *session, det *garmin.ActivityDetail, it *garmin.Activit
 	if len(hrZones) == 5 {
 		perf.Z4Z5S = num(hrZones[3]+hrZones[4], 0)
 	}
-	targets := []struct {
-		label    string
-		min, max float64
-	}{
-		{"Allure 10 km", p.Pace10kMinSecPerKm, p.Pace10kMaxSecPerKm},
-		{"Allure marathon", p.PaceMarathonMinSecPerKm, p.PaceMarathonMaxSecPerKm},
-	}
 	for _, t := range targets {
-		secs, dist := targetPaceTime(s, t.min, t.max)
+		secs, dist := targetPaceTime(s, t.MinSecPerKm, t.MaxSecPerKm)
 		perf.TargetPaces = append(perf.TargetPaces, TargetPace{
-			Label: t.label, RangeLabel: rangeLabel(t.min, t.max), Seconds: roundTo(secs, 0), DistanceM: roundTo(dist, 0),
+			Label: "Allure " + t.Label, RangeLabel: rangeLabel(t.MinSecPerKm, t.MaxSecPerKm), Seconds: roundTo(secs, 0), DistanceM: roundTo(dist, 0),
 		})
-	}
-	if w != nil && w.actsOK {
-		perf.ACWR = computeACWR(w.acts, w.date, untilLocal)
-	}
-	if w != nil {
-		perf.HrZoneFloorsBpm = pickZones(w.zones)
 	}
 	return perf
 }

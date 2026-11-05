@@ -5,16 +5,15 @@ import (
 	"strings"
 	"testing"
 
-	"patella/internal/config"
-	"patella/internal/fitdata"
-	"patella/internal/garmin"
+	"stride/internal/fitdata"
+	"stride/internal/garmin"
 )
 
 func fp(v float64) *float64 { return &v }
 func sp(s string) *string   { return &s }
 
-// synthActivity : 10 min de course, 1 min de marche, 10 min de course (1 Hz), sans GPS.
-// FC qui monte pour produire une dérive mesurable.
+// synthActivity: 10 min run, 1 min walk, 10 min run at 1 Hz, no GPS;
+// heart rate rises to produce a measurable drift.
 func synthActivity(withSplits bool) *fitdata.Activity {
 	a := &fitdata.Activity{Source: "fit"}
 	n := fitdata.NaN
@@ -61,7 +60,7 @@ func TestRunMaskExcludesWalk(t *testing.T) {
 			t.Fatalf("record t=%v : run=%v", r.T, s.run[i])
 		}
 	}
-	// sans splits : exclusion par vitesse/cadence
+	// without splits: excluded by speed/cadence
 	s2 := newSession(synthActivity(false), true)
 	if s2.run[630] || !s2.run[100] {
 		t.Fatal("masque course incorrect sans splits")
@@ -69,9 +68,9 @@ func TestRunMaskExcludesWalk(t *testing.T) {
 }
 
 func TestBiomechanics(t *testing.T) {
-	p := config.DefaultProfile()
+	p := testProfile()
 	s := newSession(synthActivity(true), true)
-	b := computeBiomech(s, nil, p, true)
+	b := computeBiomech(s, nil, p.Thresholds, true, true)
 	if got := pf(b.CadenceAvgSpm); got != 178 {
 		t.Errorf("cadence moyenne = %v, attendu 178", got)
 	}
@@ -100,15 +99,15 @@ func TestBiomechanicsNoBalanceAndFallback(t *testing.T) {
 		a.Records[i].VOCm = fitdata.NaN
 	}
 	det := &garmin.ActivityDetail{Summary: garmin.ActivitySumDTO{VerticalOscillation: fp(9.7), StrideLength: fp(112)}}
-	b := computeBiomech(newSession(a, true), det, config.DefaultProfile(), true)
+	b := computeBiomech(newSession(a, true), det, testProfile().Thresholds, true, true)
 	if b.GctBalance.Available || b.GctBalance.Reason == nil || b.GctBalance.LeftPct != nil {
 		t.Fatalf("équilibre absent mal géré : %+v", b.GctBalance)
 	}
 	if pf(b.VerticalOscillationCm) != 9.7 {
 		t.Errorf("repli OV sur l'API attendu, obtenu %v", pf(b.VerticalOscillationCm))
 	}
-	// non-course : pas de biomécanique
-	b2 := computeBiomech(newSession(a, false), det, config.DefaultProfile(), false)
+	// non-running: no biomechanics
+	b2 := computeBiomech(newSession(a, false), det, testProfile().Thresholds, false, true)
 	if b2.CadenceAvgSpm != nil || b2.GctBalance.Available {
 		t.Error("biomécanique attendue vide hors course")
 	}
@@ -136,7 +135,7 @@ func TestSegmentsFromSplits(t *testing.T) {
 	if len(sg.Laps) != 2 || sg.Laps[0].Label != "Km 1" || sg.Laps[1].Label != "Km 2" || sg.Laps[0].Kind != "lap" {
 		t.Errorf("laps : %+v", sg.Laps)
 	}
-	// valeur de lap manquante → recalcul sur la fenêtre
+	// missing lap value: recomputed from the window
 	if sg.Laps[1].AvgPower == nil {
 		t.Error("puissance du lap 2 attendue (recalcul records)")
 	}
@@ -200,7 +199,7 @@ func TestConsolidateMicroPauses(t *testing.T) {
 }
 
 func TestAlignPausesCoversTimerStop(t *testing.T) {
-	// Chrono arrêté 285→314 s, split rwd_stand 314→317 s (elapsed Garmin 21 s), reprise à 318 s.
+	// Timer stopped 285→314 s, rwd_stand split 314→317 s (Garmin elapsed 21 s), resumed at 318 s.
 	in := []rawBlock{
 		{kind: "run", t0: 0, t1: 285, durS: 284.7},
 		{kind: "stand", t0: 314, t1: 317, durS: 21.1, standS: 21.1},
@@ -234,7 +233,7 @@ func TestDrift(t *testing.T) {
 	if d.FirstHalfHR != 135 || d.SecondHalfHR != 145 || d.LastThirdHrRiseBpm < 5 {
 		t.Errorf("FC moitiés/tiers : %+v", d)
 	}
-	// trop court → nil
+	// too short: nil
 	a := synthActivity(true)
 	a.Records = a.Records[:300]
 	if computeDrift(newSession(a, true)) != nil {
@@ -266,99 +265,6 @@ func TestTargetPaceTime(t *testing.T) {
 	}
 }
 
-func TestBodyBatteryAtWake(t *testing.T) {
-	wake := 1.7623e12
-	day := garmin.BodyBatteryDay{
-		Descriptors: []garmin.BBDescriptor{{Index: 0, Key: "timestamp"}, {Index: 1, Key: "bodyBatteryLevel"}},
-		Values:      [][]any{{wake - 40*60e3, 95.0}, {wake + 5*60e3, 100.0}, {wake + 5*3600e3, 60.0}, {wake, nil}},
-	}
-	if got := bodyBatteryAtWake([]garmin.BodyBatteryDay{day}, wake); got != 100 {
-		t.Errorf("BB réveil = %v", got)
-	}
-	far := garmin.BodyBatteryDay{Values: [][]any{{wake + 4*3600e3, 70.0}}}
-	if got := bodyBatteryAtWake([]garmin.BodyBatteryDay{far}, wake); valid(got) {
-		t.Errorf("BB réveil hors fenêtre attendu NaN, obtenu %v", got)
-	}
-}
-
-func TestACWR(t *testing.T) {
-	mk := func(day, clock string, load float64) garmin.ActivityListItem {
-		return garmin.ActivityListItem{StartTimeLocal: day + " " + clock, TrainingLoad: fp(load)}
-	}
-	acts := []garmin.ActivityListItem{
-		mk("2026-11-02", "18:00:00", 100), // J
-		mk("2026-11-02", "20:00:00", 500), // après la séance analysée → exclue
-		mk("2026-10-30", "10:00:00", 100),
-		mk("2026-10-20", "10:00:00", 100),
-		mk("2026-10-10", "10:00:00", 100),
-		mk("2026-10-01", "10:00:00", 999), // hors 28 j
-	}
-	a := computeACWR(acts, "2026-11-02", "2026-11-02T18:00:00")
-	if a == nil || a.Acute7d != 200 || a.Chronic28d != 100 || pf(a.Ratio) != 2 || a.Verdict != "danger" {
-		t.Fatalf("ACWR = %+v", a)
-	}
-	if computeACWR(nil, "2026-11-02", "") != nil {
-		t.Error("ACWR sans charge chronique attendu nil")
-	}
-}
-
-func TestAlerts(t *testing.T) {
-	p := config.DefaultProfile()
-	bio := &Biomechanics{CadenceAvgSpm: fp(165), VerticalOscillationCm: fp(10.5),
-		GctBalance: gctBalance(48.0, p)}
-	rc := &RecoveryContext{
-		HRV:         &HRVContext{Status: sp("LOW"), LastNightAvgMs: fp(38), BaselineLowMs: fp(42), BaselineHighMs: fp(55)},
-		RestingHR:   &RestingHR{Bpm: fp(54), Avg7d: fp(48), Delta: fp(6)},
-		Sleep:       &SleepContext{Score: fp(55), DeepS: fp(2400)},
-		BodyBattery: &BodyBattery{AtWake: fp(25)},
-	}
-	out := buildAlerts(alertInput{isRunning: true, bio: bio, elevLossM: 65, drift: &Drift{Method: "pace:hr", DecouplingPct: 11},
-		fadePct: 12, recovery: rc, acwr: &ACWR{Ratio: fp(1.4)}}, p)
-	got := map[string]string{}
-	for _, a := range out {
-		if _, dup := got[a.Code]; !dup {
-			got[a.Code] = a.Level
-		}
-		if strings.Contains(a.Message, " : ") {
-			t.Errorf("message avec « : » (doublon dans le rapport) : %q", a.Message)
-		}
-	}
-	want := map[string]string{"CADENCE_LOW": "danger", "VO_HIGH": "danger", "GCT_BALANCE": "danger", "DESCENT_HIGH": "danger",
-		"DRIFT_HIGH": "danger", "FADE_END": "warn", "HRV_LOW": "danger", "RHR_HIGH": "warn", "SLEEP_LOW": "warn", "BB_LOW": "danger", "ACWR": "warn"}
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("alerte %s = %q, attendu %q", k, got[k], v)
-		}
-	}
-	if _, ok := got["ALL_GOOD"]; ok {
-		t.Error("ALL_GOOD inattendu")
-	}
-	if out[0].Level != "danger" || out[len(out)-1].Level == "danger" {
-		t.Error("tri par gravité attendu")
-	}
-	// côté blessé mentionné : gauche plus court (48 % G)
-	for _, a := range out {
-		if a.Code == "GCT_BALANCE" && !strings.Contains(a.Message, "côté blessé") {
-			t.Errorf("message GCT : %q", a.Message)
-		}
-	}
-	// rien à signaler
-	ok := buildAlerts(alertInput{isRunning: true, bio: &Biomechanics{CadenceAvgSpm: fp(178), GctBalance: gctBalance(50, p)}, elevLossM: 10, fadePct: nan}, p)
-	if len(ok) != 1 || ok[0].Code != "ALL_GOOD" || ok[0].Level != "ok" {
-		t.Errorf("ALL_GOOD attendu, obtenu %+v", ok)
-	}
-	// équilibre non mesuré → info + ALL_GOOD ; cadence entre 170 et la cible → warn
-	na := buildAlerts(alertInput{isRunning: true, bio: &Biomechanics{CadenceAvgSpm: fp(172), GctBalance: GctBalance{}}, elevLossM: nan, fadePct: nan}, p)
-	if na[0].Code != "CADENCE_LOW" || na[0].Level != "warn" || na[1].Code != "GCT_BALANCE_NA" {
-		t.Errorf("alertes : %+v", na)
-	}
-	// mode jour : étages
-	day := buildAlerts(alertInput{dayMode: true, floorsUp: 24, elevLossM: nan, fadePct: nan}, p)
-	if day[0].Code != "FLOORS_HIGH" {
-		t.Errorf("FLOORS_HIGH attendu : %+v", day)
-	}
-}
-
 func TestFadeEnd(t *testing.T) {
 	sg := Segments{Blocks: []Segment{
 		{Kind: "run", DurationS: 600, DistanceM: 2000, PaceSecPerKm: fp(300), AvgHR: fp(140)},
@@ -371,35 +277,6 @@ func TestFadeEnd(t *testing.T) {
 	sg.Blocks[2].AvgHR = fp(130) // FC plus basse : ralentissement volontaire
 	if valid(fadeEnd(sg)) {
 		t.Error("pas de FADE_END attendu si FC plus basse")
-	}
-}
-
-func TestRecoveryAndTrend(t *testing.T) {
-	w := &wellness{
-		date:   "2026-11-02",
-		sleep:  &garmin.DailySleep{CalendarDate: "2026-11-02", SleepTimeSeconds: fp(25920), DeepSleepSeconds: fp(4920), SleepEndTimestampGMT: fp(1.7621e12), SleepEndTimestampLocal: fp(1.7621e12 + 3600e3)},
-		hrvDay: &garmin.HRVSummary{CalendarDate: "2026-11-02", LastNightAvg: fp(45), WeeklyAvg: fp(50), Status: sp("BALANCED")},
-		dhr:    &garmin.DailyHeartRate{RestingHeartRate: fp(48), LastSevenDaysAvgRHR: fp(46)},
-		bb:     []garmin.BodyBatteryDay{{Date: "2026-11-02", Charged: fp(60), Drained: fp(40), Values: [][]any{{1.7621e12 + 10*60e3, 82.0}}}},
-		sums:   []garmin.DailySummary{{CalendarDate: "2026-10-30"}},
-		acts:   []garmin.ActivityListItem{{StartTimeLocal: "2026-10-30 10:00:00", TrainingLoad: fp(80)}},
-		actsOK: true,
-	}
-	rc := buildRecovery(w)
-	if rc == nil || rc.HRV == nil || spv(rc.HRV.StatusLabel) != "Équilibré" || pf(rc.HRV.DeltaVsWeeklyPct) != -10 {
-		t.Fatalf("VFC : %+v", rc)
-	}
-	if pf(rc.RestingHR.Delta) != 2 || pf(rc.BodyBattery.AtWake) != 82 || pf(rc.BodyBattery.Charged) != 60 {
-		t.Errorf("FC repos / BB : %+v %+v", rc.RestingHR, rc.BodyBattery)
-	}
-	if len(rc.Trend) != 7 || rc.Trend[0].Date != "2026-10-27" || rc.Trend[6].Date != "2026-11-02" {
-		t.Fatalf("tendance : %+v", rc.Trend)
-	}
-	if pf(rc.Trend[3].TrainingLoad) != 80 || pf(rc.Trend[4].TrainingLoad) != 0 {
-		t.Errorf("charge tendance : %v %v", pf(rc.Trend[3].TrainingLoad), pf(rc.Trend[4].TrainingLoad))
-	}
-	if buildRecovery(&wellness{date: "2026-11-02"}) != nil {
-		t.Error("contexte vide attendu nil")
 	}
 }
 

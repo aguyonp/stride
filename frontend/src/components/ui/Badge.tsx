@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { AlertLevel } from '../../api/types'
 import { cn } from '../../lib/cn'
 
-export const LEVEL_TEXT: Record<AlertLevel, string> = {
+const LEVEL_TEXT: Record<AlertLevel, string> = {
   ok: 'text-ok',
   info: 'text-info',
   warn: 'text-warn',
@@ -29,7 +29,7 @@ export function LevelIcon({ level, className }: { level: AlertLevel; className?:
   return <Icon className={cn('size-4', LEVEL_TEXT[level], className)} aria-hidden="true" />
 }
 
-/** Pastille de statut : icône + libellé (jamais la couleur seule). */
+/** Status pill: icon + label, never colour alone. */
 export function Badge({ level, children, className }: { level: AlertLevel; children: ReactNode; className?: string }) {
   return (
     <span className={cn('chip border', LEVEL_BG[level], LEVEL_TEXT[level], className)}>

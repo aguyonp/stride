@@ -1,4 +1,3 @@
-/** Fond : dégradé profond + blobs flous animés lentement (figés si reduced-motion). */
 export function Ambient() {
   return (
     <div className="ambient" aria-hidden="true">

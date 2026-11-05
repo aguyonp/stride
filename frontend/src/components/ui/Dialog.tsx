@@ -9,19 +9,16 @@ interface DialogProps {
   description?: ReactNode
   children: ReactNode
   footer?: ReactNode
-  /** sheet : feuille basse (mobile) / modale centrée (desktop) ; drawer : panneau latéral droit sur desktop. */
+  /** sheet: bottom sheet on mobile, centred modal on desktop; drawer: right side panel on desktop. */
   variant?: 'sheet' | 'drawer'
   size?: 'md' | 'lg' | 'xl'
   headerExtra?: ReactNode
   bodyClassName?: string
-  /** Élément à focaliser à l'ouverture (sélecteur CSS dans la dialog). */
+  /** CSS selector of the element focused on open. */
   initialFocus?: string
 }
 
-/**
- * Dialog basée sur <dialog> natif : focus piégé, Échap, fond inerte, top-layer.
- * Bas de l'écran sur mobile, centrée (sheet) ou latérale (drawer) sur desktop.
- */
+/** Native <dialog>: focus trap, Escape, inert background. Bottom sheet on mobile, centred or side panel on desktop. */
 export function Dialog({ open, onClose, title, description, children, footer, variant = 'sheet', size = 'md', headerExtra, bodyClassName, initialFocus }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
   const [mounted, setMounted] = useState(open)

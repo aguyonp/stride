@@ -1,0 +1,35 @@
+services:
+  stride:
+    image: ghcr.io/aguyonp/stride:${STRIDE_TAG:-latest}
+    env_file: .env
+    environment:
+      STRIDE_LISTEN_ADDR: ":8080"
+      STRIDE_DATA_DIR: /data
+      STRIDE_VALKEY_URL: redis://valkey:6379/0
+    # Linux: ./data must belong to this UID/GID
+    user: "${STRIDE_UID:-65532}:${STRIDE_GID:-65532}"
+    volumes:
+      - ./data:/data
+    ports:
+      - "${STRIDE_HOST_BIND:-127.0.0.1}:${STRIDE_HOST_PORT:-8080}:8080"
+    depends_on:
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/stride", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:9-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped

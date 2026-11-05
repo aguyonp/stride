@@ -5,19 +5,13 @@ import './index.css'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { isMode } from './api/defaults'
+import { IS_MOCK } from './api/client'
 import { queryClient } from './api/queries'
 import App from './App'
 import { ToastProvider } from './components/ui/Toast'
-import { readStored, STORAGE_KEYS } from './lib/storage'
+import { applyTheme } from './hooks/useTheme'
 
-// Préférences appliquées avant le premier rendu (évite un flash de thème/couleur).
-// Sans choix explicite, le CSS suit prefers-color-scheme (sombre par défaut).
-const root = document.documentElement
-const storedMode = readStored(STORAGE_KEYS.mode)
-root.dataset.mode = isMode(storedMode) ? storedMode : 'sfp'
-const storedTheme = readStored(STORAGE_KEYS.theme)
-if (storedTheme === 'light' || storedTheme === 'dark') root.dataset.theme = storedTheme
+applyTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -28,3 +22,9 @@ createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </StrictMode>,
 )
+
+if (import.meta.env.PROD && !IS_MOCK && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => undefined)
+  })
+}

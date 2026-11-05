@@ -4,7 +4,7 @@ import { cn } from '../../lib/cn'
 import { fmtDuration } from '../../lib/format'
 import { areaPath, extent, linear, linePath, nearestIndex, niceDomain, timeStep } from './scale'
 
-export interface ChartBand {
+interface ChartBand {
   min: number
   max: number
   label: string
@@ -28,7 +28,7 @@ export interface ChartPanel {
   height?: number
 }
 
-export interface ChartShade {
+interface ChartShade {
   start: number
   end: number
 }
@@ -40,7 +40,6 @@ interface Props {
   shadeLabel?: string
   ariaLabel: string
   className?: string
-  /** Libellé du segment sous le curseur (ex. « Bloc 2 »). */
   segmentAt?: (t: number) => string | null
 }
 
@@ -48,11 +47,7 @@ const PAD_L = 38
 const PAD_R = 10
 const AXIS_H = 22
 
-/**
- * Petits multiples synchronisés (un seul axe Y par graphique, axe temps partagé),
- * réticule commun, valeurs au survol dans l'en-tête de chaque panneau.
- * Navigable au clavier (← → Début Fin).
- */
+/** Synchronised small multiples with a shared time axis and crosshair (keyboard: arrows, Home, End). */
 export function TimeSeriesStack({ tS, panels, shades = [], shadeLabel, ariaLabel, className, segmentAt }: Props) {
   const [wrapRef, width] = useElementWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
@@ -155,11 +150,9 @@ export function TimeSeriesStack({ tS, panels, shades = [], shadeLabel, ariaLabel
                       <rect x={PAD_L} y={0} width={plotW} height={h} />
                     </clipPath>
                   </defs>
-                  {/* pauses / récupérations */}
                   {shades.map((s, i) => (
                     <rect key={i} x={x(s.start)} y={0} width={Math.max(1, x(s.end) - x(s.start))} height={h} fill="color-mix(in oklab, var(--text-1) 6%, transparent)" />
                   ))}
-                  {/* grille */}
                   {ticks.map((t) => (
                     <g key={t}>
                       <line x1={PAD_L} x2={PAD_L + plotW} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth={1} />
@@ -216,7 +209,6 @@ export function TimeSeriesStack({ tS, panels, shades = [], shadeLabel, ariaLabel
             )
           })}
 
-        {/* Axe temps partagé */}
         {width > 0 && (
           <svg width={width} height={AXIS_H} className="mt-1 block overflow-visible" aria-hidden="true">
             <line x1={PAD_L} x2={PAD_L + plotW} y1={0.5} y2={0.5} stroke="var(--line-strong)" />

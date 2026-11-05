@@ -2,9 +2,8 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
-// VITE_MOCK=1 (npm run dev:mock) : l'app tourne sur les fixtures de src/mocks
-// au lieu du réseau. La bascule est faite dans src/api/client.ts ; en build
-// normal, le code des mocks est éliminé (import dynamique sous condition statique).
+// VITE_MOCK=1 (npm run dev:mock) serves src/mocks instead of the network; the switch lives in
+// src/api/client.ts and the mock chunk is dropped from normal builds (static condition).
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {

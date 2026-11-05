@@ -1,6 +1,5 @@
-// Package web sert le SPA (build Vite) embarqué dans le binaire.
-// Au build Docker, frontend/dist est copié dans internal/web/dist ; sinon un
-// placeholder index.html (« build frontend absent ») est servi.
+// Package web serves the Vite SPA embedded in the binary. The Docker build copies frontend/dist
+// into internal/web/dist; otherwise the committed placeholder index.html is served.
 package web
 
 import (
@@ -43,31 +42,35 @@ var contentTypes = map[string]string{
 	".wasm":        "application/wasm",
 }
 
-// noCacheFiles : fichiers à revalider systématiquement (service worker PWA éventuel).
-var noCacheFiles = map[string]bool{"sw.js": true, "service-worker.js": true, "registerSW.js": true}
+// noCacheFiles must always be revalidated (PWA manifest and service worker).
+var noCacheFiles = map[string]bool{
+	"sw.js": true, "service-worker.js": true, "registerSW.js": true,
+	"manifest.json": true, "manifest.webmanifest": true,
+}
 
 type file struct {
 	data []byte
 	etag string
 }
 
-// Handler sert les fichiers statiques avec repli sur index.html (routes SPA).
+// Handler serves static files with an index.html fallback for SPA routes.
 type Handler struct {
 	fsys  fs.FS
 	mu    sync.RWMutex
 	cache map[string]*file
 }
 
-// New construit le handler sur le dist embarqué.
 func New() *Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		panic(err)
 	}
-	return &Handler{fsys: sub, cache: map[string]*file{}}
+	return newHandler(sub)
 }
 
-// HasFrontend indique si un vrai build (et non le placeholder) est embarqué.
+func newHandler(fsys fs.FS) *Handler { return &Handler{fsys: fsys, cache: map[string]*file{}} }
+
+// HasFrontend reports whether a real build (not the placeholder) is embedded.
 func HasFrontend() bool {
 	_, err := fs.Stat(distFS, "dist/assets")
 	return err == nil
@@ -109,7 +112,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serve(w, r, name, f)
 		return
 	}
-	// fichier avec extension introuvable → 404 (ne pas renvoyer du HTML à la place d'un asset)
+	// a missing file with an extension is a 404, never HTML in place of an asset
 	if ext := path.Ext(name); ext != "" && name != "index.html" {
 		http.NotFound(w, r)
 		return
@@ -125,6 +128,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request, name string, f *file) {
 	hdr := w.Header()
 	ct, ok := contentTypes[strings.ToLower(path.Ext(name))]
+	if name == "manifest.json" {
+		ct, ok = contentTypes[".webmanifest"], true
+	}
 	if !ok {
 		ct = http.DetectContentType(f.data)
 	}
@@ -132,7 +138,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, name string, f *
 	switch {
 	case strings.HasPrefix(name, "assets/"):
 		hdr.Set("Cache-Control", "public, max-age=31536000, immutable")
-	case name == "index.html", path.Ext(name) == ".webmanifest", noCacheFiles[name]:
+	case name == "index.html", noCacheFiles[name]:
 		hdr.Set("Cache-Control", "no-cache")
 	default:
 		hdr.Set("Cache-Control", "public, max-age=3600")
