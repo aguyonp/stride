@@ -59,14 +59,6 @@ func (s *Store) DeleteSession(ctx context.Context, hash []byte) error {
 	return err
 }
 
-func (s *Store) DeleteUserSessions(ctx context.Context, userID int64) (int64, error) {
-	res, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
-}
-
 func (s *Store) PurgeExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, now.Unix())
 	if err != nil {

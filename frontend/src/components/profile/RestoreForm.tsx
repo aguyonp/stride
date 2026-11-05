@@ -9,7 +9,7 @@ import { fmtDay, inspectBackup, readFileText, type BackupSummary } from './downl
 
 type Mode = 'merge' | 'replace'
 
-export function restoreSummary(r: RestoreResult): string {
+function restoreSummary(r: RestoreResult): string {
   const i = r.imported
   const parts = [
     `${fmtNumber(i.goals)} objectif${i.goals > 1 ? 's' : ''}`,

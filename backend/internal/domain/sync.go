@@ -11,7 +11,6 @@ import (
 
 	"stride/internal/analysis"
 	"stride/internal/apimeter"
-	"stride/internal/athlete"
 	"stride/internal/garmin"
 	"stride/internal/view"
 )
@@ -344,6 +343,3 @@ func (s *Services) Resync(ctx context.Context, uid int64) error {
 	s.startSync(uid)
 	return nil
 }
-
-// profileHash is part of the analysis cache key.
-func profileHash(p athlete.Profile) string { return p.Hash() }

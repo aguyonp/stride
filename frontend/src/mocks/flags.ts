@@ -27,7 +27,7 @@ function read(): string[] {
 
 let cached: string[] | null = null
 
-export function flags(): string[] {
+function flags(): string[] {
   if (!cached) cached = read()
   return cached
 }

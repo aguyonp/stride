@@ -15,7 +15,7 @@ interface GoalRowProps {
   className?: string
 }
 
-export function goalTarget(g: Goal): string | null {
+function goalTarget(g: Goal): string | null {
   if (!isNum(g.targetValue)) return null
   const v = fmtNumber(g.targetValue, Number.isInteger(g.targetValue) ? 0 : 1)
   return g.targetUnit ? `${v} ${g.targetUnit}` : v

@@ -28,7 +28,7 @@ import type {
   SyncStatus,
 } from './types'
 
-export const PAGE_SIZE = 30
+const PAGE_SIZE = 30
 
 export const qk = {
   auth: ['auth'] as const,
@@ -278,10 +278,6 @@ export function useGoalMutations() {
     update: useMutation({ mutationFn: ({ id, ...g }: Partial<GoalInput> & { id: number }) => api.updateGoal(id, g), onSuccess: done }),
     remove: useMutation({ mutationFn: (id: number) => api.deleteGoal(id), onSuccess: done }),
   }
-}
-
-export function usePlanRange(from: string, to: string) {
-  return useQuery({ queryKey: qk.plan(from, to), queryFn: () => api.plan(from, to), placeholderData: keepPreviousData })
 }
 
 export function useWeekPlan(date: string | null) {

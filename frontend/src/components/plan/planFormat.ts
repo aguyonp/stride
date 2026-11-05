@@ -23,7 +23,7 @@ export function relativeDays(date: string, today: string): string {
   return d > 0 ? `dans ${d} j` : `il y a ${-d} j`
 }
 
-export function paceRange(min: number | null, max: number | null): string | null {
+function paceRange(min: number | null, max: number | null): string | null {
   if (!isNum(min) && !isNum(max)) return null
   if (isNum(min) && isNum(max) && min !== max) return `${fmtPaceValue(min)}–${fmtPaceValue(max)}/km`
   return `${fmtPaceValue((isNum(min) ? min : max) as number)}/km`

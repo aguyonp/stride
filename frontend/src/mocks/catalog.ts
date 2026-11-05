@@ -203,7 +203,7 @@ function runDefs(): RunDef[] {
   return defs
 }
 
-export function trainingLoadFor(durationS: number, avgHR: number | null): number | null {
+function trainingLoadFor(durationS: number, avgHR: number | null): number | null {
   if (avgHR === null) return null
   const k = 0.8 + Math.max(0, avgHR - 110) / 22
   return Math.round((durationS / 60) * k)
@@ -328,5 +328,3 @@ export function getCatalog(today = todayISO()): CatalogItem[] {
   cache = { today, items }
   return items
 }
-
-export const findItem = (id: number, today?: string) => getCatalog(today).find((it) => it.id === id) ?? null

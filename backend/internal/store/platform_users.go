@@ -114,23 +114,6 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) ListActiveUserIDs(ctx context.Context) ([]int64, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id FROM users WHERE status = 'active' ORDER BY id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
 func (s *Store) CountAdmins(ctx context.Context) (int, error) {
 	var n int
 	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'`).Scan(&n)

@@ -1,21 +1,21 @@
-# Stride V2 — Specification & shared contract
+# Stride — Specification
 
-Stride extracts sports telemetry (Garmin Connect Personal API, Strava), computes biomechanics / load / recovery insights, tracks plan, goals and pain, and generates compact Markdown prompts for an AI coach. V2 turns the single-user V1 into a multi-user service.
+Stride extracts sports telemetry (Garmin Connect Personal API, Strava), computes biomechanics / load / recovery insights, tracks plan, goals and pain, and generates compact Markdown prompts for an AI coach. Multi-user service.
 
 **Non-negotiables**
-- No metric or idea from the product brief may be dropped. When a source cannot provide a value, return `null` and a human reason; never fabricate.
+- No product metric may be dropped. When a source cannot provide a value, return `null` and a human reason; never fabricate.
 - Every generated prompt (single session, day/health, multi-session) starts with the objectivity directive (§6.1), verbatim.
 - Strict per-user isolation: every domain query filters on `user_id` taken from the authenticated context, never from the request.
 - Secrets (Garmin personal API keys, Garmin JWTs, Strava access/refresh tokens) are encrypted at rest with `secret.Sealer` (AES-256-GCM, `STRIDE_MASTER_KEY`), AAD = `"<provider>:<userID>:<field>"`. Never logged, never returned (only hints like `••••a1b2` are allowed in API responses).
-- Code comments: very few, English only. UI text: French. Logs: emoji + structured fields (V1 style).
+- Code comments: very few, English only. UI text: French. Logs: emoji + structured fields.
 
-V1 references: `docs/API_CONTRACT.md` §2 lists the verified Garmin Personal API endpoints, payload shapes and FIT conversions (still valid). Its §3–§5 (V1 endpoints, modes) are superseded by this document.
+Verified Garmin Personal API endpoints, payload shapes and FIT conversions: [GARMIN_API.md](GARMIN_API.md).
 
 ---
 
 ## 1. Verified provider facts (2026-11-04 probe)
 
-Garmin Personal API (`https://personal.connectapi.garmin.com`), in addition to V1 §2:
+Garmin Personal API (`https://personal.connectapi.garmin.com`), in addition to [GARMIN_API.md](GARMIN_API.md):
 - **404 (not exposed):** training readiness (`/metrics-service/metrics/trainingreadiness/*`), training status / acute-chronic load (`/metrics-service/metrics/trainingstatus/*`), max metrics, gear (`/gear-service/*`), weather (`/weather-service/*`, `/activity-service/activity/{id}/weather`), devices.
 - **200:** `/usersummary-service/usersummary/daily?calendarDate=YYYY-MM-DD` → flat object incl. `totalSteps, dailyStepGoal, floorsAscended, floorsDescended, averageStressLevel, maxStressLevel, restingHeartRate, lastSevenDaysAvgRestingHeartRate, bodyBatteryAtWakeTime, bodyBatteryHighestValue, bodyBatteryLowestValue, bodyBatteryChargedValue, bodyBatteryDrainedValue, moderateIntensityMinutes, vigorousIntensityMinutes, activeKilocalories, sleepingSeconds`.
 - Activity `summaryDTO` exposes Stamina: `beginPotentialStamina`, `endPotentialStamina`, `minAvailableStamina`; GAP: `avgGradeAdjustedSpeed`; `impactLoad`. Details time series expose `directGradeAdjustedSpeed`, `directAvailableStamina`, `directPotentialStamina`, `directElevation`, `directVerticalSpeed`.
@@ -43,20 +43,9 @@ compose.yml
 - Valkey holds only disposable data with TTL: provider list responses, today's wellness, computed analyses, WebAuthn ceremonies, OAuth states, sync locks. `POST /api/admin/cache/flush` deletes `stride:cache:*` only (sessions live in SQLite, so nobody is logged out).
 - Without `STRIDE_VALKEY_URL` (local dev), the in-memory cache is used.
 
-### 2.1 Backend packages and ownership
+### 2.1 Backend packages
 
-| Package / file | Owner | Notes |
-|---|---|---|
-| `internal/env` | skeleton, platform may extend | all env vars (§9) |
-| `internal/secret`, `internal/httpx`, `internal/auth/context.go`, `internal/apimeter/apimeter.go` (types+interface), `internal/provider/strava/strava.go` (types+API), `internal/provider/weather/weather.go` (types+Provider) | skeleton — **stable contracts**, additive changes only | |
-| `internal/store/store.go`, `migrations/0001_platform.sql`, `store/platform_*.go` | platform | keep `users.id INTEGER PRIMARY KEY` |
-| `migrations/0002_domain.sql`, `store/domain_*.go` (or queries inside domain packages) | domain | FKs to `users(id) ON DELETE CASCADE` |
-| `cmd/stride`, `internal/httpapi`, `internal/auth/*`, `internal/admin`, `internal/scheduler`, `internal/apimeter/*` (impl), `internal/cache`, `internal/logx`, `internal/web`, `internal/provider/strava/*` (Client impl), `internal/provider/weather/*` (OpenMeteo impl), Dockerfile, compose.yml, .env.example, Makefile, README.md | platform | |
-| `internal/domain`, `internal/domainapi`, `internal/garmin`, `internal/fitdata`, `internal/analysis`, `internal/report`, `internal/frfmt`, any new domain package (`internal/training`, `internal/sync`, …), `docs/API_CONTRACT.md` | domain | |
-| V1 leftovers: `internal/config/config.go` → platform deletes; `internal/config/settings.go` (Profile) → domain moves into its own package and deletes; V1 `internal/httpapi/server.go` handlers → recreated by domain in `internal/domainapi`, platform deletes the V1 file | | |
-| `frontend/` | frontend | |
-
-Integration seams (already in the skeleton): `domain.New(domain.Deps)`, `(*domain.Services).MorningSync / OnUserCreated / PurgeUserCache`, `domainapi.Register(mux, domainapi.Deps{RequireUser, RequireAdmin, ...})`, `auth.UserFrom(ctx)`, `apimeter.Meter` + `apimeter.WithUser(ctx, id)`, `strava.API`, `weather.Provider`, `cache.Cache`, `store.Store`.
+`cmd/stride` (serve, healthcheck, version) · `env` · `store` (SQLite + migrations) · `cache` · `secret` (AES-GCM) · `auth` (passkeys, sessions) · `admin` · `scheduler` · `apimeter` · `httpapi` / `httpx` / `web` (router, middlewares, embedded SPA) · `domain` / `domainapi` (sync, views, athlete data, HTTP) · `garmin`, `provider/strava`, `provider/weather` · `fitdata` · `analysis` · `athlete` · `view` · `report` · `frfmt` · `logx`.
 
 ---
 
@@ -98,7 +87,7 @@ interface Invitation { id: number; label: string; codePrefix: string; createdAt:
 ```
 Rules: the very first registered user needs no invitation and becomes `admin`. Afterwards `registrationMode` (DB setting, initial value from `STRIDE_REGISTRATION`, default `invite`) applies. Disabled users cannot log in.
 
-#### 3.1.1 Platform implementation notes (binding for frontend & domain)
+#### 3.1.1 Implementation notes
 - WebAuthn `begin` endpoints set an HttpOnly cookie `stride_webauthn` (path `/api/`, 5 min) bound to the ceremony stored in the cache; `finish` must be called from the same browser. `register/finish`, `login/finish` and `passkeys/finish` bodies are the raw `@simplewebauthn/browser` JSON. Verification failures → 400 `BAD_REQUEST`; unknown passkey at login → 401; disabled account → 403 `FORBIDDEN`; expired/replayed ceremony → 400.
 - Missing/invalid invitation → 403 `INVITE_REQUIRED`. Invitation codes look like `ABCD-EFGH-…` (24 base32 chars), case and dashes are ignored; `codePrefix` = first 4 chars. `DELETE /api/admin/invitations/{id}` revokes (soft, `revoked: true`) → 204. `expiresInHours: 0` = no expiry; `maxUses` 1–1000.
 - `POST /api/me/passkeys/begin` accepts an optional `{name}`; `/finish` and `PATCH /{id}` return a `Passkey`. `Passkey.id` is the base64url credential id. Default names come from the user agent (« Chrome · macOS »).
@@ -107,7 +96,7 @@ Rules: the very first registered user needs no invitation and becomes `admin`. A
 - CSRF: any non-GET `/api/*` call without `X-Stride-CSRF: 1` → 403 `FORBIDDEN` (except `POST /api/webhooks/strava`).
 - CSP is `default-src 'self'` (inline styles allowed, **no inline scripts**, no external hosts): the SPA must not rely on inline `<script>`.
 - `RequireUser` injects both `auth.User` and `apimeter.WithUser(ctx, id)`.
-- Scheduler: users come from a `func(ctx) ([]int64, error)` lister wired in `main.go` (stub = all active users; domain to replace with "active users with a provider connection"); optional `LastSync` hook can report lazy syncs so the 3 h skip rule covers them.
+- Scheduler: users = `domain.ConnectedUserIDs` (active users with a connected provider); the `LastSyncAt` hook makes lazy syncs count for the 3 h skip rule.
 - API meter: when a provider has a per-user limit (Garmin), its global limit counts **users** fetching concurrently (Garmin: 4 users × 6 calls each); Strava / Open-Meteo global limits count calls. 404 is not counted as an error. Errors and 429s are persisted to `api_events` (7 days) and reloaded at startup.
 - Strava client: `StartDateLocal` drops Strava's trailing `Z`; `Timezone` is the IANA name; quota uses the tighter of `X-RateLimit-*` / `X-ReadRateLimit-*`; on 429 without `Retry-After` the cooldown lasts until the next quarter hour (or UTC midnight when the daily quota is exhausted); GETs retried twice on 5xx/network errors; `strava.APIError` + `strava.IsNotFound` added; token endpoint 400 → `*ErrUnauthorized`.
 - Weather: forecast API for start times < 30 days old, archive API otherwise; `weather.Describe(code)`, `weather.WindDirLabel(deg)` (FR 8 points) and `weather.Round2` are available to the domain; `ErrNoData` / `ErrInvalidCoordinate`.
@@ -171,7 +160,7 @@ interface ActivitySummary {
 }
 ```
 
-`ActivityView` keeps every V1 `ActivityAnalysis` field (see V1 contract §3 for `Biomechanics`, `Segment`, `Series`, `RecoveryContext`, `Performance`, `Alert`) **minus** `mode`/`report`, plus:
+`ActivityView` embeds `Biomechanics`, `Segment`, `Series`, `RecoveryContext`, `Performance` and `Alert` (full definitions: `backend/internal/view`, `frontend/src/api/types.ts`), plus:
 ```ts
 interface ActivityView {
   generatedAt: string; freshness: Freshness; sourceLabel: "Garmin" | "Strava" | "Fusion";
@@ -389,7 +378,7 @@ No splits. Structure:
 ## 7. Frontend (React) requirements
 
 - **No more 3 tabs.** One unified, transparent dashboard: selected session (default = latest), today's status (plan vs done, readiness, recovery), week plan, goals, pain/shoes/tags quick entry. Smart chips above the prompt generator toggle `pain · biomech · health · plan · load · splits · history` (persisted), export copies the Markdown from `/report?include=…`.
-- Header must be flawless at every width (320 → 2560 px), never overflow, sticky without visual artefacts. See the user's screenshot of the V1 header bug (path given in the agent brief).
+- Header must be flawless at every width (320 → 2560 px), never overflow, sticky without visual artefacts.
 - Auth: passkey-only (register / login / add passkey), invite links `/register?invite=CODE`, first-user flow. Onboarding wizard (profile & focus area → Garmin → Strava → done), each step skippable.
 - Freshness pill (db / cache / live + time) and sync status; `POST /api/sync` on load.
 - Planning & goals module (week view, plan vs done), pain form (0–10 step 0.5, labels from focus preset), shoes manager, context tags, daily readiness check-in.
@@ -401,7 +390,7 @@ No splits. Structure:
 
 ---
 
-## 8. Security rules (all agents)
+## 8. Security rules
 
 - Never read or print `.env` values, API keys, JWTs, OAuth tokens or cookies. Probes print structure only.
 - No secrets or personal data (GPS, real names, real activity ids) in committed tests, fixtures, docs or logs.
@@ -428,12 +417,12 @@ No splits. Structure:
 | `TZ`, `LOG_LEVEL`, `LOG_FORMAT` | `Europe/Paris`, `info`, `pretty` | |
 | compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT` | `127.0.0.1`, `8080` | published port |
 
-## 10. Domain implementation notes (clarifications of §3–§6)
+## 10. Domain implementation notes
 
 - **Errors**: `404 NOT_FOUND` for any id of another user; `412 PROVIDER_NOT_CONNECTED` when Garmin/Strava is needed but not connected (or Strava not configured); provider refusing stored credentials → `502 PROVIDER_UNAUTHORIZED` (never 401, which means "session expired" to the SPA; `PUT /api/integrations/garmin` keeps `400 PROVIDER_UNAUTHORIZED`); provider cooldown/429 → `503 RATE_LIMITED` + `Retry-After`; provider 5xx/network → `502`/`504 PROVIDER_UNAVAILABLE`.
 - **Responses**: `PUT|DELETE /api/integrations/garmin`, `POST …/garmin/test`, `DELETE /api/integrations/strava` return `Integrations`. `POST` goals/plan/shoes → `201` + object, `PATCH` → `200` + object, `DELETE` → `204`. `POST /api/admin/users/{id}/resync` → `202 {"queued":true}`. Strava callback errors: `reason` ∈ `state|denied|scope|exchange|already_linked|disabled|internal`.
 - **Partial bodies**: `PUT /api/profile`, `PATCH`, notes and check-in bodies are merged onto the current value (`null` clears a nullable field, read-only keys such as `id`, `match`, `distanceKm`, `shoe`, `updatedAt` are ignored, unknown keys → 400). Changing `focusArea` without `thresholds` resets them to the new preset. `GET /api/days/{date}` and the check-in reject future dates.
-- **Sync**: first sync lists 56 days (load ratio + trends); then each sync lists from `lastSync − 2 days`. Bundles (detail, details series, FIT, Strava detail + streams, weather) are prefetched for new activities of the last 7 days (max 6 per sync); older ones are fetched on first view or export (max 10 per export). Lazy sync is skipped for 5 min after a sync (`cooldownUntil`). Strava webhook retries (5 and 30 min) are in-memory; the next lazy sync catches up after a restart.
+- **Sync**: first sync lists 56 days (load ratio + trends); then each sync lists from `lastSync − 2 days`. Bundles (detail, details series, FIT, Strava detail + streams, weather) are prefetched for new activities of the last 7 days (max 6 per sync); older ones are fetched on first view or export (max 10 per export). Lazy sync is skipped for 5 min after a sync; `cooldownUntil` only reports provider rate limiting. Strava webhook retries (5 and 30 min) are in-memory; the next lazy sync catches up after a restart.
 - **Wellness**: per-day kinds `sleep`, `hrv`, `daily_summary` (range endpoints, ≤ 28-day chunks) and `user_summary` (per day, J and J-1 only). A day without data is only persisted as final after 7 days (late watch syncs). Body Battery at wake, RHR 7 d and intensity minutes come from `usersummary/daily`; the V1 `bodyBattery/reports`, `dailyHeartRate` and `steps` calls are no longer needed. A day with step data but no floors counts as 0 floors.
 - **Insights**: fatigue drift verdict falls back on the cadence drop (< −2 moderate, < −4 high spm) when GCT is not recorded; stride length falls back on speed ÷ cadence (warned). GAP uses Garmin `directGradeAdjustedSpeed` when recorded, the Minetti cost model otherwise (warned). Alert codes: V1 codes + `LOAD_RATIO` (was `ACWR`), `GCT_DRIFT`, `DOWNHILL_CADENCE_DROP`, `FLOORS_PREV_DAY`, `PLAN_DEVIATION`, `PAIN_DURING`, `PAIN_NEXT_MORNING`; descent/floors/downhill alerts only for injury presets (`none` keeps load, biomechanics and recovery alerts).
 - **Plan**: matching per day and compatible sport (closest duration); `partial` when duration or distance is below target by more than `planDeviationPct`; `paceDeltaSecPerKm` is 0 inside the target range, otherwise the distance to the nearest bound. `ActivitySummary.planStatus = "extra"` only in weeks that have planned sessions (walks/hikes never count).

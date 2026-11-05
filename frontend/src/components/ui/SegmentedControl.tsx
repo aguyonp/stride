@@ -1,7 +1,7 @@
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 
-export interface SegmentOption<T extends string> {
+interface SegmentOption<T extends string> {
   value: T
   label: ReactNode
   icon?: ReactNode

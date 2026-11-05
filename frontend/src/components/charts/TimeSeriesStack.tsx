@@ -4,7 +4,7 @@ import { cn } from '../../lib/cn'
 import { fmtDuration } from '../../lib/format'
 import { areaPath, extent, linear, linePath, nearestIndex, niceDomain, timeStep } from './scale'
 
-export interface ChartBand {
+interface ChartBand {
   min: number
   max: number
   label: string
@@ -28,7 +28,7 @@ export interface ChartPanel {
   height?: number
 }
 
-export interface ChartShade {
+interface ChartShade {
   start: number
   end: number
 }

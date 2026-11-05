@@ -164,7 +164,7 @@ function integrationsFor(rich: boolean): Integrations {
   }
 }
 
-export function defaultProfile(): AthleteProfile {
+function defaultProfile(): AthleteProfile {
   const p = presetFor('none')
   return { focusArea: 'none', focusLabel: p.label, injuredSide: null, timezone: 'Europe/Paris', thresholds: { ...p.thresholds }, paceTargets: [] }
 }
@@ -250,7 +250,7 @@ function passkey(name: string, created: number, used: number | null, backedUp = 
   return { id: `pk_${Math.abs(Math.round(created / 1000)).toString(36)}_${name.length}`, name, createdAt: iso(created), lastUsedAt: used === null ? null : iso(used), backedUp }
 }
 
-export function seed(): MockState {
+function seed(): MockState {
   const today = todayISO()
   const st = { seq: 1000 }
   const first = has('first')

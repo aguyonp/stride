@@ -67,7 +67,7 @@ function isErrorBody(v: unknown): v is ApiErrorBody {
 
 type Body = unknown
 
-export async function send(path: string, opts: { method?: string; body?: Body; accept?: string; rawBody?: BodyInit } = {}): Promise<Response> {
+async function send(path: string, opts: { method?: string; body?: Body; accept?: string; rawBody?: BodyInit } = {}): Promise<Response> {
   const method = (opts.method ?? 'GET').toUpperCase()
   const headers: Record<string, string> = { Accept: opts.accept ?? 'application/json' }
   if (!SAFE_METHODS.has(method)) headers['X-Stride-CSRF'] = '1'

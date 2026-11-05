@@ -253,18 +253,6 @@ export function fmtWhen(rfc3339: string | null | undefined, now: Date = new Date
   return `${F_DAY_MONTH.format(d)} ${t}`
 }
 
-/** RFC3339 → "à l'instant", "il y a 5 min", "il y a 3 h", "il y a 2 j". */
-export function fmtSince(rfc3339: string | null | undefined, now: Date = new Date()): string {
-  if (!rfc3339) return ND
-  const d = new Date(rfc3339)
-  if (Number.isNaN(d.getTime())) return ND
-  const s = Math.max(0, (now.getTime() - d.getTime()) / 1000)
-  if (s < 60) return 'à l’instant'
-  if (s < 3600) return `il y a ${Math.floor(s / 60)} min`
-  if (s < 86_400) return `il y a ${Math.floor(s / 3600)} h`
-  return `il y a ${Math.floor(s / 86_400)} j`
-}
-
 /** Monday (ISO) of the week containing `iso`. */
 export function mondayOf(iso: string): string {
   const p = parseLocal(iso)

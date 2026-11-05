@@ -1,4 +1,4 @@
-// Package view holds the JSON view models of the domain API (docs/V2_SPEC.md §3.2), shared by the
+// Package view holds the JSON view models of the domain API (docs/SPEC.md §3.2), shared by the
 // domain services and the report templates.
 package view
 

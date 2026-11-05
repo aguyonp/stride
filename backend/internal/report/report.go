@@ -1,4 +1,4 @@
-// Package report renders the Markdown prompts of docs/V2_SPEC.md §6 (French formatting, N/D when
+// Package report renders the Markdown prompts of docs/SPEC.md §6 (French formatting, N/D when
 // absent, objectivity directive always first, sections toggled by chips).
 package report
 

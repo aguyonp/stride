@@ -1,6 +1,6 @@
-import type { AcwrVerdict, AlertLevel, DriftVerdict, FocusArea, Freshness, GoalKind, MatchStatus, PlanSport, ShoeType, Sport } from '../api/types'
+import type { AcwrVerdict, AlertLevel, DriftVerdict, FocusArea, Freshness, GoalKind, MatchStatus, PlanSport, ShoeType } from '../api/types'
 
-export const HRV_STATUS: Record<string, { label: string; level: AlertLevel }> = {
+const HRV_STATUS: Record<string, { label: string; level: AlertLevel }> = {
   BALANCED: { label: 'Équilibré', level: 'ok' },
   UNBALANCED: { label: 'Déséquilibré', level: 'warn' },
   LOW: { label: 'Bas', level: 'danger' },
@@ -64,16 +64,6 @@ export const CONTEXT_TAGS: { key: string; label: string }[] = [
   { key: 'desk_sitting', label: 'Position assise bureau prolongée' },
 ]
 export const tagLabel = (key: string) => CONTEXT_TAGS.find((t) => t.key === key)?.label ?? key
-
-export const SPORT_LABEL: Record<Sport, string> = {
-  run: 'Course',
-  bike: 'Vélo',
-  walk: 'Marche',
-  hike: 'Randonnée',
-  swim: 'Natation',
-  strength: 'Renforcement',
-  other: 'Autre',
-}
 
 export const PLAN_SPORT_LABEL: Record<PlanSport, string> = {
   run: 'Course',

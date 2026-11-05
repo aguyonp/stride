@@ -151,12 +151,6 @@ func (s *Services) PurgeUserCache(ctx context.Context, userID int64) error {
 	return err
 }
 
-// SyncCandidates lists active users with a connected provider not synced for 3 hours
-// (scheduler user lister).
-func (s *Services) SyncCandidates(ctx context.Context) ([]int64, error) {
-	return s.userIDs(ctx, s.now().Add(-3*time.Hour).Unix())
-}
-
 // ConnectedUserIDs lists active users with at least one connected provider (scheduler lister).
 func (s *Services) ConnectedUserIDs(ctx context.Context) ([]int64, error) {
 	return s.userIDs(ctx, 1<<62)

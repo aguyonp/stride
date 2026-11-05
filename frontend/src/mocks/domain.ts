@@ -1,7 +1,7 @@
 // Shared mock domain logic: visible activities per connected source, summaries, notes, plan matching, freshness.
 
 import type { ActivityNotes, ActivitySummary, Freshness, HistoryRow, LoadRatio, PlanMatch, PlannedSession, Source, WeekPlan } from '../api/types'
-import { addDays, fmtNumber, fmtSigned, mondayOf, todayISO } from '../lib/format'
+import { addDays, fmtSigned, mondayOf, todayISO } from '../lib/format'
 import { getCatalog, type CatalogItem } from './catalog'
 import { db, type PlanEntry, type UserData } from './db'
 import { has } from './flags'
@@ -22,7 +22,7 @@ export function visibleItems(d: UserData, today = todayISO()): CatalogItem[] {
   return mode === 'strava' ? items.filter((it) => it.stravaId !== null) : items
 }
 
-export function sourcesOf(it: CatalogItem, mode: SourceMode): Source[] {
+function sourcesOf(it: CatalogItem, mode: SourceMode): Source[] {
   if (mode === 'strava') return ['strava']
   if (mode === 'garmin') return ['garmin']
   return it.stravaId !== null ? ['garmin', 'strava'] : ['garmin']
@@ -86,7 +86,7 @@ function compatible(p: PlanEntry, it: CatalogItem): boolean {
 
 const pctDelta = (actual: number | null, target: number | null) => (actual === null || target === null || target === 0 ? null : Math.round(((actual - target) / target) * 1000) / 10)
 
-export function matchPlan(p: PlanEntry, d: UserData, items: CatalogItem[], today: string, used = new Set<number>()): PlanMatch {
+function matchPlan(p: PlanEntry, d: UserData, items: CatalogItem[], today: string, used = new Set<number>()): PlanMatch {
   const base = { plannedId: p.id, activityId: null, durationDeltaPct: null, distanceDeltaPct: null, paceDeltaSecPerKm: null, cadenceDeltaSpm: null }
   if (p.sport === 'rest') {
     const ran = items.some((it) => it.date === p.date && it.isRunning)
@@ -127,7 +127,7 @@ export function plannedWithMatch(d: UserData, items: CatalogItem[], today: strin
     .filter((p) => (!from || p.date >= from) && (!to || p.date <= to))
 }
 
-export function planStatusFor(it: CatalogItem, planned: PlannedSession[], d: UserData): ActivitySummary['planStatus'] {
+function planStatusFor(it: CatalogItem, planned: PlannedSession[], d: UserData): ActivitySummary['planStatus'] {
   const m = planned.find((p) => p.match?.activityId === it.id)
   if (m?.match && (m.match.status === 'done' || m.match.status === 'partial')) return m.match.status
   if (it.isRunning && d.plan.length) return 'extra'
@@ -255,5 +255,3 @@ export function freshness(kind: 'list' | 'activity' | 'day', date: string | null
   const old = date !== null && date < addDays(today, kind === 'activity' ? -2 : -1)
   return old ? { source: 'db', updatedAt: lastSync } : { source: 'cache', updatedAt: new Date(now - 3 * 60_000).toISOString() }
 }
-
-export const fmtKmShort = (m: number | null) => (m === null ? 'N/D' : `${fmtNumber(m / 1000, 1)} km`)

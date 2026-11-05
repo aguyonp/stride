@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"stride/internal/apimeter"
-	"stride/internal/athlete"
 	"stride/internal/garmin"
 	"stride/internal/provider/strava"
 )
@@ -118,10 +117,6 @@ func errText(err error) string {
 	return err.Error()
 }
 
-func isNotFound(err error) bool {
-	return errors.Is(err, ErrNotFound) || errors.Is(err, athlete.ErrNotFound) || garmin.IsNotFound(err)
-}
-
 func gz(b []byte) []byte {
 	var buf bytes.Buffer
 	w, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
@@ -144,13 +139,6 @@ func rfc3339(ts int64) *string {
 		return nil
 	}
 	s := time.Unix(ts, 0).UTC().Format(time.RFC3339)
-	return &s
-}
-
-func ptrStr(s string) *string {
-	if s == "" {
-		return nil
-	}
 	return &s
 }
 

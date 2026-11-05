@@ -87,7 +87,7 @@ export const presetFor = (presets: FocusPreset[] | undefined, area: FocusArea) =
 
 export const focusTitle = (presets: FocusPreset[] | undefined, area: FocusArea) => presetFor(presets, area)?.label ?? FOCUS_FALLBACK[area]
 
-export function browserTimezone(): string {
+function browserTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris'
   } catch {

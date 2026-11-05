@@ -150,8 +150,6 @@ func New(o Options) *Client {
 	return c
 }
 
-func (c *Client) UserID() int64 { return c.userID }
-
 // TokenExpiresAt returns the expiry of the cached JWT, if still valid.
 func (c *Client) TokenExpiresAt() *time.Time {
 	c.mu.Lock()

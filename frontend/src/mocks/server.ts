@@ -21,7 +21,6 @@ import type {
   FocusArea,
   Goal,
   GoalKind,
-  Integrations,
   Me,
   MeterSnapshot,
   Passkey,
@@ -773,4 +772,4 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   return err(404, 'NOT_FOUND', `Route mock inconnue : ${method} ${url.pathname}`)
 }
 
-export type { Integrations }
+

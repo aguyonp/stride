@@ -49,7 +49,7 @@ export interface RunSpec {
   seed: number
 }
 
-export interface SimPoint {
+interface SimPoint {
   t: number
   kind: PhaseKind
   dist: number

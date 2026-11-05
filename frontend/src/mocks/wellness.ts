@@ -112,7 +112,7 @@ function rhr7(date: string): number {
   return Math.round(s / 7)
 }
 
-export function trendDay(date: string): TrendDay {
+function trendDay(date: string): TrendDay {
   const r = raw(date)
   return {
     date,
@@ -186,5 +186,3 @@ export function daySummary(date: string): DaySummary {
     bodyBatteryDrained: r.bbDrained,
   }
 }
-
-export const HRV_STATUS_LABEL = STATUS_LABEL

@@ -7,7 +7,7 @@ import { Popover } from '../ui/Popover'
 
 type Tone = 'running' | 'cooldown' | 'error' | 'ok' | 'idle'
 
-export function syncTone(s: SyncStatus | undefined, now = Date.now()): Tone {
+function syncTone(s: SyncStatus | undefined, now = Date.now()): Tone {
   if (!s) return 'idle'
   if (s.running) return 'running'
   if (s.cooldownUntil && new Date(s.cooldownUntil).getTime() > now) return 'cooldown'

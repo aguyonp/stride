@@ -6,7 +6,7 @@ import { LEVEL_BG, LEVEL_LABEL, LevelIcon } from '../ui/Badge'
 
 const ORDER: Record<AlertLevel, number> = { danger: 0, warn: 1, info: 2, ok: 3 }
 
-export function sortAlerts(alerts: Alert[]): Alert[] {
+function sortAlerts(alerts: Alert[]): Alert[] {
   return [...alerts].sort((a, b) => ORDER[a.level] - ORDER[b.level])
 }
 

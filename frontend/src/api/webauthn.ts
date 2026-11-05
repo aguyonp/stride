@@ -17,7 +17,7 @@ export function passkeyIssue(): PasskeyIssue | null {
   return null
 }
 
-export class PasskeyCancelled extends Error {
+class PasskeyCancelled extends Error {
   constructor() {
     super('cancelled')
     this.name = 'PasskeyCancelled'

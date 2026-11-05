@@ -42,7 +42,7 @@ function subscribe(cb: () => void) {
   }
 }
 
-export function setThemePref(p: ThemePref) {
+function setThemePref(p: ThemePref) {
   pref = p
   writeStored(STORAGE_KEYS.theme, p === 'system' ? null : p)
   emit()

@@ -1,4 +1,4 @@
-// Markdown prompts following docs/V2_SPEC.md §6 (directive first, sections gated by include chips).
+// Markdown prompts following docs/SPEC.md §6 (directive first, sections gated by include chips).
 
 import type { ActivityView, Alert, AthleteProfile, DayView, Goal, HistoryRow, IncludeKey, PlannedSession, Segment } from '../api/types'
 import { addDays, diffDays, fmtDuration, fmtHM, fmtNumber, fmtPaceValue, fmtSigned, isNum, mondayOf, ND, parseLocal, todayISO } from '../lib/format'
@@ -13,7 +13,7 @@ import { recoveryFor } from './wellness'
 export const DIRECTIVE =
   "> **DIRECTIVE SYSTÈME POUR L'IA :** Agis comme un ingénieur biomécanicien et entraîneur de course à pied strictement objectif, analytique et rigoureux. Ne cherche JAMAIS à flatter l'utilisateur, à minimiser ses erreurs ou à lui répondre pour lui faire plaisir. Analyse les données froidement : si une métrique (cadence, dérive, charge, allure, douleur) indique un risque de blessure, une compensation ou une erreur d'entraînement, dis-le-lui directement et ajuste le plan vers le bas s'il le faut. Dis uniquement ce qui est physiologiquement et mécaniquement juste pour lui."
 
-export const ALL_KEYS: IncludeKey[] = ['pain', 'biomech', 'health', 'plan', 'load', 'splits', 'history']
+const ALL_KEYS: IncludeKey[] = ['pain', 'biomech', 'health', 'plan', 'load', 'splits', 'history']
 
 export function parseIncludeParam(raw: string | null): IncludeKey[] {
   if (raw === null) return ALL_KEYS
@@ -44,7 +44,7 @@ const ICON: Record<Alert['level'], string> = { danger: '🛑', warn: '⚠️', i
 const SHOE_TYPE = { soft: 'Souple', tempo: 'Tempo', carbon: 'Carbone' } as const
 const MATCH = { done: 'Réalisée', partial: 'Partielle', missed: 'Manquée', upcoming: 'À venir', extra: 'Hors plan' } as const
 
-export function profileLabel(p: AthleteProfile): string {
+function profileLabel(p: AthleteProfile): string {
   if (p.focusArea === 'none') return 'Performance'
   const side = p.injuredSide ? `, côté ${p.injuredSide === 'left' ? 'gauche' : p.injuredSide === 'right' ? 'droit' : 'bilatéral'}` : ''
   return `Suivi Pathologie (${p.focusLabel}${side})`
@@ -57,7 +57,7 @@ function goalLine(goals: Goal[], today: string): { macro: string; others: string
   return { macro: macro ? label(macro) : `${ND} (aucun objectif macro défini)`, others: others.length ? others.map(label).join(' ; ') : 'aucun' }
 }
 
-export function plannedLabel(p: PlannedSession): string {
+function plannedLabel(p: PlannedSession): string {
   if (p.sport === 'rest') return 'Repos'
   const bits: string[] = []
   if (p.targetDurationS) bits.push(`${Math.round(p.targetDurationS / 60)} min`)

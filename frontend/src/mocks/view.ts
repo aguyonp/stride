@@ -417,7 +417,7 @@ function recovery(d: UserData, date: string, mode: SourceMode): RecoveryWithRead
 
 const LEVEL_ORDER = { danger: 0, warn: 1, info: 2, ok: 3 } as const
 
-export function finalizeAlerts(alerts: Alert[]): Alert[] {
+function finalizeAlerts(alerts: Alert[]): Alert[] {
   if (!alerts.some((a) => a.level === 'warn' || a.level === 'danger')) alerts.push({ level: 'ok', code: 'ALL_GOOD', title: 'Aucun signal d’alerte', message: 'Tous les indicateurs sont dans les seuils de ton profil.' })
   return alerts.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level])
 }
@@ -493,7 +493,7 @@ function activityAlerts(it: CatalogItem, v: Omit<ActivityView, 'alerts'>, p: Ath
 
 /* ---------------------------------- Builders ---------------------------------- */
 
-export function activeGoals(d: UserData): Goal[] {
+function activeGoals(d: UserData): Goal[] {
   return d.goals.filter((g) => g.status === 'active')
 }
 

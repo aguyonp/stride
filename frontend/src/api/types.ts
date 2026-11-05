@@ -1,4 +1,4 @@
-// Stride V2 API contract (docs/V2_SPEC.md §3, V1 sub-types from docs/API_CONTRACT.md §3).
+// Stride API contract (docs/SPEC.md §3).
 
 export type ErrorCode =
   | 'BAD_REQUEST'
@@ -77,7 +77,7 @@ export interface PasskeyBegin<T> {
   publicKey: T
 }
 
-export interface MeterQuota {
+interface MeterQuota {
   limit15m: number
   usage15m: number
   limitDaily: number
@@ -95,7 +95,7 @@ export interface ProviderStats {
   quota: MeterQuota | null
   avgLatencyMs: number
 }
-export interface MeterErrorEvent {
+interface MeterErrorEvent {
   time: string
   provider: string
   userId: number
@@ -176,7 +176,7 @@ export interface ActivityListResponse {
   freshness: Freshness
 }
 
-export interface ActivityDetail extends ActivitySummary {
+interface ActivityDetail extends ActivitySummary {
   locationName: string | null
   movingDurationS: number | null
   maxHR: number | null
@@ -192,7 +192,7 @@ export interface ActivityDetail extends ActivitySummary {
 }
 
 export type AlertLevel = 'info' | 'warn' | 'danger' | 'ok'
-export type AlertLevelSimple = 'ok' | 'warn' | 'danger'
+type AlertLevelSimple = 'ok' | 'warn' | 'danger'
 export interface Alert {
   level: AlertLevel
   code: string
@@ -230,7 +230,7 @@ export interface Drift {
   lastThirdHrRiseBpm: number
   verdict: DriftVerdict
 }
-export interface Load {
+interface Load {
   elevGainM: number | null
   elevLossM: number | null
   drift: Drift | null
@@ -323,19 +323,19 @@ export interface RecoveryContext {
 }
 
 export type AcwrVerdict = 'low' | 'optimal' | 'high' | 'danger'
-export interface Acwr {
+interface Acwr {
   acute7d: number
   chronic28d: number
   ratio: number | null
   verdict: AcwrVerdict
 }
-export interface TargetPace {
+interface TargetPace {
   label: string
   rangeLabel: string
   seconds: number
   distanceM: number
 }
-export interface BestEffort {
+interface BestEffort {
   label: string
   seconds: number
 }
@@ -349,7 +349,7 @@ export interface Performance {
   bestEfforts: BestEffort[]
 }
 
-export interface WeatherConditions {
+interface WeatherConditions {
   source: string
   temperatureC: number | null
   apparentC: number | null
@@ -368,7 +368,7 @@ export interface Stamina {
   endPct: number | null
   minPct: number | null
 }
-export interface StravaExtras {
+interface StravaExtras {
   title: string
   description: string
   privateNote: string
@@ -419,7 +419,7 @@ export interface Readiness {
 }
 export type RecoveryWithReadiness = RecoveryContext & { readiness: Readiness }
 
-export interface CrossLoadDay {
+interface CrossLoadDay {
   date: string
   rides: number
   distanceKm: number

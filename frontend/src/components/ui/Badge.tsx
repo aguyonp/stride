@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { AlertLevel } from '../../api/types'
 import { cn } from '../../lib/cn'
 
-export const LEVEL_TEXT: Record<AlertLevel, string> = {
+const LEVEL_TEXT: Record<AlertLevel, string> = {
   ok: 'text-ok',
   info: 'text-info',
   warn: 'text-warn',

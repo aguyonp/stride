@@ -1,7 +1,7 @@
 import type { AdminUser, Invitation } from '../../api/types'
 import { cn } from '../../lib/cn'
 
-export const PROVIDER_NAME: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', 'open-meteo': 'Open-Meteo' }
+const PROVIDER_NAME: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', 'open-meteo': 'Open-Meteo' }
 export const providerName = (p: string) => PROVIDER_NAME[p] ?? p
 
 export function userName(users: AdminUser[] | undefined, id: number): string {

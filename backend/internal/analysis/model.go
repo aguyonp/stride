@@ -1,6 +1,6 @@
 // Package analysis computes session insights (biomechanics, fatigue drift, slope, GAP, segments,
 // cardiac drift, zones), recovery context, load and alerts. It is pure: inputs are decoded provider
-// payloads, outputs are the JSON types of docs/V2_SPEC.md §3.2 (V1 §3 types extended).
+// payloads, outputs are the JSON types of docs/SPEC.md §3.2.
 package analysis
 
 type GctBalance struct {

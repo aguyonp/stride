@@ -19,14 +19,11 @@ const (
 	EPActivity       = "/activity-service/activity/{id}"
 	EPDetails        = "/activity-service/activity/{id}/details"
 	EPFIT            = "/download-service/files/activity/{id}"
-	EPSleepDay       = "/sleep-service/sleep/dailySleep"
 	EPSleepRange     = "/sleep-service/sleep/dailySleepSummariesByDate"
 	EPHRVDay         = "/hrv-service/hrv/{date}"
 	EPHRVRange       = "/hrv-service/hrv/daily/{start}/{end}"
 	EPDailySummaries = "/usersummary-service/v2/dailysummaries"
 	EPUserSummary    = "/usersummary-service/usersummary/daily"
-	EPDailyHR        = "/wellness-service/wellness/dailyHeartRate"
-	EPBodyBattery    = "/wellness-service/wellness/bodyBattery/reports/daily"
 	EPHRZones        = "/biometric-service/heartRateZones/v2"
 )
 
@@ -128,10 +125,6 @@ func extractFIT(raw []byte) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(rc, maxBodyBytes))
 }
 
-func (c *Client) DailySleep(ctx context.Context, date string) ([]byte, error) {
-	return c.get(ctx, "sleep", EPSleepDay, EPSleepDay+"?date="+url.QueryEscape(date), jsonAccept)
-}
-
 func (c *Client) SleepRange(ctx context.Context, start, end string) ([]byte, error) {
 	return c.get(ctx, "sleep", EPSleepRange, fmt.Sprintf("%s?startDate=%s&endDate=%s", EPSleepRange, url.QueryEscape(start), url.QueryEscape(end)), jsonAccept)
 }
@@ -150,14 +143,6 @@ func (c *Client) DailySummaries(ctx context.Context, start, end string) ([]byte,
 
 func (c *Client) UserSummaryDaily(ctx context.Context, date string) ([]byte, error) {
 	return c.get(ctx, "usersummary", EPUserSummary, EPUserSummary+"?calendarDate="+url.QueryEscape(date), jsonAccept)
-}
-
-func (c *Client) DailyHeartRate(ctx context.Context, date string) ([]byte, error) {
-	return c.get(ctx, "dailyhr", EPDailyHR, EPDailyHR+"?date="+url.QueryEscape(date), jsonAccept)
-}
-
-func (c *Client) BodyBattery(ctx context.Context, start, end string) ([]byte, error) {
-	return c.get(ctx, "bodybattery", EPBodyBattery, fmt.Sprintf("%s?startDate=%s&endDate=%s", EPBodyBattery, url.QueryEscape(start), url.QueryEscape(end)), jsonAccept)
 }
 
 func (c *Client) HRZones(ctx context.Context) ([]byte, error) {
