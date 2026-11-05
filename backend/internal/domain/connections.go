@@ -62,7 +62,9 @@ func (s *Services) getConn(ctx context.Context, uid int64, provider string) (*co
 	return c, err
 }
 
-func (c *conn) connected() bool { return c != nil && c.Status != "disconnected" && len(c.SecretEnc) > 0 }
+func (c *conn) connected() bool {
+	return c != nil && c.Status != "disconnected" && len(c.SecretEnc) > 0
+}
 
 func (s *Services) saveConn(ctx context.Context, c *conn) error {
 	now := s.now().Unix()

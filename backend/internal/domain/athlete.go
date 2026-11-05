@@ -37,7 +37,9 @@ func patch(dst any, body []byte, allowed, readOnly []string) error {
 
 // ---------- profile ----------
 
-func (s *Services) Profile(ctx context.Context, uid int64) (athlete.Profile, error) { return s.profile(ctx, uid) }
+func (s *Services) Profile(ctx context.Context, uid int64) (athlete.Profile, error) {
+	return s.profile(ctx, uid)
+}
 
 func (s *Services) Presets() []athlete.Preset { return athlete.Presets() }
 
@@ -145,7 +147,9 @@ func (s *Services) DeletePlanned(ctx context.Context, uid, id int64) error {
 
 // ---------- shoes ----------
 
-func (s *Services) Shoes(ctx context.Context, uid int64) ([]athlete.Shoe, error) { return s.repo().Shoes(ctx, uid) }
+func (s *Services) Shoes(ctx context.Context, uid int64) ([]athlete.Shoe, error) {
+	return s.repo().Shoes(ctx, uid)
+}
 
 func (s *Services) CreateShoe(ctx context.Context, uid int64, body []byte) (athlete.Shoe, error) {
 	sh := athlete.Shoe{Type: "soft"}

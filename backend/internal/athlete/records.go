@@ -305,14 +305,14 @@ func Patch(dst any, body []byte, allowed, readOnly []string) error {
 }
 
 var (
-	GoalFields       = []string{"title", "kind", "targetValue", "targetUnit", "targetDate", "status", "note"}
-	PlanFields       = []string{"date", "sport", "title", "targetDurationS", "targetDistanceM", "targetPaceMinSecPerKm", "targetPaceMaxSecPerKm", "targetCadenceSpm", "instructions"}
-	ShoeFields       = []string{"name", "brand", "model", "dropMm", "type", "stravaGearId", "retired", "note"}
-	NotesFields      = []string{"painDuring", "painCold", "painNextMorning", "rpe", "shoeId", "tags", "note"}
-	CheckinFields    = []string{"trainingReadiness", "readinessStatus", "note"}
-	GoalReadOnly     = []string{"id"}
-	PlanReadOnly     = []string{"id", "match"}
-	ShoeReadOnly     = []string{"id", "distanceKm"}
-	NotesReadOnly    = []string{"shoe", "updatedAt"}
-	CheckinReadOnly  = []string{"date", "updatedAt"}
+	GoalFields      = []string{"title", "kind", "targetValue", "targetUnit", "targetDate", "status", "note"}
+	PlanFields      = []string{"date", "sport", "title", "targetDurationS", "targetDistanceM", "targetPaceMinSecPerKm", "targetPaceMaxSecPerKm", "targetCadenceSpm", "instructions"}
+	ShoeFields      = []string{"name", "brand", "model", "dropMm", "type", "stravaGearId", "retired", "note"}
+	NotesFields     = []string{"painDuring", "painCold", "painNextMorning", "rpe", "shoeId", "tags", "note"}
+	CheckinFields   = []string{"trainingReadiness", "readinessStatus", "note"}
+	GoalReadOnly    = []string{"id"}
+	PlanReadOnly    = []string{"id", "match"}
+	ShoeReadOnly    = []string{"id", "distanceKm"}
+	NotesReadOnly   = []string{"shoe", "updatedAt"}
+	CheckinReadOnly = []string{"date", "updatedAt"}
 )

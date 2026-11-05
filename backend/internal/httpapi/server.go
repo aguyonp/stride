@@ -8,4 +8,6 @@ import (
 	"stride/internal/httpx"
 )
 
-func writeError(w http.ResponseWriter, status int, code, msg string) { httpx.Fail(w, status, code, msg) }
+func writeError(w http.ResponseWriter, status int, code, msg string) {
+	httpx.Fail(w, status, code, msg)
+}

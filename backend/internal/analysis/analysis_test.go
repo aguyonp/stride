@@ -12,8 +12,8 @@ import (
 func fp(v float64) *float64 { return &v }
 func sp(s string) *string   { return &s }
 
-// synthActivity : 10 min de course, 1 min de marche, 10 min de course (1 Hz), sans GPS.
-// FC qui monte pour produire une dérive mesurable.
+// synthActivity: 10 min run, 1 min walk, 10 min run at 1 Hz, no GPS;
+// heart rate rises to produce a measurable drift.
 func synthActivity(withSplits bool) *fitdata.Activity {
 	a := &fitdata.Activity{Source: "fit"}
 	n := fitdata.NaN
@@ -60,7 +60,7 @@ func TestRunMaskExcludesWalk(t *testing.T) {
 			t.Fatalf("record t=%v : run=%v", r.T, s.run[i])
 		}
 	}
-	// sans splits : exclusion par vitesse/cadence
+	// without splits: excluded by speed/cadence
 	s2 := newSession(synthActivity(false), true)
 	if s2.run[630] || !s2.run[100] {
 		t.Fatal("masque course incorrect sans splits")
@@ -106,7 +106,7 @@ func TestBiomechanicsNoBalanceAndFallback(t *testing.T) {
 	if pf(b.VerticalOscillationCm) != 9.7 {
 		t.Errorf("repli OV sur l'API attendu, obtenu %v", pf(b.VerticalOscillationCm))
 	}
-	// non-course : pas de biomécanique
+	// non-running: no biomechanics
 	b2 := computeBiomech(newSession(a, false), det, testProfile().Thresholds, false, true)
 	if b2.CadenceAvgSpm != nil || b2.GctBalance.Available {
 		t.Error("biomécanique attendue vide hors course")
@@ -135,7 +135,7 @@ func TestSegmentsFromSplits(t *testing.T) {
 	if len(sg.Laps) != 2 || sg.Laps[0].Label != "Km 1" || sg.Laps[1].Label != "Km 2" || sg.Laps[0].Kind != "lap" {
 		t.Errorf("laps : %+v", sg.Laps)
 	}
-	// valeur de lap manquante → recalcul sur la fenêtre
+	// missing lap value: recomputed from the window
 	if sg.Laps[1].AvgPower == nil {
 		t.Error("puissance du lap 2 attendue (recalcul records)")
 	}
@@ -199,7 +199,7 @@ func TestConsolidateMicroPauses(t *testing.T) {
 }
 
 func TestAlignPausesCoversTimerStop(t *testing.T) {
-	// Chrono arrêté 285→314 s, split rwd_stand 314→317 s (elapsed Garmin 21 s), reprise à 318 s.
+	// Timer stopped 285→314 s, rwd_stand split 314→317 s (Garmin elapsed 21 s), resumed at 318 s.
 	in := []rawBlock{
 		{kind: "run", t0: 0, t1: 285, durS: 284.7},
 		{kind: "stand", t0: 314, t1: 317, durS: 21.1, standS: 21.1},
@@ -233,7 +233,7 @@ func TestDrift(t *testing.T) {
 	if d.FirstHalfHR != 135 || d.SecondHalfHR != 145 || d.LastThirdHrRiseBpm < 5 {
 		t.Errorf("FC moitiés/tiers : %+v", d)
 	}
-	// trop court → nil
+	// too short: nil
 	a := synthActivity(true)
 	a.Records = a.Records[:300]
 	if computeDrift(newSession(a, true)) != nil {

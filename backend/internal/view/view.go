@@ -142,26 +142,26 @@ type HistoryRow struct {
 }
 
 type ActivityView struct {
-	GeneratedAt  string                     `json:"generatedAt"`
-	Freshness    Freshness                  `json:"freshness"`
-	SourceLabel  string                     `json:"sourceLabel"`
-	Activity     ActivityDetail             `json:"activity"`
-	Weather      *Weather                   `json:"weather"`
-	Biomechanics analysis.Biomechanics      `json:"biomechanics"`
-	Load         analysis.Load              `json:"load"`
-	Segments     analysis.Segments          `json:"segments"`
-	Series       analysis.Series            `json:"series"`
-	CrossLoad    CrossLoad                  `json:"crossLoad"`
-	Recovery     *analysis.RecoveryContext  `json:"recovery"`
-	Performance  *analysis.Performance      `json:"performance"`
-	Plan         *athlete.PlanMatch         `json:"plan"`
-	Notes        athlete.ActivityNotes      `json:"notes"`
-	Goals        []athlete.Goal             `json:"goals"`
-	Upcoming     []athlete.PlannedSession   `json:"upcoming"`
-	History      []HistoryRow               `json:"history"`
-	Alerts       []analysis.Alert           `json:"alerts"`
-	Warnings     []string                   `json:"warnings"`
-	DataSources  []string                   `json:"dataSources"`
+	GeneratedAt  string                    `json:"generatedAt"`
+	Freshness    Freshness                 `json:"freshness"`
+	SourceLabel  string                    `json:"sourceLabel"`
+	Activity     ActivityDetail            `json:"activity"`
+	Weather      *Weather                  `json:"weather"`
+	Biomechanics analysis.Biomechanics     `json:"biomechanics"`
+	Load         analysis.Load             `json:"load"`
+	Segments     analysis.Segments         `json:"segments"`
+	Series       analysis.Series           `json:"series"`
+	CrossLoad    CrossLoad                 `json:"crossLoad"`
+	Recovery     *analysis.RecoveryContext `json:"recovery"`
+	Performance  *analysis.Performance     `json:"performance"`
+	Plan         *athlete.PlanMatch        `json:"plan"`
+	Notes        athlete.ActivityNotes     `json:"notes"`
+	Goals        []athlete.Goal            `json:"goals"`
+	Upcoming     []athlete.PlannedSession  `json:"upcoming"`
+	History      []HistoryRow              `json:"history"`
+	Alerts       []analysis.Alert          `json:"alerts"`
+	Warnings     []string                  `json:"warnings"`
+	DataSources  []string                  `json:"dataSources"`
 	// PlannedToday is the planned session matched to (or scheduled on the day of) this activity.
 	PlannedToday *athlete.PlannedSession `json:"-"`
 }

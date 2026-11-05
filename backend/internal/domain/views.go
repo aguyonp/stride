@@ -195,11 +195,11 @@ func (s *Services) crossLoad(ctx context.Context, uid int64, date, until string,
 		cl.WindowEnd = date + "T23:59:59"
 	}
 	type acc struct {
-		rides         int
-		dist, dur     float64
-		hrW, hrSum    float64
-		load          float64
-		loadKnown     bool
+		rides      int
+		dist, dur  float64
+		hrW, hrSum float64
+		load       float64
+		loadKnown  bool
 	}
 	days := map[string]*acc{prev: {}, date: {}}
 	var others []*activityRow
@@ -571,4 +571,3 @@ func (s *Services) ResolveDate(ctx context.Context, uid int64, d string) (string
 	}
 	return d, nil
 }
-

@@ -146,10 +146,10 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 	alertCount := map[string]*view.AlertCount{}
 	fetches := 0
 	type perWeek struct {
-		n                   int
-		dist, dur           float64
-		cad, gct            meanAcc
-		pd, pc, pn          meanAcc
+		n          int
+		dist, dur  float64
+		cad, gct   meanAcc
+		pd, pc, pn meanAcc
 	}
 	wk := map[string]*perWeek{}
 	for i, a := range rows {
@@ -361,4 +361,3 @@ func (s *Services) UserExists(ctx context.Context, uid int64) (bool, error) {
 	err := s.db().QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id = ?`, uid).Scan(&n)
 	return n > 0, err
 }
-
