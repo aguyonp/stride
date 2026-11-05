@@ -375,7 +375,9 @@ func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activi
 			created = true
 		}
 		if hasGarmin.Valid {
-			_, err = tx.ExecContext(ctx, `UPDATE activities SET strava_id = ?, strava_gear = ?, updated_at = ? WHERE id = ? AND user_id = ?`, a.ID, gear, now, id, uid)
+			_, err = tx.ExecContext(ctx, `UPDATE activities SET final = CASE WHEN strava_id IS NULL THEN 0 ELSE final END,
+				complete = CASE WHEN strava_id IS NULL THEN 0 ELSE complete END, strava_id = ?, strava_gear = ?, updated_at = ?
+				WHERE id = ? AND user_id = ?`, a.ID, gear, now, id, uid)
 		} else {
 			_, err = tx.ExecContext(ctx, `UPDATE activities SET strava_id = ?, strava_gear = ?, start_utc = ?, start_local = ?, local_date = ?, type = ?, sport = ?,
 				name = ?, distance_m = ?, duration_s = ?, moving_s = ?, elapsed_s = ?, avg_speed = ?, avg_hr = ?, max_hr = ?, avg_power = ?, avg_cadence = ?,

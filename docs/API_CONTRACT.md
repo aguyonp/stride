@@ -84,6 +84,8 @@ garmin-api-extractor/
 - **Unités du détail d'activité** : `summaryDTO.averageRunCadence`/`maxRunCadence` en **pas/min** (identiques à la liste), `strideLength` en cm, `verticalOscillation` en cm, `groundContactTime` en ms.
 - **/details** : valeurs déjà dans l'unité d'affichage malgré `unit.factor` : `directDoubleCadence` = pas/min, `directRunCadence` = foulées/min, `directSpeed` m/s, `sumDuration` s, `directTimestamp` ms GMT. Contient `geoPolylineDTO` + lat/long (GPS) → ignorés. Utilisé uniquement en repli si le FIT est indisponible.
 - **FIT TimeInZone (session)** : `time_in_hr_zone` a 7 cases `[sous Z1, Z1..Z5, au-dessus]` (ms) ; Z1..Z5 = cases 1..5 (+ "au-dessus" ajouté à Z5) — identique à `hrTimeInZone_1..5` de la liste.
+- **FIT Laps (2026-11-05)** : le `timestamp` des laps décodé par la lib vaut l'heure de début de séance ; fin d'un lap = `StartTime + TotalElapsedTime`.
+- **Live V2 (2026-11-05)** : `/details?maxChartSize=100000` expose `directGradeAdjustedSpeed`, `directPotentialStamina`, `directAvailableStamina` à pleine résolution (fusionnés par horodatage dans les records FIT) ; `summaryDTO` porte `startLatitude/startLongitude` (météo), `impactLoad`, `beginPotentialStamina/endPotentialStamina/minAvailableStamina`. `dailySleepSummariesByDate` contient `sleepScores` : un seul appel par plage suffit.
 - **FIT Splits rwd_*** : Garmin produit des micro-pauses (1–3 s) ; pendant l'auto-pause, `TotalTimerTime` d'un `rwd_stand` est quasi nul → durée d'une pause = `TotalElapsedTime`, durée d'un bloc de course = `TotalTimerTime`.
 
 ---

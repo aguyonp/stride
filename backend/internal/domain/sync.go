@@ -302,8 +302,8 @@ func (s *Services) syncStravaList(ctx context.Context, uid int64, cn *conn, toda
 			if acts[i].Manual {
 				continue
 			}
-			raw, _ := json.Marshal(acts[i])
-			_, created, err := s.upsertStrava(ctx, uid, &acts[i], raw, true)
+			// list items are summaries: the detailed activity is fetched with the bundle
+			_, created, err := s.upsertStrava(ctx, uid, &acts[i], nil, true)
 			if err != nil {
 				return n, err
 			}
