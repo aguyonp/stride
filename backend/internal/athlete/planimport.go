@@ -64,7 +64,7 @@ var clockRe = regexp.MustCompile(`^(\d+):(\d{1,2})(?::(\d{1,2}))?$`)
 var numUnitRe = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)\s*([a-zé/"']*)$`)
 
 // number parses JSON numbers and tolerant strings ("5:30", "10 min", "1.5 km", "90s"); kind is
-// "duration", "distance" or "" and drives unit conversion.
+// "duration", "distance", "km" (value already in km) or "" and drives unit conversion.
 func number(v any, kind string) (*float64, bool) {
 	switch x := v.(type) {
 	case nil:
@@ -99,7 +99,9 @@ func number(v any, kind string) (*float64, bool) {
 		case "h", "heure", "heures":
 			f *= 3600
 		case "km":
-			f *= 1000
+			if kind != "km" {
+				f *= 1000
+			}
 		case "", "s", "sec", "secondes", "m", "bpm", "spm", "w", "ppm", "\"":
 		default:
 			return nil, false
@@ -218,19 +220,21 @@ func normDate(s string) string {
 	return s
 }
 
-// ParsePlan reads a stride-plan answer (first ```json block or raw JSON) tolerantly. Only valid
-// sessions are returned as drafts; errors are French one-liners.
-func ParsePlan(text, source string) ([]PlannedSession, []string) {
+// ParsePlan reads a stride-plan answer (first ```json block or raw JSON) tolerantly, version 1
+// (sessions) or 2 (sessions + phases). Only valid sessions and phases are returned as drafts
+// (id 0); errors are French one-liners.
+func ParsePlan(text, source string) ([]PlannedSession, []PlanPhase, []string) {
 	raw := extractJSON(text)
 	if raw == "" {
-		return []PlannedSession{}, []string{"Aucun JSON trouvé : un bloc ```json au format « stride-plan » est attendu."}
+		return []PlannedSession{}, []PlanPhase{}, []string{"Aucun JSON trouvé : un bloc ```json au format « stride-plan » est attendu."}
 	}
 	var doc any
 	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
-		return []PlannedSession{}, []string{"JSON illisible : " + err.Error()}
+		return []PlannedSession{}, []PlanPhase{}, []string{"JSON illisible : " + err.Error()}
 	}
 	var sessions []any
 	var errs []string
+	phases := []PlanPhase{}
 	switch d := doc.(type) {
 	case []any:
 		sessions = d
@@ -243,9 +247,15 @@ func ParsePlan(text, source string) ([]PlannedSession, []string) {
 		} else if _, ok := d["date"]; ok {
 			sessions = []any{d}
 		}
+		if ph, ok := field(d, "phases", "blocks", "cycles"); ok {
+			phases, errs = parsePhases(ph, errs)
+		}
 	}
 	if len(sessions) == 0 {
-		return []PlannedSession{}, append(errs, "Aucune séance trouvée (liste « sessions » vide ou absente).")
+		if len(phases) > 0 {
+			return []PlannedSession{}, phases, nonNil(errs)
+		}
+		return []PlannedSession{}, phases, append(errs, "Aucune séance trouvée (liste « sessions » vide ou absente).")
 	}
 	drafts := []PlannedSession{}
 	for i, it := range sessions {
@@ -299,8 +309,45 @@ func ParsePlan(text, source string) ([]PlannedSession, []string) {
 		}
 		drafts = append(drafts, ps)
 	}
+	return drafts, phases, nonNil(errs)
+}
+
+func nonNil(errs []string) []string {
 	if errs == nil {
-		errs = []string{}
+		return []string{}
 	}
-	return drafts, errs
+	return errs
+}
+
+func parsePhases(v any, errs []string) ([]PlanPhase, []string) {
+	out := []PlanPhase{}
+	list, ok := v.([]any)
+	if !ok {
+		return out, append(errs, "« phases » doit être une liste")
+	}
+	for i, it := range list {
+		label := fmt.Sprintf("Phase %d", i+1)
+		m, ok := it.(map[string]any)
+		if !ok {
+			errs = append(errs, label+" : objet attendu")
+			continue
+		}
+		p := &parser{}
+		ph := PlanPhase{Name: strField(m, "name", "title", "nom"), StartDate: normDate(strField(m, "startDate", "start", "from", "debut")),
+			EndDate: normDate(strField(m, "endDate", "end", "to", "fin")), Focus: strField(m, "focus", "objective", "goal"),
+			Note: strField(m, "note", "notes", "description")}
+		ph.WeeklyVolumeKm = p.num(m, label, "km", "weeklyVolumeKm", "volumeKm", "weeklyKm")
+		if len(p.errs) > 0 {
+			errs = append(errs, p.errs...)
+			continue
+		}
+		if err := ph.Normalize(); err != nil {
+			for _, line := range strings.Split(err.Error(), "\n") {
+				errs = append(errs, label+" : "+line)
+			}
+			continue
+		}
+		out = append(out, ph)
+	}
+	return out, errs
 }

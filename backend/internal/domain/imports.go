@@ -212,7 +212,7 @@ func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, d
 			if _, err := tx.ExecContext(ctx, `UPDATE activities SET import_format = ?, distance_m = COALESCE(distance_m, ?), duration_s = COALESCE(duration_s, ?),
 				moving_s = COALESCE(moving_s, ?), elapsed_s = COALESCE(elapsed_s, ?), avg_speed = COALESCE(avg_speed, ?), avg_hr = COALESCE(avg_hr, ?),
 				max_hr = COALESCE(max_hr, ?), avg_power = COALESCE(avg_power, ?), avg_cadence = COALESCE(avg_cadence, ?), elev_gain = COALESCE(elev_gain, ?),
-				elev_loss = COALESCE(elev_loss, ?), bundle_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`, format, c.dist, c.dur, c.moving, c.elapsed,
+				elev_loss = COALESCE(elev_loss, ?), bundle_at = MAX(?, COALESCE(bundle_at, 0) + 1), updated_at = ? WHERE id = ? AND user_id = ?`, format, c.dist, c.dur, c.moving, c.elapsed,
 				c.speed, c.hr, c.maxHR, c.power, c.cadence, c.gain, c.loss, now, now, id, uid); err != nil {
 				return err
 			}

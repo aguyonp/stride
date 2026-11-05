@@ -183,7 +183,7 @@ func TestV3ReconciliationAndMetrics(t *testing.T) {
 	if code, _ := e.do(1, "GET", "/api/calendar?from="+from+"&to="+to, nil, &cal); code != 200 || len(cal["days"].([]any)) != 5 {
 		t.Fatalf("calendar: %v", cal)
 	}
-	if code, _ := e.do(1, "GET", "/api/calendar?from=2026-01-01&to=2026-03-15", nil, nil); code != 400 {
+	if code, _ := e.do(1, "GET", "/api/calendar?from=2026-01-01&to=2027-03-15", nil, nil); code != 400 {
 		t.Fatal("calendar range")
 	}
 }

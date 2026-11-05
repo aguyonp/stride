@@ -503,12 +503,34 @@ func writeAlerts(b *builder, title string, alerts []analysis.Alert) {
 	}
 }
 
-func writeContext(b *builder, prof athlete.Profile, goals []athlete.Goal, today string, upcoming []athlete.PlannedSession) {
+func writeContext(b *builder, prof athlete.Profile, goals []athlete.Goal, today string, upcoming []athlete.PlannedSession, records []athlete.PersonalRecord) {
 	b.section("CONTEXTE & OBJECTIFS DE L'ATHLÈTE")
 	b.raw("- **Profil / Mode actif :** " + prof.ModeLabel())
 	b.raw("- **Objectif Macro :** " + macroText(goals))
+	b.raw("- **Records personnels :** " + recordsText(records))
 	b.raw("- **Séance prévue aujourd'hui :** " + today)
 	b.raw("- **Prochaines séances prévues :** " + upcomingText(upcoming))
+}
+
+// recordsText lists the known records: "5 km 22:41 (12/10/2026) · Plus longue sortie 21,4 km".
+func recordsText(records []athlete.PersonalRecord) string {
+	var parts []string
+	for _, r := range records {
+		switch {
+		case r.Key == athlete.RecordLongest && r.DistanceM > 0:
+			parts = append(parts, r.Label+" "+f.Km(r.DistanceM, 1))
+		case r.TimeS != nil:
+			s := r.Label + " " + f.Duration(*r.TimeS)
+			if r.Date != nil {
+				s += " (" + f.Date(*r.Date) + ")"
+			}
+			parts = append(parts, s)
+		}
+	}
+	if len(parts) == 0 {
+		return "Aucun"
+	}
+	return strings.Join(parts, " · ")
 }
 
 // sortedAlertCounts orders aggregated alerts by severity then frequency.

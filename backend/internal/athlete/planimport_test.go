@@ -9,7 +9,7 @@ const contract = `{"format":"stride-plan","version":1,"sessions":[{"date":"2026-
 
 func TestParsePlanContract(t *testing.T) {
 	text := "Voici le plan :\n```json\n" + contract + "\n```\nBon courage."
-	drafts, errs := ParsePlan(text, "import")
+	drafts, _, errs := ParsePlan(text, "import")
 	if len(errs) != 0 || len(drafts) != 1 {
 		t.Fatalf("drafts=%d errs=%v", len(drafts), errs)
 	}
@@ -24,7 +24,7 @@ func TestParsePlanTolerant(t *testing.T) {
 	text := `Plan: [{"date":"11/11/2026","sport":"Course","titre":"Seuil","steps":[{"type":"Échauffement","duration":"15 min"},
 	{"repeat":"3","steps":[{"type":"work","distance":"1 km","target":{"type":"allure","min":"4:10","max":"4:00"}},{"type":"récup","duration":"2:00"}]},
 	{"type":"cooldown","duration":"10'"}]},{"date":"2026-13-01","sport":"run","steps":[{"type":"sprint"}]}]`
-	drafts, errs := ParsePlan(text, "llm")
+	drafts, _, errs := ParsePlan(text, "llm")
 	if len(drafts) != 1 || len(errs) != 2 {
 		t.Fatalf("drafts=%d errs=%q", len(drafts), errs)
 	}
@@ -36,7 +36,28 @@ func TestParsePlanTolerant(t *testing.T) {
 	if !strings.HasPrefix(errs[0], "Séance 2 : ") {
 		t.Fatalf("errs: %q", errs)
 	}
-	if _, errs := ParsePlan("pas de json ici", "import"); len(errs) != 1 {
+	if _, _, errs := ParsePlan("pas de json ici", "import"); len(errs) != 1 {
 		t.Fatal(errs)
+	}
+}
+
+func TestParsePlanV2Phases(t *testing.T) {
+	text := "Voici le plan :\n```json\n" + `{"format":"stride-plan","version":2,"goal":{"title":"10 km","date":"2027-02-15"},
+		"phases":[{"name":"Développement","startDate":"2026-11-09","endDate":"2026-12-06","focus":"volume aérobie","weeklyVolumeKm":"35 km"},
+		{"name":"Affûtage","start":"01/02/2027","end":"2027-02-15","weeklyVolumeKm":20},
+		{"name":"","startDate":"2026-12-07","endDate":"2026-12-01"}],
+		"sessions":[{"date":"2026-11-10","sport":"run","title":"Footing","targetDurationS":2700}]}` + "\n```"
+	drafts, phases, errs := ParsePlan(text, "llm")
+	if len(drafts) != 1 || len(phases) != 2 || len(errs) != 2 {
+		t.Fatalf("drafts=%d phases=%+v errs=%v", len(drafts), phases, errs)
+	}
+	if phases[0].WeeklyVolumeKm == nil || *phases[0].WeeklyVolumeKm != 35 {
+		t.Fatalf("volume: %v", phases[0].WeeklyVolumeKm)
+	}
+	if phases[1].StartDate != "2027-02-01" || phases[1].ID != 0 {
+		t.Fatalf("phase dates: %+v", phases[1])
+	}
+	if _, ph, errs := ParsePlan(`{"format":"stride-plan","version":2,"phases":[{"name":"Base","startDate":"2026-11-09","endDate":"2026-11-30"}],"sessions":[]}`, "import"); len(ph) != 1 || len(errs) != 0 {
+		t.Fatalf("phases only: %v %v", ph, errs)
 	}
 }

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,9 +21,10 @@ import (
 
 const (
 	garminCapTTL    = 24 * time.Hour
-	maxBulkSessions = 31
-	maxCalendarDays = 62
-	unsupportedMsg  = "L'API personnelle Garmin ne permet pas l'envoi de séances structurées : téléchargez le fichier FIT et copiez-le dans GARMIN/NewFiles sur la montre."
+	maxBulkSessions = 120
+	maxBulkPhases   = 12
+	maxCalendarDays = 371
+	unsupportedMsg  = "L'API personnelle Garmin ne permet pas d'envoyer des séances (404) : téléchargez le fichier .FIT de la séance et copiez-le en USB dans GARMIN/NewFiles sur la montre (elle apparaît dans Entraînement › Mes séances)."
 )
 
 // PushUnsupportedError answers 409 CONFLICT with the session (garmin.status = "unsupported").
@@ -36,6 +38,7 @@ type PlanGenerateInput struct {
 	Mode      string `json:"mode"`
 	Horizon   string `json:"horizon"`
 	StartDate string `json:"startDate"`
+	GoalID    *int64 `json:"goalId"`
 	Note      string `json:"note"`
 }
 
@@ -46,8 +49,92 @@ type PlanPromptResult struct {
 
 type PlanDraftsResult struct {
 	Drafts []athlete.PlannedSession `json:"drafts"`
+	Phases []athlete.PlanPhase      `json:"phases"`
 	Errors []string                 `json:"errors"`
 	Raw    string                   `json:"raw,omitempty"`
+}
+
+const (
+	goalAllSessionsDays = 21 // up to this many days before the goal, every session is detailed
+	planHorizonMaxDays  = 366
+)
+
+// planGoal returns the requested goal, or the nearest active goal dated on or after from.
+func (s *Services) planGoal(ctx context.Context, uid int64, id *int64, from string) (athlete.Goal, error) {
+	r := s.repo()
+	if id != nil {
+		g, err := r.Goal(ctx, uid, *id)
+		if err != nil {
+			return g, repoErr(err)
+		}
+		if g.TargetDate == nil {
+			return g, badRequest("Cet objectif n'a pas de date cible : renseignez-la pour planifier jusqu'à l'objectif.")
+		}
+		return g, nil
+	}
+	goals, err := r.Goals(ctx, uid, true)
+	if err != nil {
+		return athlete.Goal{}, err
+	}
+	var best *athlete.Goal
+	for i := range goals {
+		g := &goals[i]
+		if g.TargetDate != nil && *g.TargetDate > from && (best == nil || *g.TargetDate < *best.TargetDate) {
+			best = g
+		}
+	}
+	if best == nil {
+		return athlete.Goal{}, badRequest("Aucun objectif actif avec une date cible à venir : ajoutez-en un ou choisissez un autre horizon.")
+	}
+	return *best, nil
+}
+
+// planWindow resolves the period, the detailed sub-period and the goal of a generation request.
+func (s *Services) planWindow(ctx context.Context, uid int64, in *PlanGenerateInput) (report.PlanRequest, error) {
+	req := report.PlanRequest{Horizon: in.Horizon, StartDate: in.StartDate, Note: in.Note}
+	switch in.Horizon {
+	case "session":
+		req.EndDate = in.StartDate
+	case "week":
+		req.EndDate = analysis.DateAdd(in.StartDate, 6)
+	case "2weeks":
+		req.EndDate = analysis.DateAdd(in.StartDate, 13)
+	case "goal":
+		g, err := s.planGoal(ctx, uid, in.GoalID, in.StartDate)
+		if err != nil {
+			return req, err
+		}
+		if *g.TargetDate <= in.StartDate {
+			return req, badRequest("La date de l'objectif doit être postérieure à la date de début.")
+		}
+		if daysBetween(in.StartDate, *g.TargetDate) > planHorizonMaxDays {
+			return req, badRequest("Objectif trop lointain (%d jours max).", planHorizonMaxDays)
+		}
+		req.Goal, req.EndDate = &g, *g.TargetDate
+	default:
+		return req, badRequest("horizon invalide (session, week, 2weeks, goal).")
+	}
+	req.DetailFrom, req.DetailTo = req.StartDate, req.EndDate
+	if req.Goal != nil && daysBetween(req.StartDate, req.EndDate) > goalAllSessionsDays {
+		req.WithPhases = true
+		existing, err := s.repo().Plan(ctx, uid, req.StartDate, req.EndDate)
+		if err != nil {
+			return req, err
+		}
+		// asking again extends the detail after the sessions already planned
+		if n := len(existing); n > 0 && existing[n-1].Date < req.EndDate {
+			req.DetailFrom = analysis.DateAdd(existing[n-1].Date, 1)
+		}
+		weeks := 4
+		if daysBetween(req.DetailFrom, req.EndDate) < 56 {
+			weeks = 2
+		}
+		req.DetailTo = analysis.DateAdd(req.DetailFrom, 7*weeks-1)
+		if req.DetailTo > req.EndDate {
+			req.DetailTo = req.EndDate
+		}
+	}
+	return req, nil
 }
 
 // GeneratePlan builds the plan prompt (prompt mode) or asks the athlete's LLM for drafts (llm mode, not saved).
@@ -57,9 +144,6 @@ func (s *Services) GeneratePlan(ctx context.Context, uid int64, in PlanGenerateI
 	}
 	if in.Horizon == "" {
 		in.Horizon = "week"
-	}
-	if in.Horizon != "session" && in.Horizon != "week" {
-		return nil, badRequest("horizon invalide (session, week).")
 	}
 	if len([]rune(in.Note)) > 1000 {
 		return nil, badRequest("Précision trop longue (1000 caractères max).")
@@ -75,43 +159,63 @@ func (s *Services) GeneratePlan(ctx context.Context, uid int64, in PlanGenerateI
 	if !athlete.ValidDate(in.StartDate) {
 		return nil, badRequest("startDate attendue au format AAAA-MM-JJ.")
 	}
+	req, err := s.planWindow(ctx, uid, &in)
+	if err != nil {
+		return nil, err
+	}
 	dv, err := s.DayView(ctx, uid, today)
 	if err != nil {
 		return nil, err
 	}
-	end := in.StartDate
-	if in.Horizon == "week" {
-		end = analysis.DateAdd(in.StartDate, 6)
+	if dv.Records, err = s.records(ctx, uid); err != nil {
+		return nil, err
 	}
-	existing, err := s.repo().Plan(ctx, uid, in.StartDate, end)
+	r := s.repo()
+	if req.Existing, err = r.Plan(ctx, uid, req.StartDate, req.EndDate); err != nil {
+		return nil, err
+	}
+	if req.Events, err = r.Events(ctx, uid, req.StartDate, req.EndDate); err != nil {
+		return nil, err
+	}
+	if req.Phases, err = r.Phases(ctx, uid, req.StartDate, req.EndDate); err != nil {
+		return nil, err
+	}
+	if req.LoadRatio, err = s.loadRatio(ctx, uid, p, today); err != nil {
+		return nil, err
+	}
+	prompt := report.Plan(dv, p, req)
+	if in.Mode == "prompt" {
+		return &PlanPromptResult{Prompt: prompt, TokensEstimate: report.EstimateTokens(prompt)}, nil
+	}
+	text, err := s.askLLM(ctx, uid, prompt)
 	if err != nil {
 		return nil, err
 	}
+	drafts, phases, errs := athlete.ParsePlan(text, "llm")
+	return &PlanDraftsResult{Drafts: drafts, Phases: phases, Errors: errs, Raw: text}, nil
+}
+
+func (s *Services) loadRatio(ctx context.Context, uid int64, p athlete.Profile, today string) (*analysis.LoadRatio, error) {
 	rows, err := s.activitiesBetween(ctx, uid, analysis.DateAdd(today, -27), today)
 	if err != nil {
 		return nil, err
 	}
 	loads, _ := loadsOf(rows)
-	prompt := report.Plan(dv, p, report.PlanRequest{Horizon: in.Horizon, StartDate: in.StartDate, Note: in.Note, Existing: existing,
-		LoadRatio: analysis.ComputeLoadRatio(loads, today, "", p.Thresholds.LoadRatioMax)})
-	if in.Mode == "prompt" {
-		return &PlanPromptResult{Prompt: prompt, TokensEstimate: report.EstimateTokens(prompt)}, nil
-	}
+	return analysis.ComputeLoadRatio(loads, today, "", p.Thresholds.LoadRatioMax), nil
+}
+
+// askLLM sends a plan prompt to the athlete's LLM.
+func (s *Services) askLLM(ctx context.Context, uid int64, prompt string) (string, error) {
 	c, err := s.llmConfig(ctx, uid)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if c == nil {
-		return nil, ErrLLMNotConfigured
+		return "", ErrLLMNotConfigured
 	}
 	ctx, cancel := context.WithTimeout(ctx, llmTimeout)
 	defer cancel()
-	text, err := s.callLLM(ctx, uid, c, llmRequest{system: systemDirective(), prompt: prompt, maxTokens: llmMaxTokens})
-	if err != nil {
-		return nil, err
-	}
-	drafts, errs := athlete.ParsePlan(text, "llm")
-	return &PlanDraftsResult{Drafts: drafts, Errors: errs, Raw: text}, nil
+	return s.callLLM(ctx, uid, c, llmRequest{system: systemDirective(), prompt: prompt, maxTokens: llmMaxTokens})
 }
 
 // ImportPlan parses an AI answer (or any stride-plan JSON) into drafts, without saving.
@@ -119,15 +223,12 @@ func (s *Services) ImportPlan(text string) (*PlanDraftsResult, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, badRequest("Texte vide : collez la réponse de l'IA.")
 	}
-	drafts, errs := athlete.ParsePlan(text, "import")
-	return &PlanDraftsResult{Drafts: drafts, Errors: errs}, nil
+	drafts, phases, errs := athlete.ParsePlan(text, "import")
+	return &PlanDraftsResult{Drafts: drafts, Phases: phases, Errors: errs}, nil
 }
 
-// BulkCreatePlanned validates every session first, then creates them all (none on error).
-func (s *Services) BulkCreatePlanned(ctx context.Context, uid int64, sessions []json.RawMessage) ([]athlete.PlannedSession, error) {
-	if len(sessions) == 0 || len(sessions) > maxBulkSessions {
-		return nil, badRequest("Entre 1 et %d séances attendues.", maxBulkSessions)
-	}
+// decodeSessions validates planned-session inputs (drafts with id 0); errors are joined.
+func decodeSessions(sessions []json.RawMessage) ([]athlete.PlannedSession, error) {
 	list := make([]athlete.PlannedSession, 0, len(sessions))
 	var errs []string
 	for i, raw := range sessions {
@@ -145,13 +246,67 @@ func (s *Services) BulkCreatePlanned(ctx context.Context, uid int64, sessions []
 	if len(errs) > 0 {
 		return nil, &BadRequestError{Msg: "Données invalides : " + strings.Join(errs, " | ")}
 	}
-	out := make([]athlete.PlannedSession, 0, len(list))
-	r := s.repo()
-	for i := range list {
-		if err := r.CreatePlanned(ctx, uid, &list[i]); err != nil {
-			return nil, validation(err)
+	return list, nil
+}
+
+func decodePhases(phases []json.RawMessage) ([]athlete.PlanPhase, error) {
+	list := make([]athlete.PlanPhase, 0, len(phases))
+	var errs []string
+	for i, raw := range phases {
+		var ph athlete.PlanPhase
+		if err := athlete.Patch(&ph, raw, []string{"name", "startDate", "endDate", "focus", "weeklyVolumeKm", "note"}, []string{"id"}); err != nil {
+			errs = append(errs, fmt.Sprintf("Phase %d : %v", i+1, err))
+			continue
 		}
+		if err := ph.Normalize(); err != nil {
+			errs = append(errs, fmt.Sprintf("Phase %d : %s", i+1, strings.ReplaceAll(err.Error(), "\n", " ; ")))
+			continue
+		}
+		list = append(list, ph)
 	}
+	if len(errs) > 0 {
+		return nil, &BadRequestError{Msg: "Données invalides : " + strings.Join(errs, " | ")}
+	}
+	return list, nil
+}
+
+// BulkCreatePlanned validates every session and phase first, then creates them all in one
+// transaction (none on error); phases replace the stored phases overlapping their dates.
+func (s *Services) BulkCreatePlanned(ctx context.Context, uid int64, sessions, phases []json.RawMessage) ([]athlete.PlannedSession, error) {
+	if len(sessions)+len(phases) == 0 || len(sessions) > maxBulkSessions || len(phases) > maxBulkPhases {
+		return nil, badRequest("Entre 1 et %d séances (et %d phases au plus) attendues.", maxBulkSessions, maxBulkPhases)
+	}
+	return s.replacePlan(ctx, uid, nil, sessions, phases)
+}
+
+// replacePlan deletes removeIds, creates sessions and replaces overlapping phases atomically.
+func (s *Services) replacePlan(ctx context.Context, uid int64, removeIds []int64, sessions, phases []json.RawMessage) ([]athlete.PlannedSession, error) {
+	list, err := decodeSessions(sessions)
+	if err != nil {
+		return nil, err
+	}
+	phs, err := decodePhases(phases)
+	if err != nil {
+		return nil, err
+	}
+	err = s.deps.Store.Tx(ctx, func(tx *sql.Tx) error {
+		r := athlete.Repo{DB: tx, Now: s.Now}
+		for _, id := range removeIds {
+			if err := r.DeletePlanned(ctx, uid, id); err != nil {
+				return repoErr(err)
+			}
+		}
+		for i := range list {
+			if err := r.CreatePlanned(ctx, uid, &list[i]); err != nil {
+				return validation(err)
+			}
+		}
+		return r.ReplacePhases(ctx, uid, phs)
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]athlete.PlannedSession, 0, len(list))
 	for _, ps := range list {
 		got, err := s.plannedWithMatch(ctx, uid, ps.ID)
 		if err != nil {
@@ -254,7 +409,7 @@ func (s *Services) WorkoutFIT(ctx context.Context, uid, id int64) ([]byte, strin
 	return b, fmt.Sprintf("stride-%s-%d.fit", ps.Date, ps.ID), nil
 }
 
-// Calendar returns planned and done sessions per day (≤ 62 days).
+// Calendar returns planned and done sessions and calendar events per day (≤ 371 days).
 func (s *Services) Calendar(ctx context.Context, uid int64, from, to string) (*view.Calendar, error) {
 	if !athlete.ValidDate(from) || !athlete.ValidDate(to) || to < from {
 		return nil, badRequest("from et to attendus au format AAAA-MM-JJ (from ≤ to).")
@@ -278,9 +433,19 @@ func (s *Services) Calendar(ctx context.Context, uid int64, from, to string) (*v
 	if err != nil {
 		return nil, err
 	}
-	out := &view.Calendar{Days: []view.WeekDay{}}
+	events, err := s.repo().Events(ctx, uid, from, to)
+	if err != nil {
+		return nil, err
+	}
+	out := &view.Calendar{Days: []view.CalendarDay{}}
 	for _, d := range analysis.DateRange(from, to) {
-		day := view.WeekDay{Date: d, Planned: []athlete.PlannedSession{}, Done: []view.ActivitySummary{}}
+		day := view.CalendarDay{WeekDay: view.WeekDay{Date: d, Planned: []athlete.PlannedSession{}, Done: []view.ActivitySummary{}},
+			Events: []athlete.CalendarEvent{}}
+		for _, ev := range events {
+			if ev.Covers(d) {
+				day.Events = append(day.Events, ev)
+			}
+		}
 		for _, ps := range pm.planned {
 			if ps.Date == d {
 				day.Planned = append(day.Planned, ps)

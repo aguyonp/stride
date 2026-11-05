@@ -147,7 +147,10 @@ func (f *fakeStrava) Refresh(context.Context, string) (strava.Tokens, error) {
 	return f.Exchange(context.Background(), "")
 }
 func (f *fakeStrava) Deauthorize(context.Context, string) error { f.deauthed.Add(1); return nil }
-func (f *fakeStrava) ListActivities(context.Context, string, time.Time, time.Time, int, int) ([]strava.Activity, error) {
+func (f *fakeStrava) ListActivities(_ context.Context, tok string, _, _ time.Time, _, _ int) ([]strava.Activity, error) {
+	if tok == "seed-readonly" {
+		return nil, &strava.ErrUnauthorized{Msg: "Authorization Error (AccessToken.activity:read_permission: missing)"}
+	}
 	var out []strava.Activity
 	for _, a := range f.acts {
 		out = append(out, *a)
@@ -181,6 +184,18 @@ func (f *fakeStrava) GetStreams(context.Context, string, int64) (*strava.Streams
 func (f *fakeStrava) GetGear(context.Context, string, string) (*strava.Gear, error) { return nil, nil }
 func (f *fakeStrava) ListAthleteGear(context.Context, string) ([]strava.Gear, error) {
 	return []strava.Gear{{ID: "g1", Name: "Chaussure A", BrandName: "Marque", ModelName: "Modèle", Kind: "shoe"}}, nil
+}
+func (f *fakeStrava) GetAthlete(_ context.Context, tok string) (*strava.Athlete, error) {
+	if tok == "seed-expired" {
+		return nil, &strava.ErrUnauthorized{Msg: "Authorization Error (AccessToken.access_token: invalid)"}
+	}
+	return &strava.Athlete{ID: 4242, Name: "Athlète Test"}, nil
+}
+func (f *fakeStrava) GetAthleteStats(_ context.Context, tok string, _ int64) (*strava.AthleteStats, error) {
+	if tok == "seed-readonly" { // the seeded token expired since: withStrava refreshes it once
+		return nil, &strava.ErrUnauthorized{Msg: "Authorization Error (AccessToken.access_token: invalid)"}
+	}
+	return &strava.AthleteStats{RecentRun: strava.Totals{Count: 3, DistanceM: 25000}}, nil
 }
 func (f *fakeStrava) EnsureSubscription(context.Context, string, string) (int64, error) {
 	f.subs.Add(1)

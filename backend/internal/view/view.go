@@ -44,6 +44,8 @@ type ActivitySummary struct {
 	PainDuring      *float64 `json:"painDuring"`
 	HasNotes        bool     `json:"hasNotes"`
 	PlanStatus      *string  `json:"planStatus"`
+	// Kudos is the Strava kudos_count (null without Strava: Garmin likes are not exposed).
+	Kudos *int `json:"kudos"`
 }
 
 type ActivityList struct {
@@ -145,31 +147,35 @@ type HistoryRow struct {
 }
 
 type ActivityView struct {
-	GeneratedAt  string                    `json:"generatedAt"`
-	Freshness    Freshness                 `json:"freshness"`
-	SourceLabel  string                    `json:"sourceLabel"`
-	Activity     ActivityDetail            `json:"activity"`
-	Weather      *Weather                  `json:"weather"`
-	Biomechanics analysis.Biomechanics     `json:"biomechanics"`
-	Load         analysis.Load             `json:"load"`
-	Segments     analysis.Segments         `json:"segments"`
-	Series       analysis.Series           `json:"series"`
-	CrossLoad    CrossLoad                 `json:"crossLoad"`
-	Recovery     *analysis.RecoveryContext `json:"recovery"`
-	Performance  *analysis.Performance     `json:"performance"`
-	Plan         *athlete.PlanMatch        `json:"plan"`
-	Notes        athlete.ActivityNotes     `json:"notes"`
-	Goals        []athlete.Goal            `json:"goals"`
-	Upcoming     []athlete.PlannedSession  `json:"upcoming"`
-	History      []HistoryRow              `json:"history"`
-	Alerts       []analysis.Alert          `json:"alerts"`
-	Warnings     []string                  `json:"warnings"`
-	DataSources  []string                  `json:"dataSources"`
-	Efficiency   *analysis.Efficiency      `json:"efficiency"`
-	Impact       *analysis.Impact          `json:"impact"`
-	Readiness    analysis.ReadinessBanner  `json:"readiness"`
+	GeneratedAt string         `json:"generatedAt"`
+	Freshness   Freshness      `json:"freshness"`
+	SourceLabel string         `json:"sourceLabel"`
+	Activity    ActivityDetail `json:"activity"`
+	Weather     *Weather       `json:"weather"`
+	// WeatherReason explains a null weather (indoor / no GPS, disabled, provider unavailable).
+	WeatherReason *string                   `json:"weatherReason"`
+	Biomechanics  analysis.Biomechanics     `json:"biomechanics"`
+	Load          analysis.Load             `json:"load"`
+	Segments      analysis.Segments         `json:"segments"`
+	Series        analysis.Series           `json:"series"`
+	CrossLoad     CrossLoad                 `json:"crossLoad"`
+	Recovery      *analysis.RecoveryContext `json:"recovery"`
+	Performance   *analysis.Performance     `json:"performance"`
+	Plan          *athlete.PlanMatch        `json:"plan"`
+	Notes         athlete.ActivityNotes     `json:"notes"`
+	Goals         []athlete.Goal            `json:"goals"`
+	Upcoming      []athlete.PlannedSession  `json:"upcoming"`
+	History       []HistoryRow              `json:"history"`
+	Alerts        []analysis.Alert          `json:"alerts"`
+	Warnings      []string                  `json:"warnings"`
+	DataSources   []string                  `json:"dataSources"`
+	Efficiency    *analysis.Efficiency      `json:"efficiency"`
+	Impact        *analysis.Impact          `json:"impact"`
+	Readiness     analysis.ReadinessBanner  `json:"readiness"`
 	// PlannedToday is the planned session matched to (or scheduled on the day of) this activity.
 	PlannedToday *athlete.PlannedSession `json:"-"`
+	// Records feed the CONTEXTE & OBJECTIFS section of the prompts.
+	Records []athlete.PersonalRecord `json:"-"`
 }
 
 type DayView struct {
@@ -188,7 +194,8 @@ type DayView struct {
 	Warnings    []string                  `json:"warnings"`
 	Readiness   analysis.ReadinessBanner  `json:"readiness"`
 	// History feeds the HISTORIQUE 14 JOURS table of the day report.
-	History []HistoryRow `json:"-"`
+	History []HistoryRow             `json:"-"`
+	Records []athlete.PersonalRecord `json:"-"`
 }
 
 type GarminIntegration struct {
@@ -207,6 +214,9 @@ type StravaIntegration struct {
 	AthleteName *string `json:"athleteName"`
 	LastSyncAt  *string `json:"lastSyncAt"`
 	LastError   *string `json:"lastError"`
+	// Scopes granted to the stored token; MissingScopes lists those Stride needs but lacks.
+	Scopes        []string `json:"scopes"`
+	MissingScopes []string `json:"missingScopes"`
 }
 
 type WeatherIntegration struct {
@@ -327,6 +337,7 @@ type MultiExport struct {
 	Alerts     []AlertCount
 	Upcoming   []athlete.PlannedSession
 	Unanalyzed int
+	Records    []athlete.PersonalRecord
 }
 
 type EfficiencyPoint struct {
@@ -388,8 +399,13 @@ type LLMAnalysis struct {
 	CreatedAt            string `json:"createdAt"`
 }
 
+type CalendarDay struct {
+	WeekDay
+	Events []athlete.CalendarEvent `json:"events"`
+}
+
 type Calendar struct {
-	Days []WeekDay `json:"days"`
+	Days []CalendarDay `json:"days"`
 }
 
 type ImportResult struct {

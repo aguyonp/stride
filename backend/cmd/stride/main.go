@@ -142,6 +142,7 @@ func run() error {
 	if err := dom.DedupOnce(ctx); err != nil {
 		log.Warn("⚠️ Dédoublonnage des activités en échec", "err", err.Error())
 	}
+	dom.SeedFirstAdmin(ctx)
 	authSvc, err := auth.New(auth.Options{Env: cfg, Store: st, Cache: kv, Log: log,
 		OnUserCreated: dom.OnUserCreated, OnUserDeleted: dom.PurgeUserCache})
 	if err != nil {

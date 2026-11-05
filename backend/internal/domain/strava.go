@@ -106,7 +106,7 @@ func (s *Services) processStravaEvent(ctx context.Context, ev strava.WebhookEven
 	} else {
 		s.log.Warn("⚠️ Flux Strava indisponibles", "user", uid, "err", errText(providerErr(pStrava, err)))
 	}
-	_, _ = s.db().ExecContext(ctx, `UPDATE activities SET bundle_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`, s.now().Unix(), s.now().Unix(), id, uid)
+	_, _ = s.db().ExecContext(ctx, `UPDATE activities SET bundle_at = MAX(?, COALESCE(bundle_at, 0) + 1), updated_at = ? WHERE id = ? AND user_id = ?`, s.now().Unix(), s.now().Unix(), id, uid)
 	s.log.Info("🔗 Activité Strava enregistrée", "user", uid, "aspect", ev.AspectType)
 	if err := s.autoAssignShoes(ctx, uid); err != nil {
 		s.log.Warn("⚠️ Association automatique des chaussures en échec", "user", uid, "err", errText(err))

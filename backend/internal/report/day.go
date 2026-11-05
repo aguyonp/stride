@@ -23,7 +23,7 @@ func Day(v *view.DayView, prof athlete.Profile, inc Include) string {
 			}
 			today = strings.Join(parts, " ; ")
 		}
-		writeContext(b, prof, v.Goals, today, v.Upcoming)
+		writeContext(b, prof, v.Goals, today, v.Upcoming, v.Records)
 	}
 	writeDayBalance(b, v)
 	if inc.Has(ChipHealth) {

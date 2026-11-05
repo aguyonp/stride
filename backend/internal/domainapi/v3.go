@@ -176,7 +176,7 @@ func (a *api) planGenerate(w http.ResponseWriter, r *http.Request) {
 	a.withUser(w, r, func(uid int64) {
 		var body domain.PlanGenerateInput
 		if err := httpx.Decode(w, r, &body, 16<<10); err != nil {
-			badRequest(w, "Corps JSON invalide ({mode, horizon, startDate, note?} attendu).")
+			badRequest(w, "Corps JSON invalide ({mode, horizon, startDate, goalId?, note?} attendu).")
 			return
 		}
 		v, err := a.s.GeneratePlan(r.Context(), uid, body)
@@ -202,12 +202,13 @@ func (a *api) planBulk(w http.ResponseWriter, r *http.Request) {
 	a.withUser(w, r, func(uid int64) {
 		var body struct {
 			Sessions []json.RawMessage `json:"sessions"`
+			Phases   []json.RawMessage `json:"phases"`
 		}
-		if err := httpx.Decode(w, r, &body, 512<<10); err != nil {
-			badRequest(w, "Corps JSON invalide ({\"sessions\": […]} attendu).")
+		if err := httpx.Decode(w, r, &body, 1<<20); err != nil {
+			badRequest(w, "Corps JSON invalide ({\"sessions\": […], \"phases\"?: […]} attendu).")
 			return
 		}
-		v, err := a.s.BulkCreatePlanned(r.Context(), uid, body.Sessions)
+		v, err := a.s.BulkCreatePlanned(r.Context(), uid, body.Sessions, body.Phases)
 		a.created(w, r, v, err)
 	})
 }

@@ -3,6 +3,7 @@
 ### CONTEXTE & OBJECTIFS DE L'ATHLÈTE
 - **Profil / Mode actif :** Suivi Pathologie (Genou / Fémoro-patellaire) | **Objectif Macro :** Courir 45 min continu sans gêne – échéance 15/11/2026 (Puis reprise perf en décembre) | **Autres objectifs :** Cadence 175 spm – cible 175 spm
 - **Période analysée :** 26/10/2026 → 08/11/2026 (2 semaines, 2 séances)
+- **Records personnels :** 5 km 22:41 (12/10/2026)
 - **Prochaines séances prévues :** 04/11 Footing (40 min) @ 5:20-5:30/km
 
 ### RÉCAPITULATIF DES SÉANCES

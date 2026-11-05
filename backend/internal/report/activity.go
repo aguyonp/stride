@@ -15,7 +15,7 @@ func Activity(v *view.ActivityView, prof athlete.Profile, inc Include) string {
 	b := newBuilder()
 	writeReadinessPriority(b, v.Readiness)
 	if inc.Has(ChipPlan) {
-		writeContext(b, prof, v.Goals, plannedTodayText(v), v.Upcoming)
+		writeContext(b, prof, v.Goals, plannedTodayText(v), v.Upcoming, v.Records)
 	}
 	writeSession(b, v, inc.Has(ChipPain))
 	if inc.Has(ChipBiomech) {

@@ -52,11 +52,14 @@ type activityRow struct {
 	// ImportFormat is fit | gpx | tcx when a rescue import provided the series.
 	ImportFormat *string
 	Notified     bool
+	Kudos        *int
+	// Manual marks an activity entered by the athlete (no provider data).
+	Manual bool
 }
 
 const actCols = `id, garmin_id, strava_id, start_utc, start_local, local_date, type, sport, name, distance_m, duration_s, moving_s,
 	elapsed_s, avg_speed, gap_speed, avg_hr, max_hr, avg_power, avg_cadence, avg_gct, elev_gain, elev_loss, training_load,
-	strava_gear, complete, final, COALESCE(bundle_at, 0), updated_at, import_format, notified_at IS NOT NULL`
+	strava_gear, complete, final, COALESCE(bundle_at, 0), updated_at, import_format, notified_at IS NOT NULL, kudos, manual`
 
 func nullF(v sql.NullFloat64) *float64 {
 	if !v.Valid {
@@ -72,9 +75,14 @@ func scanActivity(sc interface{ Scan(...any) error }) (*activityRow, error) {
 	var gear, imp sql.NullString
 	var f [14]sql.NullFloat64
 	var complete, final int
+	var kudos sql.NullInt64
 	err := sc.Scan(&a.ID, &gid, &sid, &a.StartUTC, &a.StartLocal, &a.LocalDate, &a.Type, &a.Sport, &a.Name,
 		&f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6], &f[7], &f[8], &f[9], &f[10], &f[11], &f[12], &f[13],
-		&gear, &complete, &final, &a.BundleAt, &a.UpdatedAt, &imp, &a.Notified)
+		&gear, &complete, &final, &a.BundleAt, &a.UpdatedAt, &imp, &a.Notified, &kudos, &a.Manual)
+	if kudos.Valid {
+		k := int(kudos.Int64)
+		a.Kudos = &k
+	}
 	if imp.Valid {
 		a.ImportFormat = &imp.String
 	}
@@ -165,6 +173,9 @@ func (a *activityRow) sources() []string {
 	if a.ImportFormat != nil {
 		out = append(out, "import")
 	}
+	if a.Manual {
+		out = append(out, "manual")
+	}
 	return out
 }
 
@@ -176,6 +187,7 @@ func (a *activityRow) summary() view.ActivitySummary {
 		DistanceM: analysis.PR(a.DistanceM, 1), DurationS: analysis.PR(a.DurationS, 1), AvgPaceSecPerKm: a.paceSecPerKm(),
 		AvgHR: analysis.PR(a.AvgHR, 0), AvgPower: analysis.PR(a.AvgPower, 0), AvgCadenceSpm: analysis.PR(a.AvgCadence, 1),
 		ElevGainM: analysis.PR(a.ElevGain, 1), ElevLossM: analysis.PR(a.ElevLoss, 1), TrainingLoad: analysis.PR(a.Load, 1),
+		Kudos: a.Kudos,
 	}
 	if a.isRunning() && a.GapSpeed != nil {
 		sm.GapSecPerKm = analysis.Num(analysis.PaceFromSpeed(*a.GapSpeed), 0)
@@ -316,7 +328,7 @@ func (s *Services) upsertGarmin(ctx context.Context, uid int64, raw json.RawMess
 			created = true
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE activities SET final = CASE WHEN garmin_id IS NULL THEN 0 ELSE final END,
-			complete = CASE WHEN garmin_id IS NULL THEN 0 ELSE complete END, garmin_id = ?, start_utc = ?, start_local = ?, local_date = ?, type = ?, sport = ?,
+			complete = CASE WHEN garmin_id IS NULL THEN 0 ELSE complete END, manual = 0, garmin_id = ?, start_utc = ?, start_local = ?, local_date = ?, type = ?, sport = ?,
 			name = CASE WHEN strava_id IS NULL THEN ? ELSE name END,
 			distance_m = ?, duration_s = ?, moving_s = ?, elapsed_s = ?, avg_speed = ?, gap_speed = ?, avg_hr = ?, max_hr = ?, avg_power = ?,
 			avg_cadence = ?, avg_gct = ?, elev_gain = ?, elev_loss = ?, training_load = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
@@ -379,6 +391,10 @@ func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activi
 	if a.GearID != "" {
 		gear = a.GearID
 	}
+	var kudos any
+	if a.KudosCount != nil {
+		kudos = *a.KudosCount
+	}
 	err := s.deps.Store.Tx(ctx, func(tx *sql.Tx) error {
 		now := s.now().Unix()
 		var hasGarmin sql.NullInt64
@@ -388,7 +404,12 @@ func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activi
 				return err
 			}
 			if id != 0 {
-				hasGarmin.Valid = true
+				// a manual activity takes the Strava summary; Garmin or imported ones keep theirs
+				var manual bool
+				if err := tx.QueryRowContext(ctx, `SELECT manual FROM activities WHERE id = ?`, id).Scan(&manual); err != nil {
+					return err
+				}
+				hasGarmin.Valid = !manual
 			}
 		} else if err != nil {
 			return err
@@ -407,13 +428,14 @@ func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activi
 		}
 		if hasGarmin.Valid {
 			_, err = tx.ExecContext(ctx, `UPDATE activities SET final = CASE WHEN strava_id IS NULL THEN 0 ELSE final END,
-				complete = CASE WHEN strava_id IS NULL THEN 0 ELSE complete END, strava_id = ?, strava_gear = ?, name = ?, updated_at = ?
-				WHERE id = ? AND user_id = ?`, a.ID, gear, c.name, now, id, uid)
+				complete = CASE WHEN strava_id IS NULL THEN 0 ELSE complete END, manual = 0, strava_id = ?, strava_gear = ?, name = ?,
+				kudos = COALESCE(?, kudos), updated_at = ? WHERE id = ? AND user_id = ?`, a.ID, gear, c.name, kudos, now, id, uid)
 		} else {
 			_, err = tx.ExecContext(ctx, `UPDATE activities SET strava_id = ?, strava_gear = ?, start_utc = ?, start_local = ?, local_date = ?, type = ?, sport = ?,
 				name = ?, distance_m = ?, duration_s = ?, moving_s = ?, elapsed_s = ?, avg_speed = ?, avg_hr = ?, max_hr = ?, avg_power = ?, avg_cadence = ?,
-				elev_gain = ?, updated_at = ? WHERE id = ? AND user_id = ?`, a.ID, gear, c.startUTC, c.startLocal, c.date, c.typ, c.sport, c.name,
-				c.dist, c.dur, c.moving, c.elapsed, c.speed, c.hr, c.maxHR, c.power, c.cadence, c.gain, now, id, uid)
+				elev_gain = ?, kudos = COALESCE(?, kudos), final = CASE WHEN manual = 1 THEN 0 ELSE final END,
+				complete = CASE WHEN manual = 1 THEN 0 ELSE complete END, manual = 0, updated_at = ? WHERE id = ? AND user_id = ?`, a.ID, gear, c.startUTC, c.startLocal, c.date, c.typ, c.sport, c.name,
+				c.dist, c.dur, c.moving, c.elapsed, c.speed, c.hr, c.maxHR, c.power, c.cadence, c.gain, kudos, now, id, uid)
 		}
 		if err != nil {
 			return err

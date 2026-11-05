@@ -150,16 +150,22 @@ func (s *Services) MorningSync(ctx context.Context, userID int64) error {
 	return s.runSync(apimeter.WithUser(ctx, userID), userID, true)
 }
 
-// OnUserCreated bootstraps domain rows for a new user; the first admin gets env.AdminGarminKey if set.
+// OnUserCreated bootstraps domain rows for a new user; the first admin gets the env Garmin key
+// and Strava tokens if set.
 func (s *Services) OnUserCreated(ctx context.Context, userID int64, firstAdmin bool) error {
-	if !firstAdmin || strings.TrimSpace(s.deps.Env.AdminGarminKey) == "" {
+	if !firstAdmin {
 		return nil
 	}
-	if _, err := s.ConnectGarmin(ctx, userID, s.deps.Env.AdminGarminKey); err != nil {
-		s.log.Warn("🔑 Clé Garmin de l'administrateur refusée ou injoignable", "user", userID, "err", errText(err))
-		return nil
+	if strings.TrimSpace(s.deps.Env.AdminGarminKey) != "" {
+		if _, err := s.ConnectGarmin(ctx, userID, s.deps.Env.AdminGarminKey); err != nil {
+			s.log.Warn("🔑 Clé Garmin de l'administrateur refusée ou injoignable", "user", userID, "err", errText(err))
+		} else {
+			s.log.Info("🔑 Garmin connecté automatiquement pour le premier administrateur", "user", userID)
+		}
 	}
-	s.log.Info("🔑 Garmin connecté automatiquement pour le premier administrateur", "user", userID)
+	if err := s.seedStrava(ctx, userID); err != nil {
+		s.log.Warn("🔗 Jetons Strava de l'environnement refusés ou Strava injoignable", "user", userID, "err", errText(err))
+	}
 	return nil
 }
 
