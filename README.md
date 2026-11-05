@@ -1,35 +1,55 @@
 # Stride
 
-Stride récupère vos séances et vos données de récupération (Garmin Connect Personal API, Strava, météo Open-Meteo), calcule biomécanique, charge et récupération, et génère en un clic un prompt Markdown à coller dans votre coach IA. Service multi-utilisateur, connexion par clés d'accès (passkeys) uniquement.
+Stride pulls your training and recovery data (Garmin Connect Personal API, Strava, Open-Meteo weather), computes biomechanics, fatigue, load and recovery insights, tracks your plan, goals and pain, and turns any session into a compact Markdown prompt for your AI coach. Multi-user, passkey-only sign-in.
 
-## Démarrage
+## Quick start
 
 ```bash
-cp .env.example .env
-openssl rand -base64 32        # à coller dans .env : STRIDE_MASTER_KEY=…
-docker compose up -d --build
+git clone git@github.com:aguyonp/stride.git && cd stride
+grep -qs STRIDE_MASTER_KEY .env || printf 'STRIDE_MASTER_KEY=%s\nSTRIDE_UID=%s\nSTRIDE_GID=%s\n' \
+  "$(openssl rand -base64 32)" "$(id -u)" "$(id -g)" >> .env
+mkdir -p data && docker compose up -d
 open http://localhost:8080
 ```
 
-- **Le premier compte créé devient administrateur**, sans invitation. Les suivants passent par une invitation (`/admin`) ou par l'inscription ouverte.
-- **Les passkeys exigent HTTPS**, sauf sur `localhost`. Derrière un reverse proxy, renseignez `STRIDE_PUBLIC_URL=https://…`.
+- The **first account becomes admin**; others need an invitation from `/admin` (or open registration).
+- Connect Garmin (personal API key) and/or Strava in the onboarding wizard; both are optional.
+- **Back up `STRIDE_MASTER_KEY`**: it encrypts every stored provider credential.
+- Passkeys require HTTPS except on `localhost`: behind a reverse proxy, set `STRIDE_PUBLIC_URL=https://…`.
+- Private image: `docker login ghcr.io -u <github-user>` with a token that has `read:packages`.
 
-## Configuration essentielle (`.env`)
+## Images
 
-| Variable | Défaut | Rôle |
-|---|---|---|
-| `STRIDE_MASTER_KEY` | **obligatoire** | Chiffre les clés Garmin et jetons Strava (`make keygen`) |
-| `STRIDE_PUBLIC_URL` | `http://localhost:8080` | URL publique (passkeys, OAuth, liens d'invitation) |
-| `STRIDE_REGISTRATION` | `invite` | Inscription initiale : `invite` ou `open` |
-| `STRIDE_STRAVA_CLIENT_ID` / `_SECRET` | — | Active Strava |
-| `STRIDE_HOST_BIND` / `STRIDE_HOST_PORT` | `127.0.0.1` / `8080` | Port publié par compose |
+CI (`.github/workflows/ci.yml`) runs Go and frontend tests, then pushes a multi-arch image (amd64, arm64) to `ghcr.io/aguyonp/stride`:
 
-Toutes les variables sont décrites dans `.env.example` et dans [docs/V2_SPEC.md](docs/V2_SPEC.md) §9.
+| Branch | Tag |
+| --- | --- |
+| `main` | `latest` (production) |
+| any other branch | `dev` |
+| every build | `sha-<commit>` |
 
-## Développement
+Run the dev image with `STRIDE_TAG=dev docker compose up -d`; update with `docker compose pull && docker compose up -d`.
+
+## Configuration (`.env`)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `STRIDE_MASTER_KEY` | **required** | AES-256 key for credentials at rest |
+| `STRIDE_PUBLIC_URL` | `http://localhost:8080` | Public URL (passkeys, OAuth, invite links) |
+| `STRIDE_REGISTRATION` | `invite` | `invite` or `open` |
+| `STRIDE_STRAVA_CLIENT_ID` / `_SECRET` / `_WEBHOOK_TOKEN` | — | Enable Strava |
+| `STRIDE_HOST_BIND` / `STRIDE_HOST_PORT` | `127.0.0.1` / `8080` | Published address |
+| `STRIDE_TAG` | `latest` | Image tag |
+
+Full list: [docs/SPEC.md](docs/SPEC.md) §9.
+
+## Development
 
 ```bash
-make dev            # API Go sur :8080, cache mémoire
-make dev-frontend   # Vite sur :5173
-make test
+make dev            # Go API on :8080 (in-memory cache)
+make dev-frontend   # Vite on :5173, cd frontend && npm run dev:mock for mocked data
+make test           # Go + frontend tests
+make docker-up      # build the image locally (compose.dev.yml)
 ```
+
+Docs: [specification](docs/SPEC.md) · [Garmin API facts](docs/GARMIN_API.md).

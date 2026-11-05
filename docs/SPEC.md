@@ -415,7 +415,7 @@ No splits. Structure:
 | `STRIDE_SYNC_HOUR`, `STRIDE_SYNC_JITTER_MIN`, `STRIDE_SYNC_JITTER_MAX` | `7`, `30s`, `90s` | morning prefetch |
 | `STRIDE_GARMIN_BASE_URL` | Garmin personal API | tests |
 | `TZ`, `LOG_LEVEL`, `LOG_FORMAT` | `Europe/Paris`, `info`, `pretty` | |
-| compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT` | `127.0.0.1`, `8080` | published port |
+| compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID` | `127.0.0.1`, `8080`, `latest`, `65532`, `65532` | published port, image tag (`latest` = main, `dev` = other branches), container user |
 
 ## 10. Domain implementation notes
 
