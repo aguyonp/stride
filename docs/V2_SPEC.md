@@ -98,6 +98,20 @@ interface Invitation { id: number; label: string; codePrefix: string; createdAt:
 ```
 Rules: the very first registered user needs no invitation and becomes `admin`. Afterwards `registrationMode` (DB setting, initial value from `STRIDE_REGISTRATION`, default `invite`) applies. Disabled users cannot log in.
 
+#### 3.1.1 Platform implementation notes (binding for frontend & domain)
+- WebAuthn `begin` endpoints set an HttpOnly cookie `stride_webauthn` (path `/api/`, 5 min) bound to the ceremony stored in the cache; `finish` must be called from the same browser. `register/finish`, `login/finish` and `passkeys/finish` bodies are the raw `@simplewebauthn/browser` JSON. Verification failures → 400 `BAD_REQUEST`; unknown passkey at login → 401; disabled account → 403 `FORBIDDEN`; expired/replayed ceremony → 400.
+- Missing/invalid invitation → 403 `INVITE_REQUIRED`. Invitation codes look like `ABCD-EFGH-…` (24 base32 chars), case and dashes are ignored; `codePrefix` = first 4 chars. `DELETE /api/admin/invitations/{id}` revokes (soft, `revoked: true`) → 204. `expiresInHours: 0` = no expiry; `maxUses` 1–1000.
+- `POST /api/me/passkeys/begin` accepts an optional `{name}`; `/finish` and `PATCH /{id}` return a `Passkey`. `Passkey.id` is the base64url credential id. Default names come from the user agent (« Chrome · macOS »).
+- `PATCH` / `DELETE /api/admin/users/{id}` on oneself → 409 `CONFLICT`. `DELETE /api/me` by the only active admin while other users exist → 409.
+- `register/finish` → 200 `Me`; `/health` also returns `version`; `/health/ready` 503 body `{"status":"unavailable","checks":{…}}`.
+- CSRF: any non-GET `/api/*` call without `X-Stride-CSRF: 1` → 403 `FORBIDDEN` (except `POST /api/webhooks/strava`).
+- CSP is `default-src 'self'` (inline styles allowed, **no inline scripts**, no external hosts): the SPA must not rely on inline `<script>`.
+- `RequireUser` injects both `auth.User` and `apimeter.WithUser(ctx, id)`.
+- Scheduler: users come from a `func(ctx) ([]int64, error)` lister wired in `main.go` (stub = all active users; domain to replace with "active users with a provider connection"); optional `LastSync` hook can report lazy syncs so the 3 h skip rule covers them.
+- API meter: when a provider has a per-user limit (Garmin), its global limit counts **users** fetching concurrently (Garmin: 4 users × 6 calls each); Strava / Open-Meteo global limits count calls. 404 is not counted as an error. Errors and 429s are persisted to `api_events` (7 days) and reloaded at startup.
+- Strava client: `StartDateLocal` drops Strava's trailing `Z`; `Timezone` is the IANA name; quota uses the tighter of `X-RateLimit-*` / `X-ReadRateLimit-*`; on 429 without `Retry-After` the cooldown lasts until the next quarter hour (or UTC midnight when the daily quota is exhausted); GETs retried twice on 5xx/network errors; `strava.APIError` + `strava.IsNotFound` added; token endpoint 400 → `*ErrUnauthorized`.
+- Weather: forecast API for start times < 30 days old, archive API otherwise; `weather.Describe(code)`, `weather.WindDirLabel(deg)` (FR 8 points) and `weather.Round2` are available to the domain; `ErrNoData` / `ErrInvalidCoordinate`.
+
 ### 3.2 Domain
 
 | Method & path | Body → Response |
