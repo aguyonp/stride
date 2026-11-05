@@ -1,4 +1,5 @@
 import { BatteryMedium, BedDouble, Footprints, Gauge, HeartPulse, Loader2, Pencil, Sun } from 'lucide-react'
+import { ReadinessBanner } from '../v3/ReadinessBanner'
 import { useState, type ReactNode } from 'react'
 import { useDayView, useSaveCheckin } from '../../api/queries'
 import type { DayView } from '../../api/types'
@@ -84,7 +85,7 @@ function Mini({ icon, label, value, tone }: { icon: ReactNode; label: string; va
 }
 
 /** Today: planned vs done, readiness check-in, last night's recovery, daily load. */
-export function TodayCard({ date, className }: { date: string; className?: string }) {
+export function TodayCard({ date, className, showReadiness = true }: { date: string; className?: string; showReadiness?: boolean }) {
   const q = useDayView(date)
   const [editing, setEditing] = useState(false)
   const d = q.data && q.data.date === date ? q.data : null
@@ -107,6 +108,7 @@ export function TodayCard({ date, className }: { date: string; className?: strin
   return (
     <Card title="Aujourd’hui" icon={<Sun className="size-4" />} subtitle={capitalize(fmtDateLong(date))} action={<FreshnessPill freshness={d.freshness} />} className={className}>
       <div className="space-y-3">
+        {showReadiness && d.readiness && <ReadinessBanner r={d.readiness} compact label="Préparation" />}
         <div>
           <p className="label-caps mb-1.5">Prévu vs réalisé</p>
           {d.planned.length === 0 && d.activities.length === 0 ? (

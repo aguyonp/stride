@@ -1,4 +1,4 @@
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, Trash2, Watch } from 'lucide-react'
 import type { ActivitySummary, PlannedSession } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtDuration, fmtKm } from '../../lib/format'
@@ -7,6 +7,8 @@ import { PlanSportIcon } from '../ui/icons'
 import { MenuItem, Popover } from '../ui/Popover'
 import { MatchBadge } from './MatchBadge'
 import { matchDeltas, targetParts } from './planFormat'
+import { GarminStatus } from './PlannedSessionDetail'
+import { stepsSummary } from './steps'
 
 interface PlannedSessionCardProps {
   session: PlannedSession
@@ -15,11 +17,12 @@ interface PlannedSessionCardProps {
   compact?: boolean
   onEdit?: () => void
   onDelete?: () => void
+  onOpen?: () => void
   className?: string
 }
 
 /** Planned session: sport, title, targets, match status and deltas. Actions appear only when handlers are given. */
-export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, onDelete, className }: PlannedSessionCardProps) {
+export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, onDelete, onOpen, className }: PlannedSessionCardProps) {
   const targets = targetParts(s)
   const deltas = s.match ? matchDeltas(s.match) : []
   const isRest = s.sport === 'rest'
@@ -42,6 +45,11 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
           >
             {(close) => (
               <>
+                {onOpen && (
+                  <MenuItem icon={<Watch />} onSelect={() => (close(), onOpen())}>
+                    Détails & montre
+                  </MenuItem>
+                )}
                 {onEdit && (
                   <MenuItem icon={<Pencil />} onSelect={() => (close(), onEdit())}>
                     Modifier
@@ -57,7 +65,23 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
           </Popover>
         )}
       </div>
-      <h3 className="mt-1.5 text-sm leading-snug font-semibold break-words hyphens-auto text-ink">{s.title || 'Séance'}</h3>
+      <h3 className="mt-1.5 text-sm leading-snug font-semibold break-words hyphens-auto text-ink">
+        {onOpen ? (
+          <button type="button" onClick={onOpen} className="text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent">
+            {s.title || 'Séance'}
+          </button>
+        ) : (
+          s.title || 'Séance'
+        )}
+      </h3>
+      {s.steps?.length > 0 && (
+        <p className="num mt-1 line-clamp-2 text-[11px] text-ink-2" title={stepsSummary(s.steps)}>
+          {stepsSummary(s.steps)}
+        </p>
+      )}
+      <div className="mt-1">
+        <GarminStatus s={s} compact />
+      </div>
 
       {targets.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1" aria-label="Cibles">

@@ -101,7 +101,10 @@ export function FeelingForm({ activityId, notes, onSaved, stickyActions }: Feeli
         <p className="mt-1 text-xs text-ink-3">1 très facile · 5 soutenu · 10 maximal</p>
       </fieldset>
 
-      <Field label="Chaussures" hint={activeShoes.length === 0 ? 'Ajoute tes paires dans Réglages › Chaussures.' : undefined}>
+      <Field
+        label="Chaussures"
+        hint={activeShoes.length === 0 ? 'Ajoute tes paires dans Réglages › Chaussures.' : notes.shoeAuto && form.shoeId === notes.shoeId ? 'Attribuée automatiquement depuis l’équipement Strava : choisis-en une autre pour corriger.' : undefined}
+      >
         {(p) => (
           <div className="relative">
             <Footprints className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-3" aria-hidden="true" />

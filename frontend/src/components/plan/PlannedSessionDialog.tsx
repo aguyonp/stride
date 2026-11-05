@@ -1,13 +1,15 @@
 import { Loader2 } from 'lucide-react'
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { usePlanMutations } from '../../api/queries'
-import type { PlannedSession, PlannedSessionInput, PlanSport } from '../../api/types'
+import type { PlannedSession, PlannedSessionInput, PlanSport, WorkoutStep } from '../../api/types'
 import { capitalize, fmtDateLong, isNum, paceInput, parsePace } from '../../lib/format'
 import { PLAN_SPORT_LABEL } from '../../lib/labels'
 import { Dialog } from '../ui/Dialog'
 import { Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
 import { useToast } from '../ui/Toast'
+import { StepsEditor } from './StepsEditor'
+import { stepsSummary, totalDurationS } from './steps'
 
 interface PlannedSessionDialogProps {
   open: boolean
@@ -27,6 +29,7 @@ interface FormState {
   paceMax: string
   cadence: string
   instructions: string
+  steps: WorkoutStep[]
 }
 
 const SPORTS = Object.keys(PLAN_SPORT_LABEL) as PlanSport[]
@@ -42,6 +45,7 @@ function toForm(s: PlannedSession | null, date: string): FormState {
     paceMax: paceInput(s?.targetPaceMaxSecPerKm),
     cadence: isNum(s?.targetCadenceSpm) ? String(s.targetCadenceSpm) : '',
     instructions: s?.instructions ?? '',
+    steps: s?.steps ?? [],
   }
 }
 
@@ -111,7 +115,9 @@ export function PlannedSessionDialog({ open, onClose, session, defaultDate }: Pl
       targetPaceMaxSecPerKm: isRun ? hi : null,
       targetCadenceSpm: isRun && num(f.cadence) !== null ? Math.round(num(f.cadence) as number) : null,
       instructions: f.instructions.trim(),
+      steps: isRest ? [] : f.steps,
     }
+    if (body.targetDurationS === null && !isRest) body.targetDurationS = totalDurationS(f.steps)
     const done = () => {
       toast({ title: session ? 'Séance mise à jour' : 'Séance planifiée', description: `${capitalize(fmtDateLong(body.date))} · ${body.title}` })
       onClose()
@@ -197,6 +203,13 @@ export function PlannedSessionDialog({ open, onClose, session, defaultDate }: Pl
             <textarea {...p} className="field min-h-24 resize-y" value={f.instructions} onChange={(e) => set('instructions', e.target.value)} maxLength={2000} placeholder="10 min échauffement, 4 × 5 min allure seuil, récup 2 min trot" />
           )}
         </Field>
+        {!isRest && (
+          <fieldset className="sm:col-span-2">
+            <legend className="mb-1.5 text-sm font-medium text-ink-2">Structure (étapes)</legend>
+            <p className="mb-2 text-xs text-ink-3">{f.steps.length ? stepsSummary(f.steps) : 'Facultatif : utilisée pour le fichier .FIT et l’envoi sur la montre.'}</p>
+            <StepsEditor steps={f.steps} onChange={(steps) => set('steps', steps)} />
+          </fieldset>
+        )}
         {mutationError && <InlineError className="sm:col-span-2">{mutationError.message}</InlineError>}
       </form>
     </Dialog>

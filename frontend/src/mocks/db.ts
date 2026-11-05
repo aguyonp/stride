@@ -1,6 +1,10 @@
 // In-memory mock database, persisted to sessionStorage and reseeded when the scenario flags or the day change.
 
 import type {
+  LLMAnalysis,
+  LLMConfig,
+  NotificationTarget,
+  WorkoutStep,
   AthleteProfile,
   DailyCheckin,
   FocusArea,
@@ -51,10 +55,18 @@ export interface UserData {
   notes: Record<string, StoredNotes>
   checkins: Record<string, DailyCheckin>
   integrations: Integrations
+  v3?: V3Data
+}
+
+export interface V3Data {
+  llm: LLMConfig
+  analyses: LLMAnalysis[]
+  notifications: NotificationTarget[]
+  pushSupported: boolean | null
 }
 
 export interface MockState {
-  version: 1
+  version: 2
   flags: string
   day: string
   seq: number
@@ -212,7 +224,9 @@ function richData(st: { seq: number }, today: string): UserData {
   addNote(13, { painDuring: 0.5, painCold: 0, painNextMorning: 0, rpe: 4, shoeId: shoes[1].id, tags: ['metronome'], note: '' })
 
   const plan: PlanEntry[] = []
-  const add = (daysFromToday: number, p: Omit<PlanEntry, 'id' | 'date'>) => plan.push({ id: next(), date: addDays(today, daysFromToday), ...p })
+  const add = (daysFromToday: number, p: Omit<PlanEntry, 'id' | 'date' | 'steps' | 'source' | 'garmin'>, steps: WorkoutStep[] = []) =>
+    plan.push({ id: next(), date: addDays(today, daysFromToday), steps, source: 'manual', garmin: { status: 'none', workoutId: null, pushedAt: null, error: null }, ...p })
+  const pace = (min: number, max: number) => ({ kind: 'pace' as const, min, max })
   const runP = (title: string, min: number, km: number | null, pMin: number | null, pMax: number | null, cad: number | null, instructions: string) => ({
     sport: 'run' as const,
     title,
@@ -229,10 +243,18 @@ function richData(st: { seq: number }, today: string): UserData {
   add(-4, { sport: 'mobility', title: 'Mobilité hanches 15′', ...none, targetDurationS: 900, instructions: 'Routine hanches + chaîne postérieure.' })
   add(-3, runP('Run/Walk 5×8′', 45, 7.5, 340, 355, 175, 'Garder la cadence même sur le dernier bloc.'))
   add(-2, { sport: 'strength', title: 'Renforcement excentrique', ...none, targetDurationS: 1800, instructions: 'Squats lents tempo 3-1-1, step-down 3×10.' })
-  add(-1, runP('Run/Walk 4×10′', 42, 7, 355, 365, 176, 'Métronome 176, éviter les descentes raides (allure moyenne marche incluse).'))
+  add(-1, runP('Run/Walk 4×10′', 42, 7, 355, 365, 176, 'Métronome 176, éviter les descentes raides (allure moyenne marche incluse).'), [
+    { type: 'warmup', durationS: 300, target: { kind: 'cadence', min: 172, max: 178 } },
+    { type: 'repeat', repeat: 4, steps: [{ type: 'run', durationS: 600, target: pace(355, 365) }, { type: 'recovery', durationS: 60, note: 'Marche active' }] },
+    { type: 'cooldown', durationS: 180 },
+  ])
   add(0, runP('38 min continu', 38, 7.1, 315, 325, 170, 'Continu @ 5:20/km, arrêt si gêne > 3/10.'))
   add(1, { sport: 'rest', title: 'Repos', ...none, instructions: '' })
-  add(2, runP('Fractionné court 6×1′', 40, 7, 290, 300, 178, '6×1′ vite / 1′30 trot, plat.'))
+  add(2, runP('Fractionné court 6×1′', 40, 7, 290, 300, 178, '6×1′ vite / 1′30 trot, plat.'), [
+    { type: 'warmup', durationS: 900, target: pace(330, 360) },
+    { type: 'repeat', repeat: 6, steps: [{ type: 'interval', durationS: 60, target: pace(250, 260) }, { type: 'recovery', durationS: 90 }] },
+    { type: 'cooldown', durationS: 600 },
+  ])
   add(3, { sport: 'strength', title: 'Renfo isométrique quadriceps', ...none, targetDurationS: 1500, instructions: 'Wall-sit 5×45″, extension isométrique 5×30″.' })
   add(5, runP('Sortie longue 55′', 55, 9.5, 335, 350, 175, 'Terrain plat, ravitaillement eau.'))
   add(7, runP('Test 45′ continu', 45, 8.2, 320, 335, 175, 'Objectif macro : 45′ sans gêne.'))
@@ -273,7 +295,7 @@ function seed(): MockState {
         { id: 3, label: 'Ancien lien', codePrefix: 'Z1RC', code: 'Z1RC-5NNA-7YQE', createdAt: iso(30 * D), expiresAt: null, maxUses: 1, uses: 0, revoked: true },
       ]
   return {
-    version: 1,
+    version: 2,
     flags: flagsKey(),
     day: today,
     seq: st.seq,
@@ -315,7 +337,7 @@ export function db(): MockState {
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as MockState
-      if (parsed.version === 1 && parsed.flags === flagsKey() && parsed.day === todayISO()) {
+      if (parsed.version === 2 && parsed.flags === flagsKey() && parsed.day === todayISO()) {
         state = parsed
         return state
       }

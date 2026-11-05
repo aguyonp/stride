@@ -1,4 +1,4 @@
-// Fake Stride V2 backend for `npm run dev:mock`: returns real `Response` objects so the same client code runs.
+// Fake Stride V2/V3 backend for `npm run dev:mock`: returns real `Response` objects so the same client code runs.
 //
 // Scenario flags: `?mock=a,b,c` in the page URL (kept in sessionStorage across SPA navigation; a new list reseeds the data).
 //   auth     admin (default: logged-in admin, onboarding done) · user (regular user) · onboarding (logged in, onboarding
@@ -9,6 +9,7 @@
 //   states   empty (no activities) · cooldown (provider 429 → cooldown) · syncrunning (sync never ends) ·
 //            unauthorized (Garmin key refused) · fresh-db / fresh-cache / fresh-live (force freshness) · slow (latency ×4) ·
 //            pkcancel (passkey ceremony cancelled) · stravaerr (Strava OAuth returns an error)
+//   v3       see ./v3.ts (nollm, llmerr, pushok, importerr, notiferr, ready-*, noeff)
 // Example: /?mock=user,strava,cooldown
 
 import type {
@@ -38,6 +39,7 @@ import { notesOf, plannedWithMatch, summarize, visibleItems, weekPlan } from './
 import { has } from './flags'
 import { activityReport, dayReport, multiReport, parseIncludeParam } from './report'
 import { buildActivityView, buildDayView } from './view'
+import { enrichActivityView, enrichDayView, registerV3 } from './v3'
 
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -538,7 +540,7 @@ const findVisible = (data: UserData, id: string) => visibleItems(data).find((it)
 
 route('GET', /^\/api\/activities\/(\d+)$/, ({ data, params }) => {
   const it = findVisible(data, params[0])
-  return it ? json(buildActivityView(it, data)) : err(404, 'NOT_FOUND', 'Activité introuvable.')
+  return it ? json(enrichActivityView(buildActivityView(it, data), it, data)) : err(404, 'NOT_FOUND', 'Activité introuvable.')
 })
 route('GET', /^\/api\/activities\/(\d+)\/report$/, ({ data, params, url }) => {
   const it = findVisible(data, params[0])
@@ -571,7 +573,7 @@ route('PUT', /^\/api\/activities\/(\d+)\/notes$/, ({ data, params, init }) => {
 })
 
 const dayParam = (raw: string) => (raw === 'today' ? todayISO() : raw)
-route('GET', /^\/api\/days\/(today|\d{4}-\d{2}-\d{2})$/, ({ data, params }) => json(buildDayView(dayParam(params[0]), data)))
+route('GET', /^\/api\/days\/(today|\d{4}-\d{2}-\d{2})$/, ({ data, params }) => json(enrichDayView(buildDayView(dayParam(params[0]), data), data)))
 route('GET', /^\/api\/days\/(today|\d{4}-\d{2}-\d{2})\/report$/, ({ data, params, url }) => markdown(dayReport(buildDayView(dayParam(params[0]), data), data, parseIncludeParam(url.searchParams.get('include')))))
 route('PUT', /^\/api\/days\/(today|\d{4}-\d{2}-\d{2})\/checkin$/, ({ data, params, init }) => {
   const date = dayParam(params[0])
@@ -653,6 +655,9 @@ route('POST', /^\/api\/plan$/, ({ data, init }) => {
     targetPaceMaxSecPerKm: b.targetPaceMaxSecPerKm ?? null,
     targetCadenceSpm: b.targetCadenceSpm ?? null,
     instructions: b.instructions ?? '',
+    steps: b.steps ?? [],
+    source: b.source ?? 'manual',
+    garmin: { status: 'none', workoutId: null, pushedAt: null, error: null },
   }
   data.plan.push(p)
   return json(withMatch(data, p.id), 201)
@@ -663,7 +668,7 @@ route('PATCH', /^\/api\/plan\/(\d+)$/, ({ data, params, init }) => {
   const b = parse<Partial<PlanEntry>>(init) ?? {}
   const e = validPlan({ ...p, ...b }, true)
   if (e) return err(400, 'BAD_REQUEST', e)
-  Object.assign(p, { ...b, id: p.id })
+  Object.assign(p, { ...b, id: p.id, garmin: p.garmin })
   return json(withMatch(data, p.id))
 })
 route('DELETE', /^\/api\/plan\/(\d+)$/, ({ data, params }) => {
@@ -737,6 +742,11 @@ route('POST', /^\/api\/exports\/multi$/, ({ data, init }) => {
 })
 route('GET', /^\/api\/backup$/, ({ data }) => backupResponse(data))
 route('POST', /^\/api\/backup\/restore$/, ({ data, init, url }) => restore(data, parse<BackupFile>(init), url.searchParams.get('mode')))
+
+registerV3(route, (data, id) => {
+  const it = findVisible(data, String(id))
+  return it ? { it, v: enrichActivityView(buildActivityView(it, data), it, data) } : null
+})
 
 /* ---------------------------------- Entry point ---------------------------------- */
 

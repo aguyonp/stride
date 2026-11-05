@@ -55,7 +55,7 @@ export const qk = {
   },
 }
 
-const DOMAIN_ROOTS = new Set(['activities', 'activity', 'report', 'day', 'plan', 'week', 'goals', 'shoes', 'integrations', 'profile', 'sync'])
+const DOMAIN_ROOTS = new Set(['activities', 'activity', 'report', 'day', 'plan', 'week', 'calendar', 'efficiency', 'goals', 'shoes', 'integrations', 'profile', 'sync'])
 
 export function invalidateDomain(qc: QueryClient, roots?: string[]) {
   const set = roots ? new Set(roots) : DOMAIN_ROOTS
@@ -286,7 +286,7 @@ export function useWeekPlan(date: string | null) {
 
 export function usePlanMutations() {
   const qc = useQueryClient()
-  const done = () => void invalidateDomain(qc, ['plan', 'week', 'activity', 'activities', 'day', 'report'])
+  const done = () => void invalidateDomain(qc, ['plan', 'week', 'calendar', 'activity', 'activities', 'day', 'report'])
   return {
     create: useMutation({ mutationFn: (p: PlannedSessionInput) => api.createPlanned(p), onSuccess: done }),
     update: useMutation({ mutationFn: ({ id, ...p }: Partial<PlannedSessionInput> & { id: number }) => api.updatePlanned(id, p), onSuccess: done }),
