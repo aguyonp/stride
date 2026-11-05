@@ -58,7 +58,14 @@ func New(d Deps) (*Services, error) {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	return &Services{deps: d, log: d.Log, Now: time.Now, clients: map[int64]*garmin.Client{}, running: map[int64]bool{}}, nil
+	s := &Services{deps: d, log: d.Log, Now: time.Now, clients: map[int64]*garmin.Client{}, running: map[int64]bool{}}
+	s.ensureStravaSubscription()
+	return s, nil
+}
+
+// LastSyncAt returns the most recent provider sync of a user (zero when never synced).
+func (s *Services) LastSyncAt(ctx context.Context, userID int64) (time.Time, error) {
+	return s.lastSync(ctx, userID)
 }
 
 func (s *Services) now() time.Time { return s.Now() }
@@ -150,8 +157,8 @@ func (s *Services) SyncCandidates(ctx context.Context) ([]int64, error) {
 	return s.userIDs(ctx, s.now().Add(-3*time.Hour).Unix())
 }
 
-// ConnectedUsers lists active users with at least one connected provider.
-func (s *Services) ConnectedUsers(ctx context.Context) ([]int64, error) {
+// ConnectedUserIDs lists active users with at least one connected provider (scheduler lister).
+func (s *Services) ConnectedUserIDs(ctx context.Context) ([]int64, error) {
 	return s.userIDs(ctx, 1<<62)
 }
 

@@ -43,6 +43,14 @@ func pr(p *float64, n int) *float64 {
 	return num(*p, n)
 }
 
+// PF0 converts a pointer to float (0 when nil).
+func PF0(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
 // PR rounds an optional value.
 func PR(p *float64, n int) *float64 { return pr(p, n) }
 
