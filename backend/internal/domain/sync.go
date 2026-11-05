@@ -12,6 +12,7 @@ import (
 	"stride/internal/analysis"
 	"stride/internal/apimeter"
 	"stride/internal/garmin"
+	"stride/internal/provider/strava"
 	"stride/internal/view"
 )
 
@@ -150,7 +151,8 @@ func (s *Services) runSync(ctx context.Context, uid int64, morning bool) error {
 			}
 		}
 	}
-	if cn, err := s.getConn(ctx, uid, pStrava); err == nil && cn.connected() && s.stravaAvailable() == nil {
+	if cn, err := s.getConn(ctx, uid, pStrava); err == nil && cn.connected() && s.stravaAvailable() == nil &&
+		(!cn.Scope.Valid || hasScope(cn.Scope.String, "activity:read")) {
 		n, err := s.syncStravaList(ctx, uid, cn, today)
 		newS = n
 		s.finishProviderSync(ctx, uid, pStrava, n, err, cn.HistoryFrom.String == "", analysis.DateAdd(today, -initialHistory))
@@ -161,6 +163,9 @@ func (s *Services) runSync(ctx context.Context, uid int64, morning bool) error {
 		}
 	}
 	s.notifyPending(ctx, uid)
+	if _, err := s.records(ctx, uid); err != nil {
+		s.log.Warn("⚠️ Calcul des records personnels en échec", "user", uid, "err", errText(err))
+	}
 	_, _ = s.deps.Cache.DelPrefix(ctx, userKey(uid, "glist"))
 	s.log.Info(fmt.Sprintf("🔄 Synchro %s en %s", map[bool]string{true: "matinale", false: "à la demande"}[morning], time.Since(t0).Round(time.Millisecond)),
 		"user", uid, "nouvellesGarmin", newG, "nouvellesStrava", newS, "erreurs", len(errs))
@@ -292,10 +297,19 @@ func (s *Services) firstSyncIfNeeded(ctx context.Context, uid int64, fr *fresh) 
 
 // syncStravaList lists Strava activities since the last sync and fuses them with Garmin ones.
 func (s *Services) syncStravaList(ctx context.Context, uid int64, cn *conn, today string) (int, error) {
-	tok, err := s.stravaToken(ctx, uid)
-	if err != nil {
-		return 0, err
+	n := 0
+	err := s.withStrava(ctx, uid, func(tok string) error {
+		var err error
+		n, err = s.listStrava(ctx, uid, cn, tok)
+		return err
+	})
+	if strava.TokenRejected(err) {
+		err = providerErr(pStrava, err)
 	}
+	return n, err
+}
+
+func (s *Services) listStrava(ctx context.Context, uid int64, cn *conn, tok string) (int, error) {
 	after := s.now().AddDate(0, 0, -initialHistory)
 	if cn.LastSyncAt.Valid {
 		after = time.Unix(cn.LastSyncAt.Int64, 0).Add(-48 * time.Hour)
@@ -303,6 +317,9 @@ func (s *Services) syncStravaList(ctx context.Context, uid int64, cn *conn, toda
 	n := 0
 	for page := 1; page <= 10; page++ {
 		acts, err := s.deps.Strava.ListActivities(ctx, tok, after, s.now().Add(time.Hour), page, 100)
+		if strava.TokenRejected(err) {
+			return n, err
+		}
 		if err != nil {
 			return n, providerErr(pStrava, err)
 		}

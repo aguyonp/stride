@@ -3,6 +3,7 @@
 ### CONTEXTE & OBJECTIFS DE L'ATHLÈTE
 - **Profil / Mode actif :** Performance
 - **Objectif Macro :** N/D
+- **Records personnels :** Aucun
 - **Séance prévue aujourd'hui :** Aucune
 - **Prochaines séances prévues :** Aucune
 

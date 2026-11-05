@@ -411,6 +411,7 @@ No splits. Structure:
 | `STRIDE_VALKEY_URL` | — (memory) | `redis://valkey:6379/0` in compose |
 | `STRIDE_ADMIN_GARMIN_KEY` (alias `GARMIN_API_TOKEN`) | — | auto-connect Garmin for the first admin |
 | `STRIDE_STRAVA_CLIENT_ID` / `_SECRET` / `_WEBHOOK_TOKEN` | — | enable Strava |
+| `STRIDE_STRAVA_ACCESS_TOKEN` / `_REFRESH_TOKEN` | — | one-time Strava seed for the first admin (§12.2) |
 | `STRIDE_WEATHER` | `open-meteo` | `off` to disable |
 | `STRIDE_SYNC_HOUR`, `STRIDE_SYNC_JITTER_MIN`, `STRIDE_SYNC_JITTER_MAX` | `7`, `30s`, `90s` | morning prefetch |
 | `STRIDE_GARMIN_BASE_URL` | Garmin personal API | tests |
@@ -480,7 +481,7 @@ interface GarminPush { status: "none" | "pushed" | "failed" | "unsupported"; wor
 | `POST /api/plan/bulk` | `{sessions: PlannedSessionInput[]}` → `PlannedSession[]` |
 | `POST /api/plan/{id}/push-garmin` | tries Garmin Connect workout creation + scheduling; → `PlannedSession`; 412 `PROVIDER_NOT_CONNECTED`; when the Personal API refuses (404/403, capability cached 24 h) → 409 `CONFLICT` with `garmin.status = "unsupported"` |
 | `GET /api/plan/{id}/workout.fit` | FIT workout file (`muktihari/fit` encoder), to copy into `GARMIN/NewFiles` on the watch |
-| `GET /api/calendar?from=&to=` | → `{days: [{date, planned: PlannedSession[], done: ActivitySummary[]}]}` (≤ 62 days, month view) |
+| `GET /api/calendar?from=&to=` | → `{days: [{date, planned: PlannedSession[], done: ActivitySummary[]}]}` (≤ 371 days since 3.1.0, month view; days gain `events` §12.5) |
 
 Reported facts: third-party coverage states the Garmin Training/Courses APIs are business-tier only; the push must degrade gracefully to the FIT download and the structure display.
 
@@ -532,3 +533,73 @@ Progressive disclosure: the dashboard first screen shows only the readiness bann
 - `GET /api/version` (user) → `{version, commit, builtAt, go, label}` from `-ldflags -X stride/internal/buildinfo.*` (repo `VERSION` file; CI adds `-dev` off `main`); shown discreetly at the bottom of Settings with a copy button.
 - `app_logs` (migration `0004_logs.sql`): categories `request` (API requests: method, path, status, latency; outbound provider calls via `apimeter`: provider, endpoint template, status, latency — error texts are never stored) and `user_action` (mapped from routed patterns: login, sync, prompt generation, LLM analysis, plan changes, settings…; `POST /api/actions {action: "prompt.copy"|"prompt.download"|"prompt.share"}` for browser-only events). Levels `info` / `error` (HTTP ≥ 400, rate limits, network errors). Asynchronous batched writes (bounded buffer), purge after 14 days and above 100 000 rows.
 - `GET /api/admin/logs?category=all|request|user_action&level=all|error&userId=&before=&limit=` (admin) → `{items, nextBefore, dropped}`.
+
+---
+
+## 12. 3.1.0 — Live integrations, long-term planning, calendar events, records
+
+### 12.1 Verified provider facts (live probe, 2026-11-06)
+- **Garmin Personal API**: token + activities OK. **404**: personal records (`/personalrecord-service/*`), activity weather, gear (`/gear-service/*`), workouts list/create/schedule (`/workout-service/*` — POST create returns 404), calendar, training plans, likes/comments. No like/gear/weather field in activity JSON. ⇒ Garmin push stays `unsupported` (FIT download is the delivery path); Garmin shoes, likes, PRs and weather are `null` with a reason.
+- **Strava**: the `.env` tokens only carry the `read` scope: `/athlete` and `/athletes/{id}/stats` work, `/athlete/activities` → 401. Activities, `kudos_count`, `best_efforts`, gear need `activity:read_all` + `profile:read_all` (user re-authorization). The API exposes no weather and no training plans.
+- Weather therefore always comes from Open-Meteo (activity start lat/lon + time); indoor / no-GPS activities → `null` + reason.
+- Implementation: `ActivityView += { weatherReason: string | null }` (indoor / no GPS, weather disabled, Open-Meteo unavailable). A final bundle without weather (Open-Meteo down or weather disabled at the time) is backfilled when the activity is viewed again (10 s budget, retried 30 min after a failure). Garmin push answers 409 `unsupported` with a French message pointing to the `.FIT` download (`GARMIN/NewFiles`).
+
+### 12.2 Env seed & per-user credentials
+- Credentials are per user (encrypted, AAD `<provider>:<uid>:<field>`): Garmin key, Strava OAuth tokens, LLM key. `.env` only provides the Strava app (`STRIDE_STRAVA_CLIENT_ID/SECRET`) and a **one-time seed for the first admin** when the DB has no credential yet: `STRIDE_ADMIN_GARMIN_KEY`, `STRIDE_STRAVA_ACCESS_TOKEN` + `STRIDE_STRAVA_REFRESH_TOKEN` (athlete id read from `/athlete`). Refreshed Strava tokens are stored in DB (never written back to `.env`).
+- `Integrations.strava` gains `scopes: string[]`, `missingScopes: string[]`; when `activity:read_all` is missing the UI asks to reconnect (OAuth flow).
+- Seed details: the env access token is checked with `GET /athlete` (athlete id + name); if Strava rejects it, the refresh token is used once. Scopes are detected and stored: `read` always, `profile:read_all` when `/athlete` answers the detailed representation, `activity:read` when listing activities works (a seeded token cannot prove `_all`). The seed runs at first-admin creation and at startup when the first admin has no Strava connection and no seed was done yet (`app_settings.seed_strava_admin`: a deliberate disconnection is kept). The unknown expiry of a seeded token is assumed to be 6 h; a token rejected by Strava is refreshed once and the call retried. Without `activity:read` the Strava sync is skipped silently (no error status).
+- `scopes`/`missingScopes` are `[]` when disconnected; `missingScopes` = `read, activity:read_all, profile:read_all` minus the granted scopes.
+- Addition: `GET /api/integrations/strava/stats` → `{ recentRun, ytdRun, allRun, recentRide, ytdRide }`, each `{ count, distanceM, movingS, elevGainM }` (`/athletes/{id}/stats`, works with `read`; 412 when not connected).
+
+### 12.3 Personal records & kudos
+```ts
+type RecordKey = "1k" | "5k" | "10k" | "half" | "marathon" | "longest"
+interface PersonalRecord { key: RecordKey; label: string; distanceM: number; timeS: number | null; paceSecPerKm: number | null; date: string | null; activityId: number | null; source: "computed" | "strava" | "manual" }
+// ActivitySummary/ActivityDetail += { kudos: number | null }   (Strava kudos_count; Garmin likes not exposed)
+```
+| Method & path | Body → Response |
+|---|---|
+| `GET /api/records` | → `{ records: PersonalRecord[] }` (best of computed / Strava / manual; manual wins when set) |
+| `PUT /api/records/{key}` | `{ timeS?, distanceM?, date? }` → `PersonalRecord` (manual) |
+| `DELETE /api/records/{key}` | remove the manual value → 204 |
+Computed = fastest rolling window of the distance over running records (FIT / details / Strava streams), recomputed with activity metrics. Records are injected in `CONTEXTE & OBJECTIFS` of every prompt: `- **Records personnels :** 5 km 22:41 (12/10/2026) · 10 km … · Plus longue sortie 21,4 km`.
+- Algorithm: wall-clock time over the cumulative distance, window start interpolated between samples; samples whose time does not increase or distance decreases are skipped; sample-to-sample speeds > 12 m/s (GPS jumps) split the series; windows faster than 2:30/km are discarded; whole seconds. An activity without series counts as a whole when its distance is within [D, 1.03 × D] (time scaled to D). Strava `best_efforts` (`elapsed_time` of "1k", "5k", "10k", "Half-Marathon", "Marathon") compete with the computed values (the faster wins, `source` tells which). Per-activity bests are persisted in `activity_records` (version + `bundle_at`): only changed activities are recomputed (lazily and after each sync).
+- `GET` always returns the 6 keys in order; unknown → `timeS: null`, `source: "computed"`. `longest` = longest running activity (`distanceM`, `timeS` = its duration). Prompt line: `Aucun` when nothing is known.
+- `PUT`: distance records need `timeS` (pace 2:00–30:00/km; `distanceM`, if sent, must be the record distance); `longest` needs `distanceM` (100 m–500 km), `timeS` optional. Unknown key → 404. `DELETE` is idempotent (204).
+- `kudos` is stored in `activities.kudos` from Strava list/detail `kudos_count`.
+
+### 12.4 Manual activities (standalone mode)
+`POST /api/activities` `{ date, startTime?, sport, title?, distanceM?, durationS, avgHR?, maxHR?, avgCadenceSpm?, elevGainM?, elevLossM? }` → `ActivitySummary` (`sources: ["manual"]`, `sourceLabel: "Manuel"`); `PATCH` / `DELETE /api/activities/{id}` allowed on manual activities only (409 otherwise). Notes/pain/shoes use the existing notes endpoint. Every view, report and prompt works with zero provider connected.
+- `POST` → 201. `sport` ∈ `run | bike | walk | hike | swim | strength | other`; `startTime` `HH:MM` (profile timezone, default `12:00`); `date` ≤ today; `durationS` 60 s–48 h; HR 30–250 (`maxHR ≥ avgHR`); `title` defaults to the type label. `sourceLabel` (`"Manuel"`) is on `ActivityView`. A provider activity later matched by the §11.1 rule fuses into the manual one (provider data wins, it is no longer manual). `PATCH` re-triggers metrics and records.
+
+### 12.5 Calendar events & adaptation
+```ts
+type EventKind = "fatigue" | "pain" | "illness" | "unavailable" | "forced_rest"
+interface CalendarEvent { id: number; kind: EventKind; startDate: string; endDate: string; severity: 1 | 2 | 3; note: string }
+// GET /api/calendar days += { events: CalendarEvent[] }
+interface PlanPhase { id: number; name: string; startDate: string; endDate: string; focus: string; weeklyVolumeKm: number | null; note: string }
+```
+| Method & path | Body → Response |
+|---|---|
+| `GET /api/calendar/events?from=&to=` · `POST` · `PATCH /{id}` · `DELETE /{id}` | `CalendarEvent` |
+| `POST /api/plan/{id}/shift` | `{ days?: number, toDate?: string }` → `PlannedSession` (move one session) |
+| `POST /api/plan/adapt` | `{ from: string, mode: "rules" \| "llm", eventId?: number }` → `{ sessions: PlannedSessionInput[], removeIds: number[], summary: string }` (preview, nothing saved) |
+| `POST /api/plan/replace` | `{ removeIds: number[], sessions: PlannedSessionInput[] }` → `PlannedSession[]` (apply a preview atomically) |
+| `GET /api/plan/phases` | → `PlanPhase[]` |
+Rules mode: during an event no session (moved to the next free day or dropped when the event lasts > 3 days); after `illness` / `pain` / `forced_rest` the next 3–7 days lose intensity (intervals → easy, −20–40 % duration by severity); no week may exceed the planned volume of the following week by more than 10 %. LLM mode sends the events, recent load, readiness and remaining plan, and expects the `stride-plan` JSON.
+- Events: `POST` → 201, `DELETE` → 204; `GET` without `from`/`to` lists all; `endDate` defaults to `startDate`, `severity` to 2; ≤ 366 days. `GET /api/calendar` covers ≤ 371 days. `shift`: exactly one of `days` (±365, ≠ 0) or `toDate`.
+- Rules, precisely: events = `eventId` or all events ending ≥ `from`; the next free day is the first day after the event without a non-rest session nor event, within 14 days (else dropped); lighter days = 1 + 2 × severity (3/5/7) after illness / pain / forced rest: duration and distance −(10 + 10 × severity) % (20/30/40 %), interval sessions become `Footing facile` without steps nor pace target, other steps are scaled. Volume rule as implemented: a week receiving moved sessions may not exceed max(its planned volume, 110 % of the next week's planned volume); otherwise moved sessions are dropped (latest first). Preview `sessions` are drafts (`id: 0`), `removeIds` their originals; nothing changes until `replace`.
+- LLM mode: period [`from`, max(`from` + 13, last event end + 7)] capped at `from` + 41; `removeIds` = every session of the period (empty when the AI returned no valid session); parsing warnings are appended to `summary`. 412 without LLM.
+- `replace` → 200 with the created sessions; an unknown id → 404 and nothing is applied (single transaction).
+
+### 12.6 Long-term generation up to the goal
+`POST /api/plan/generate` `horizon` ∈ `session | week | 2weeks | goal` (+ `goalId?`, default: nearest active goal with a `targetDate`). `goal`: ≤ 21 days → every session until the date; otherwise `phases` until the date (build, assimilation, specific, taper) + detailed sessions for the next 2–4 weeks; asking again later extends the detail. Exchange format `stride-plan` **version 2** (v1 still accepted):
+```json
+{"format":"stride-plan","version":2,"goal":{"title":"10 km","date":"2027-02-15"},"phases":[{"name":"Développement","startDate":"2026-11-09","endDate":"2026-12-06","focus":"volume aérobie, cadence","weeklyVolumeKm":35,"note":""}],"sessions":[…v1 sessions…]}
+```
+Responses gain `phases: PlanPhase[]` (drafts with `id: 0`); `POST /api/plan/bulk` accepts `{ sessions, phases? }` (phases replace those overlapping their dates).
+- `week` = 7 days, `2weeks` = 14 days from `startDate`. `goal`: `goalId` without `targetDate`, no dated active goal, or a goal more than 366 days away → 400. With phases (> 21 days), the detailed window starts the day after the last session already planned before the goal (asking again extends the detail) and lasts 4 weeks (2 weeks when fewer than 8 weeks remain). Prompts list existing phases and calendar events of the period; contract v2 only when phases are requested. Tolerant phase parsing (`start`/`end`, `"35 km"`).
+- `bulk`: ≤ 120 sessions and ≤ 12 phases, `sessions` may be empty when `phases` are given; one transaction. `GET /api/plan` without dates now covers up to today + 366 days.
+
+### 12.7 Version
+`VERSION` = `3.1.0` (no `v`, see release cycle).

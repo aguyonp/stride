@@ -86,6 +86,7 @@ func Register(mux *http.ServeMux, d Deps) {
 	user("POST /api/backup/restore", a.restore)
 
 	registerV3(user, a)
+	registerV31(user, a)
 
 	admin("GET /api/admin/connections", a.adminConnections)
 	admin("POST /api/admin/users/{id}/resync", a.adminResync)

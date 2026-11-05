@@ -110,7 +110,7 @@ export interface MeterSnapshot {
 
 /* ---------------------------------- Domain (§3.2) ---------------------------------- */
 
-export type Source = 'garmin' | 'strava' | 'import'
+export type Source = 'garmin' | 'strava' | 'import' | 'manual'
 export interface Freshness {
   source: 'db' | 'cache' | 'live'
   updatedAt: string
@@ -119,7 +119,7 @@ export interface Freshness {
 export type ProviderStatus = 'ok' | 'error' | 'disconnected'
 export interface Integrations {
   garmin: { connected: boolean; status: ProviderStatus; keyHint: string | null; tokenExpiresAt: string | null; lastSyncAt: string | null; lastError: string | null }
-  strava: { available: boolean; connected: boolean; status: ProviderStatus; athleteName: string | null; lastSyncAt: string | null; lastError: string | null }
+  strava: { available: boolean; connected: boolean; status: ProviderStatus; athleteName: string | null; lastSyncAt: string | null; lastError: string | null; scopes?: string[]; missingScopes?: string[] }
   weather: { enabled: boolean; provider: string }
 }
 export interface ProviderSync {
@@ -169,6 +169,8 @@ export interface ActivitySummary {
   painDuring: number | null
   hasNotes: boolean
   planStatus: 'done' | 'partial' | 'extra' | null
+  /** Strava kudos_count; null when unknown (Garmin likes are not exposed). */
+  kudos?: number | null
 }
 export interface ActivityListResponse {
   items: ActivitySummary[]
@@ -537,7 +539,7 @@ export interface WeekPlan {
 export interface ActivityView {
   generatedAt: string
   freshness: Freshness
-  sourceLabel: 'Garmin' | 'Strava' | 'Fusion' | 'Import'
+  sourceLabel: 'Garmin' | 'Strava' | 'Fusion' | 'Import' | 'Manuel'
   activity: ActivityDetail & {
     gapSecPerKm: number | null
     stamina: Stamina | null
@@ -722,10 +724,12 @@ export interface GarminPush {
   pushedAt: string | null
   error: string | null
 }
+export type PlanHorizon = 'session' | 'week' | '2weeks' | 'goal'
 export interface PlanGenerateRequest {
   mode: 'prompt' | 'llm'
-  horizon: 'session' | 'week'
+  horizon: PlanHorizon
   startDate: string
+  goalId?: number
   note?: string
 }
 export interface PlanPromptResponse {
@@ -736,11 +740,13 @@ export interface PlanDraftsResponse {
   drafts: PlannedSessionInput[]
   errors: string[]
   raw?: string
+  phases?: PlanPhase[]
 }
 export interface CalendarDay {
   date: string
   planned: PlannedSession[]
   done: ActivitySummary[]
+  events?: CalendarEvent[]
 }
 
 export interface ActivityEfficiency {
@@ -851,4 +857,70 @@ export interface LogFilter {
   category: 'all' | LogCategory
   level: 'all' | 'error'
   userId: number | null
+}
+
+/* ---------------------------------- 3.1.0 (§12) ---------------------------------- */
+
+export type RecordKey = '1k' | '5k' | '10k' | 'half' | 'marathon' | 'longest'
+export interface PersonalRecord {
+  key: RecordKey
+  label: string
+  distanceM: number
+  timeS: number | null
+  paceSecPerKm: number | null
+  date: string | null
+  activityId: number | null
+  source: 'computed' | 'strava' | 'manual'
+}
+export interface RecordInput {
+  timeS?: number
+  distanceM?: number
+  date?: string
+}
+
+export interface ManualActivityInput {
+  date: string
+  startTime?: string
+  sport: Sport
+  title?: string
+  distanceM?: number
+  durationS: number
+  avgHR?: number
+  maxHR?: number
+  avgCadenceSpm?: number
+  elevGainM?: number
+  elevLossM?: number
+}
+
+export type EventKind = 'fatigue' | 'pain' | 'illness' | 'unavailable' | 'forced_rest'
+export type EventSeverity = 1 | 2 | 3
+export interface CalendarEvent {
+  id: number
+  kind: EventKind
+  startDate: string
+  endDate: string
+  severity: EventSeverity
+  note: string
+}
+export type CalendarEventInput = Omit<CalendarEvent, 'id'>
+
+export interface PlanPhase {
+  id: number
+  name: string
+  startDate: string
+  endDate: string
+  focus: string
+  weeklyVolumeKm: number | null
+  note: string
+}
+
+export interface PlanAdaptRequest {
+  from: string
+  mode: 'rules' | 'llm'
+  eventId?: number
+}
+export interface PlanAdaptPreview {
+  sessions: (PlannedSessionInput & { id?: number })[]
+  removeIds: number[]
+  summary: string
 }

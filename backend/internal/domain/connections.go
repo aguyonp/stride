@@ -273,6 +273,10 @@ func (s *Services) Integrations(ctx context.Context, uid int64) (*view.Integrati
 	}
 	out.Strava.Available = s.deps.Strava != nil && s.deps.Env.StravaEnabled()
 	out.Strava.Status = "disconnected"
+	out.Strava.Scopes, out.Strava.MissingScopes = []string{}, []string{}
+	if st.connected() && st.Scope.Valid {
+		out.Strava.Scopes, out.Strava.MissingScopes = scopeList(st.Scope.String), missingScopes(st.Scope.String)
+	}
 	if st != nil {
 		out.Strava.Connected = st.connected()
 		out.Strava.Status = st.Status

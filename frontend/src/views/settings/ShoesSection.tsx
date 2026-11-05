@@ -108,7 +108,7 @@ export function ShoesSection() {
       id="chaussures"
       title="Chaussures"
       icon={<Footprints />}
-      description="Drop, type et kilométrage apparaissent dans les rapports et l’historique 14 jours."
+      description="Tes paires (propres à ton compte) : drop, type et kilométrage apparaissent dans les rapports et l’historique 14 jours."
       actions={
         <>
           {strava && (

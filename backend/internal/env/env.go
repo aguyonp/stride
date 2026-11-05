@@ -39,6 +39,9 @@ type Config struct {
 	StravaClientID     string
 	StravaClientSecret string
 	StravaWebhookToken string
+	// One-time seed of the first admin's Strava connection (refreshed tokens live in the DB).
+	AdminStravaAccessToken  string
+	AdminStravaRefreshToken string
 
 	WeatherProvider string
 
@@ -63,20 +66,22 @@ func Load() (Config, error) {
 	}
 
 	c := Config{
-		ListenAddr:         get("STRIDE_LISTEN_ADDR", ":8080"),
-		DataDir:            get("STRIDE_DATA_DIR", "./data"),
-		ValkeyURL:          os.Getenv("STRIDE_VALKEY_URL"),
-		PublicURL:          strings.TrimRight(get("STRIDE_PUBLIC_URL", "http://localhost:8080"), "/"),
-		RegistrationMode:   get("STRIDE_REGISTRATION", "invite"),
-		Timezone:           get("TZ", "Europe/Paris"),
-		LogLevel:           get("LOG_LEVEL", "info"),
-		LogFormat:          get("LOG_FORMAT", "pretty"),
-		GarminBaseURL:      strings.TrimRight(get("STRIDE_GARMIN_BASE_URL", "https://personal.connectapi.garmin.com"), "/"),
-		AdminGarminKey:     first(os.Getenv("STRIDE_ADMIN_GARMIN_KEY"), os.Getenv("GARMIN_API_TOKEN")),
-		StravaClientID:     os.Getenv("STRIDE_STRAVA_CLIENT_ID"),
-		StravaClientSecret: os.Getenv("STRIDE_STRAVA_CLIENT_SECRET"),
-		StravaWebhookToken: os.Getenv("STRIDE_STRAVA_WEBHOOK_TOKEN"),
-		WeatherProvider:    get("STRIDE_WEATHER", "open-meteo"),
+		ListenAddr:              get("STRIDE_LISTEN_ADDR", ":8080"),
+		DataDir:                 get("STRIDE_DATA_DIR", "./data"),
+		ValkeyURL:               os.Getenv("STRIDE_VALKEY_URL"),
+		PublicURL:               strings.TrimRight(get("STRIDE_PUBLIC_URL", "http://localhost:8080"), "/"),
+		RegistrationMode:        get("STRIDE_REGISTRATION", "invite"),
+		Timezone:                get("TZ", "Europe/Paris"),
+		LogLevel:                get("LOG_LEVEL", "info"),
+		LogFormat:               get("LOG_FORMAT", "pretty"),
+		GarminBaseURL:           strings.TrimRight(get("STRIDE_GARMIN_BASE_URL", "https://personal.connectapi.garmin.com"), "/"),
+		AdminGarminKey:          first(os.Getenv("STRIDE_ADMIN_GARMIN_KEY"), os.Getenv("GARMIN_API_TOKEN")),
+		StravaClientID:          os.Getenv("STRIDE_STRAVA_CLIENT_ID"),
+		StravaClientSecret:      os.Getenv("STRIDE_STRAVA_CLIENT_SECRET"),
+		StravaWebhookToken:      os.Getenv("STRIDE_STRAVA_WEBHOOK_TOKEN"),
+		AdminStravaAccessToken:  os.Getenv("STRIDE_STRAVA_ACCESS_TOKEN"),
+		AdminStravaRefreshToken: os.Getenv("STRIDE_STRAVA_REFRESH_TOKEN"),
+		WeatherProvider:         get("STRIDE_WEATHER", "open-meteo"),
 	}
 	c.DBPath = get("STRIDE_DB_PATH", filepath.Join(c.DataDir, "stride.db"))
 

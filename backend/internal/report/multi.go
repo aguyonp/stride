@@ -63,6 +63,7 @@ func Multi(m *view.MultiExport, prof athlete.Profile, inc Include) string {
 		b.line("- **Profil / Mode actif :** %s | **Objectif Macro :** %s | **Autres objectifs :** %s", prof.ModeLabel(), macroS, othersS)
 		b.line("- **Période analysée :** %s → %s (%s, %s)", f.Date(m.From), f.Date(m.To),
 			plural(m.Weeks, "semaine", "semaines"), plural(len(m.Sessions), "séance", "séances"))
+		b.raw("- **Records personnels :** " + recordsText(m.Records))
 		b.raw("- **Prochaines séances prévues :** " + upcomingText(m.Upcoming))
 	}
 

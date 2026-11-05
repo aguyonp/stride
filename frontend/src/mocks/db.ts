@@ -22,6 +22,7 @@ import type {
 import { addDays, todayISO } from '../lib/format'
 import { getCatalog } from './catalog'
 import { flagsKey, has } from './flags'
+import type { V31Data } from './manual'
 
 export interface MockUser {
   id: number
@@ -56,6 +57,7 @@ export interface UserData {
   checkins: Record<string, DailyCheckin>
   integrations: Integrations
   v3?: V3Data
+  v31?: V31Data
 }
 
 export interface V3Data {
@@ -149,11 +151,15 @@ const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
 const H = 3600_000
 const D = 24 * H
 
+const STRAVA_SCOPES = ['read', 'activity:read_all', 'profile:read_all']
+
 function integrationsFor(rich: boolean): Integrations {
   const stravaOnly = has('strava')
   const garminOnly = has('garmin') || has('nostrava')
-  const garmin = rich && !stravaOnly
-  const strava = rich && (stravaOnly || !garminOnly)
+  const standalone = has('standalone')
+  const garmin = rich && !stravaOnly && !standalone
+  const strava = rich && (stravaOnly || !garminOnly) && !standalone
+  const scoped = strava && has('stravascope')
   const unauthorized = has('unauthorized')
   return {
     garmin: {
@@ -171,6 +177,8 @@ function integrationsFor(rich: boolean): Integrations {
       athleteName: strava ? 'Alex D.' : null,
       lastSyncAt: strava ? iso(3 * H + 120_000) : null,
       lastError: null,
+      scopes: strava ? (scoped ? ['read'] : STRAVA_SCOPES) : [],
+      missingScopes: scoped ? STRAVA_SCOPES.slice(1) : [],
     },
     weather: { enabled: true, provider: 'open-meteo' },
   }

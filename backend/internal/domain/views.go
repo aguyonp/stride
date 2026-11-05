@@ -106,6 +106,8 @@ func sourceLabel(a *activityRow) string {
 		return "Strava"
 	case a.GarminID == nil && a.ImportFormat != nil:
 		return "Import"
+	case a.Manual:
+		return "Manuel"
 	}
 	return "Garmin"
 }
@@ -414,6 +416,7 @@ func (s *Services) ActivityView(ctx context.Context, uid, id int64) (*view.Activ
 	if b.weather != nil {
 		v.Weather = &view.Weather{Conditions: *b.weather, WindDirLabel: windDirLabel(b.weather.WindDirDeg)}
 	}
+	v.WeatherReason = s.weatherReason(ctx, uid, b)
 	v.Load = analysis.Load{ElevGainM: c.ElevGainM, ElevLossM: c.ElevLossM, Drift: c.Drift, TrainingLoad: v.Activity.TrainingLoad,
 		AerobicTE: v.Activity.AerobicTE, AnaerobicTE: v.Activity.AnaerobicTE, HrZonesS: c.HrZonesS, PowerZonesS: c.PowerZonesS,
 		ImpactLoad: v.Activity.ImpactLoad, Stamina: c.Stamina, LoadRatio: lr}

@@ -9,6 +9,7 @@ import { GoalRow } from '../plan/GoalRow'
 import { MatchBadge } from '../plan/MatchBadge'
 import { matchDeltas, ratioPct, weekLabel } from '../plan/planFormat'
 import { PlannedSessionCard } from '../plan/PlannedSessionCard'
+import { useSessionDrawer } from '../plan/useSessionDrawer'
 import { Card } from '../ui/Card'
 import { PlanSportIcon } from '../ui/icons'
 import { Skeleton } from '../ui/Skeleton'
@@ -22,6 +23,7 @@ const more = (href: string, label: string) => (
 /** Planned vs done for the selected session + the next planned sessions. */
 export function PlanMatchCard({ match, upcoming, className }: { match: PlanMatch | null; upcoming: PlannedSession[]; className?: string }) {
   const deltas = match ? matchDeltas(match) : []
+  const drawer = useSessionDrawer()
   return (
     <Card title="Prévu vs réalisé" icon={<CalendarCheck className="size-4" />} action={more('/plan', 'Planning')} className={className}>
       {match ? (
@@ -50,11 +52,12 @@ export function PlanMatchCard({ match, upcoming, className }: { match: PlanMatch
         <ul className="space-y-2">
           {upcoming.map((s) => (
             <li key={s.id}>
-              <PlannedSessionCard session={s} compact />
+              <PlannedSessionCard session={s} compact onOpen={() => drawer.open(s)} />
             </li>
           ))}
         </ul>
       )}
+      {drawer.node}
     </Card>
   )
 }

@@ -47,6 +47,9 @@ func (s *Services) ActivityReport(ctx context.Context, uid, id int64, include st
 	if err != nil {
 		return "", err
 	}
+	if v.Records, err = s.records(ctx, uid); err != nil {
+		return "", err
+	}
 	return report.Activity(v, p, inc), nil
 }
 
@@ -62,6 +65,9 @@ func (s *Services) DayReport(ctx context.Context, uid int64, date, include strin
 	}
 	p, err := s.profile(ctx, uid)
 	if err != nil {
+		return "", err
+	}
+	if v.Records, err = s.records(ctx, uid); err != nil {
 		return "", err
 	}
 	return report.Day(v, p, inc), nil
@@ -324,6 +330,9 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 		return nil, err
 	}
 	if m.Upcoming, err = s.upcoming(ctx, uid, today, 3); err != nil {
+		return nil, err
+	}
+	if m.Records, err = s.records(ctx, uid); err != nil {
 		return nil, err
 	}
 	md := report.Multi(m, p, inc)

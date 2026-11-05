@@ -7,7 +7,7 @@ import { PlanSportIcon } from '../ui/icons'
 import { MenuItem, Popover } from '../ui/Popover'
 import { MatchBadge } from './MatchBadge'
 import { matchDeltas, targetParts } from './planFormat'
-import { GarminStatus } from './PlannedSessionDetail'
+import { GarminStatus } from './GarminStatus'
 import { stepsSummary } from './steps'
 
 interface PlannedSessionCardProps {

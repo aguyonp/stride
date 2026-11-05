@@ -1,8 +1,9 @@
-import { Activity, BarChart3, CalendarCheck, CloudSun, Flame, Gauge, History, Link2, Map as MapIcon, Moon, Sun, Target, Timer } from 'lucide-react'
+import { Activity, BarChart3, CalendarCheck, CloudSun, Flame, Gauge, History, Link2, Map as MapIcon, Moon, PenLine, Plus, Sun, Target, Timer, Trophy } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'wouter'
 import { useActivities, useActivityView, useDayView, useProfile } from '../../api/queries'
 import { useLlmConfig } from '../../api/queriesV3'
+import { useRecords, useStandalone } from '../../api/queriesV31'
 import type { ActivitySummary, ActivityView, AthleteProfile, Me } from '../../api/types'
 import { TopAlerts } from '../../components/alerts/TopAlerts'
 import { SessionHero } from '../../components/dashboard/SessionHero'
@@ -16,6 +17,7 @@ import { HistoryTable } from '../../components/dashboard/HistoryTable'
 import { CrossLoadCard, LoadCard } from '../../components/dashboard/LoadCards'
 import { PerformanceCard } from '../../components/dashboard/PerformanceCard'
 import { GoalsCard, PlanMatchCard, WeekCard } from '../../components/dashboard/PlanCards'
+import { RecordsCard, recordsSummary } from '../../components/dashboard/RecordsCard'
 import { RecoveryCard } from '../../components/dashboard/RecoveryCard'
 import { SegmentsTable } from '../../components/dashboard/SegmentsTable'
 import { KpiGrid, StravaCard, WeatherCard } from '../../components/dashboard/SessionCards'
@@ -23,6 +25,7 @@ import { SessionHeader } from '../../components/dashboard/SessionHeader'
 import { TodayCard } from '../../components/dashboard/TodayCard'
 import { MobilePromptBar, PromptGenerator } from '../../components/prompt/PromptGenerator'
 import { usePrompt } from '../../components/prompt/usePrompt'
+import { ManualActivityDialog } from '../../components/session/ManualActivityDialog'
 import { SessionPicker } from '../../components/session/SessionPicker'
 import { EmptyState, Spinner } from '../../components/ui/Misc'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
@@ -130,9 +133,11 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
           <SegmentsTable key={v.activity.id} segments={v.segments} />
         </Disclosure>
       )}
-      <Disclosure {...p('charts')} title="Courbes" icon={<BarChart3 />} summary="FC, allure, cadence, puissance, altitude" cardTitles="hide">
-        <SessionCharts view={v} profile={profile} />
-      </Disclosure>
+      {v.series.tS.length > 1 && (
+        <Disclosure {...p('charts')} title="Courbes" icon={<BarChart3 />} summary="FC, allure, cadence, puissance, altitude" cardTitles="hide">
+          <SessionCharts view={v} profile={profile} />
+        </Disclosure>
+      )}
       {hasTrack && (
         <Disclosure {...p('gps')} title="Tracé GPS" icon={<MapIcon />} summary="Coloré par cadence ou par pente">
           <Suspense fallback={fallback}>
@@ -200,7 +205,10 @@ export function DashboardView({ me }: { me: Me }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const day = useDayView(today)
   const llm = useLlmConfig()
+  const standalone = useStandalone()
+  const records = useRecords()
   const [ai, setAi] = useState({ open: false, run: 0 })
+  const [manual, setManual] = useState<'new' | 'edit' | null>(null)
 
   useEffect(() => {
     ui.selectActivity(selectedId)
@@ -231,6 +239,17 @@ export function DashboardView({ me }: { me: Me }) {
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  const afterCreate = (a: ActivitySummary) => {
+    select(a.id)
+    ui.selectActivity(a.id)
+    ui.openFeeling()
+  }
+  const afterDelete = () =>
+    setParams((p) => {
+      const next = new URLSearchParams(p)
+      next.delete('s')
+      return next
+    })
   const idx = selectedId === null ? -1 : items.findIndex((a) => a.id === selectedId)
   const older = idx >= 0 && idx < items.length - 1 ? items[idx + 1] : null
   const newer = idx > 0 ? items[idx - 1] : null
@@ -242,7 +261,24 @@ export function DashboardView({ me }: { me: Me }) {
   let main
   if (list.isError && !items.length) main = <ErrorView error={list.error} onRetry={() => void list.refetch()} />
   else if (noActivities)
-    main = (
+    main = standalone ? (
+      <EmptyState
+        icon={<PenLine />}
+        title="Aucune séance pour l’instant"
+        action={
+          <div className="flex flex-wrap justify-center gap-2">
+            <button type="button" className="btn btn-primary" onClick={() => setManual('new')}>
+              <Plus className="size-4" aria-hidden="true" /> Saisir une séance manuelle
+            </button>
+            <Link href="/settings#integrations" className="btn btn-ghost">
+              Connecter Garmin ou Strava
+            </Link>
+          </div>
+        }
+      >
+        Stride fonctionne sans montre connectée : saisis tes séances et ton ressenti, le planning, le suivi de douleur, les prompts et l’IA restent disponibles.
+      </EmptyState>
+    ) : (
       <EmptyState
         icon={<Link2 />}
         title="Aucune activité pour l’instant"
@@ -268,10 +304,17 @@ export function DashboardView({ me }: { me: Me }) {
   return (
     <div className="space-y-4 lg:space-y-6">
       <h1 className="sr-only">Tableau de bord de {me.displayName}</h1>
-      {day.data?.readiness && <ReadinessBanner r={day.data.readiness} />}
+      {day.data?.readiness && !(standalone && day.data.readiness.level === 'unknown') && <ReadinessBanner r={day.data.readiness} />}
 
       <div className="grid gap-4 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-6 lg:gap-y-5">
         <div className="min-w-0 space-y-4 lg:col-span-8 lg:row-start-1 lg:space-y-5">
+          {standalone && !noActivities && (
+            <div className="-my-1 flex justify-end">
+              <button type="button" className="inline-flex min-h-8 items-center gap-1 rounded-lg px-1.5 text-xs font-semibold text-ink-3 transition-colors hover:text-accent" onClick={() => setManual('new')}>
+                <Plus className="size-3.5" aria-hidden="true" /> Saisir une séance manuelle
+              </button>
+            </div>
+          )}
           {!noActivities && (
             <SessionHeader
               summary={summary}
@@ -280,6 +323,7 @@ export function DashboardView({ me }: { me: Me }) {
               onOpenPicker={() => setPickerOpen(true)}
               onPrev={older ? () => select(older.id) : null}
               onNext={newer ? () => select(newer.id) : null}
+              onEditManual={() => setManual('edit')}
             >
               {ready && <SessionHero view={v} thresholds={th} />}
             </SessionHeader>
@@ -299,6 +343,9 @@ export function DashboardView({ me }: { me: Me }) {
             <Disclosure title="Objectifs" icon={<Target />} summary={v?.goals?.length ? `${v.goals.length} actif(s)` : undefined} cardTitles="hide">
               <GoalsCard today={today} goals={v?.goals} />
             </Disclosure>
+            <Disclosure title="Records personnels" icon={<Trophy />} summary={recordsSummary(records.data)} cardTitles="hide">
+              <RecordsCard />
+            </Disclosure>
           </div>
         </aside>
         {details && <div className="min-w-0 lg:col-span-8 lg:col-start-1 lg:row-start-2">{details}</div>}
@@ -309,6 +356,17 @@ export function DashboardView({ me }: { me: Me }) {
         <Suspense fallback={null}>
           <AnalysisDrawer open={ai.open} onClose={() => setAi((s) => ({ ...s, open: false }))} subject={aiSubject} include={prompt.include} runToken={ai.run} />
         </Suspense>
+      )}
+
+      {manual && (
+        <ManualActivityDialog
+          open
+          onClose={() => setManual(null)}
+          today={today}
+          activity={manual === 'edit' && v && v.activity.sources.includes('manual') ? v.activity : null}
+          onCreated={afterCreate}
+          onDeleted={afterDelete}
+        />
       )}
 
       <SessionPicker

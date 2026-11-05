@@ -42,6 +42,16 @@ func upcoming() []athlete.PlannedSession {
 	}
 }
 
+func records() []athlete.PersonalRecord {
+	return []athlete.PersonalRecord{
+		{Key: "1k", Label: "1 km", DistanceM: 1000, Source: "computed"},
+		{Key: "5k", Label: "5 km", DistanceM: 5000, TimeS: fp(1361), Date: sp("2026-10-12"), Source: "computed"},
+		{Key: "10k", Label: "10 km", DistanceM: 10000, TimeS: fp(2895), Date: sp("2026-09-20"), Source: "strava"},
+		{Key: "half", Label: "Semi-marathon", DistanceM: 21097.5, TimeS: fp(6330), Source: "manual"},
+		{Key: "longest", Label: "Plus longue sortie", DistanceM: 21412, TimeS: fp(7100), Source: "computed"},
+	}
+}
+
 func history() []view.HistoryRow {
 	return []view.HistoryRow{
 		{ActivityID: 3, Date: "2026-10-28", Type: "running", TypeLabel: "Course", IsRunning: true, DistanceM: fp(6000), DurationS: fp(2100),
@@ -117,6 +127,7 @@ func fullActivity() *view.ActivityView {
 		Goals:    goals(),
 		Upcoming: upcoming(),
 		History:  history(),
+		Records:  records(),
 		Alerts: []analysis.Alert{
 			{Level: "warn", Code: "FLOORS_PREV_DAY", Title: "Escaliers la veille", Message: "16 étages montés la veille (> 15), charge cumulée avant la séance."},
 			{Level: "info", Code: "SLEEP_LOW", Title: "Sommeil profond court", Message: "Profond 0h56 (< 1h), récupération tissulaire réduite."},
@@ -160,6 +171,7 @@ func dayView() *view.DayView {
 		Goals:    goals(),
 		Upcoming: upcoming(),
 		History:  history(),
+		Records:  records(),
 		Alerts:   []analysis.Alert{{Level: "ok", Code: "ALL_GOOD", Title: "RAS", Message: "Aucun signal d'alerte sur cette journée."}},
 	}
 }
@@ -172,7 +184,7 @@ func multiExport() *view.MultiExport {
 	s2 := view.ActivitySummary{ID: 5, Type: "trail_running", TypeLabel: "Trail", Sport: "run", IsRunning: true, Date: "2026-11-02",
 		DistanceM: fp(7020), DurationS: fp(2530), AvgPaceSecPerKm: fp(360), AvgHR: fp(145), AvgCadenceSpm: fp(172), ElevLossM: fp(35)}
 	return &view.MultiExport{
-		From: "2026-10-26", To: "2026-11-08", Weeks: 2, NextWeeks: 3, Goals: goals(), Upcoming: upcoming()[:1], Unanalyzed: 1,
+		From: "2026-10-26", To: "2026-11-08", Weeks: 2, NextWeeks: 3, Goals: goals(), Upcoming: upcoming()[:1], Unanalyzed: 1, Records: records()[1:2],
 		Sessions: []view.MultiSession{
 			{Summary: s1, GctMs: fp(252), GctDriftPct: fp(2.1), ShoeName: h[0].ShoeName, PainDuring: fp(2), PainCold: fp(1.5), PainNextMorning: fp(1)},
 			{Summary: s2, PainDuring: fp(2)},
@@ -345,5 +357,30 @@ func TestParseInclude(t *testing.T) {
 	}
 	if EstimateTokens("abcde") != 2 || EstimateTokens("é") != 1 {
 		t.Error("token estimate")
+	}
+}
+
+func TestPlanAndAdaptPrompts(t *testing.T) {
+	goal := athlete.Goal{Title: "10 km", TargetDate: sp("2027-02-15")}
+	ev := []athlete.CalendarEvent{{Kind: "illness", StartDate: "2026-11-10", EndDate: "2026-11-11", Severity: 2, Note: "Grippe"}}
+	ph := []athlete.PlanPhase{{Name: "Développement", StartDate: "2026-11-02", EndDate: "2026-11-29", Focus: "volume", WeeklyVolumeKm: fp(32)}}
+	got := Plan(dayView(), kneeProfile(), PlanRequest{Horizon: "goal", StartDate: "2026-11-02", EndDate: "2027-02-15", DetailFrom: "2026-11-09",
+		DetailTo: "2026-12-06", Goal: &goal, WithPhases: true, Events: ev, Phases: ph})
+	for _, want := range []string{"### PHASES DÉJÀ DÉFINIES", "- Développement du 02/11/2026 au 29/11/2026 : volume (32 km/sem.)",
+		"### ÉVÉNEMENTS DU CALENDRIER", "- Maladie du 10/11/2026 au 11/11/2026 (sévérité 2/3) : Grippe", "détaille uniquement les séances du 09/11/2026 au 06/12/2026",
+		`"version":2`, "Records personnels :** 5 km 22:41"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("goal prompt lacks %q:\n%s", want, got)
+		}
+	}
+	short := Plan(dayView(), kneeProfile(), PlanRequest{Horizon: "goal", StartDate: "2026-11-02", EndDate: "2026-11-15", DetailFrom: "2026-11-02", DetailTo: "2026-11-15", Goal: &goal})
+	if !strings.Contains(short, "Propose toutes les séances du 02/11/2026 au 15/11/2026, jour de l'objectif « 10 km » inclus") || strings.Contains(short, `"version":2`) {
+		t.Fatalf("short goal prompt:\n%s", short)
+	}
+	ad := Adapt(dayView(), kneeProfile(), AdaptRequest{From: "2026-11-09", To: "2026-11-22", Events: ev, Remaining: upcoming()})
+	for _, want := range []string{"### PLAN RESTANT À ADAPTER", "Adapte le plan du 09/11/2026 au 22/11/2026", "Renvoie **toutes** les séances", "### FORMAT DE SORTIE (OBLIGATOIRE)"} {
+		if !strings.Contains(ad, want) {
+			t.Fatalf("adapt prompt lacks %q:\n%s", want, ad)
+		}
 	}
 }

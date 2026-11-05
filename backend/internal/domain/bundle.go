@@ -80,6 +80,7 @@ const (
 // Final bundles are never requested again.
 func (s *Services) ensureBundle(ctx context.Context, uid int64, a *activityRow, fr *fresh) error {
 	if a.Final {
+		s.backfillWeather(ctx, uid, a, fr)
 		return nil
 	}
 	_, err, _ := s.sf.Do(fmt.Sprintf("bundle:%d:%d", uid, a.ID), func() (any, error) {
@@ -173,6 +174,9 @@ func (s *Services) fetchBundle(ctx context.Context, uid int64, a *activityRow, f
 				if act, err := s.deps.Strava.GetActivity(ctx, tok, id); err == nil {
 					raw, _ := json.Marshal(act)
 					store("strava_detail", raw)
+					if act.KudosCount != nil {
+						_, _ = s.db().ExecContext(ctx, `UPDATE activities SET kudos = ? WHERE id = ? AND user_id = ?`, *act.KudosCount, a.ID, uid)
+					}
 				} else {
 					fail(providerErr(pStrava, err))
 				}
@@ -199,7 +203,7 @@ func (s *Services) fetchBundle(ctx context.Context, uid int64, a *activityRow, f
 	}
 
 	final := complete && now.Sub(time.Unix(a.endUTC(), 0)) > finalAfter
-	_, err = s.db().ExecContext(ctx, `UPDATE activities SET complete = ?, final = ?, bundle_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
+	_, err = s.db().ExecContext(ctx, `UPDATE activities SET complete = ?, final = ?, bundle_at = MAX(?, COALESCE(bundle_at, 0) + 1), updated_at = ? WHERE id = ? AND user_id = ?`,
 		boolInt(complete), boolInt(final), now.Unix(), now.Unix(), a.ID, uid)
 	if err != nil {
 		return err
@@ -273,6 +277,54 @@ func (s *Services) startPosition(ctx context.Context, uid int64, a *activityRow)
 }
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
+
+// backfillWeather fetches the weather missing from a final bundle (weather disabled or Open-Meteo
+// unavailable when the bundle was completed). Indoor / no-GPS activities keep their empty marker.
+func (s *Services) backfillWeather(ctx context.Context, uid int64, a *activityRow, fr *fresh) {
+	if s.deps.Weather == nil {
+		return
+	}
+	if _, _, ok, err := s.blob(ctx, uid, a.ID, "weather"); ok || err != nil {
+		return
+	}
+	key := userKey(uid, "wx-retry", fmt.Sprint(a.ID))
+	if _, wait := s.cacheGet(ctx, key); wait {
+		return
+	}
+	wctx, cancel := context.WithTimeout(apimeter.WithUser(ctx, uid), weatherBackfillBudget)
+	defer cancel()
+	if err := s.fetchWeather(wctx, uid, a); err != nil {
+		s.cacheSet(ctx, key, []byte("1"), weatherRetryAfter)
+		s.log.Warn("🌦️ Météo indisponible", "user", uid, "err", errText(providerErr("open-meteo", err)))
+		return
+	}
+	fr.mark(lvLive, s.now())
+}
+
+const (
+	weatherBackfillBudget = 10 * time.Second
+	weatherRetryAfter     = 30 * time.Minute
+
+	reasonWeatherOff     = "Météo désactivée sur ce serveur"
+	reasonWeatherIndoor  = "Séance en intérieur ou sans position GPS : pas de météo"
+	reasonWeatherPending = "Météo momentanément indisponible (Open-Meteo), nouvelle tentative plus tard"
+)
+
+// weatherReason explains a null weather of a loaded bundle.
+func (s *Services) weatherReason(ctx context.Context, uid int64, b *bundle) *string {
+	r := reasonWeatherPending
+	switch {
+	case b.weather != nil:
+		return nil
+	case s.deps.Weather == nil:
+		r = reasonWeatherOff
+	default:
+		if _, _, ok, _ := s.blob(ctx, uid, b.row.ID, "weather"); ok {
+			r = reasonWeatherIndoor
+		}
+	}
+	return &r
+}
 
 func (s *Services) fetchWeather(ctx context.Context, uid int64, a *activityRow) error {
 	lat, lon, ok := s.startPosition(ctx, uid, a)

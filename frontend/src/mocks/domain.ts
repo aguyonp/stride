@@ -5,6 +5,7 @@ import { addDays, fmtSigned, mondayOf, todayISO } from '../lib/format'
 import { getCatalog, type CatalogItem } from './catalog'
 import { db, type PlanEntry, type UserData } from './db'
 import { has } from './flags'
+import { manualItems } from './manual'
 import { gradeFactor, isRunKind, mean, round } from './sim'
 
 export type SourceMode = 'fusion' | 'garmin' | 'strava' | 'none'
@@ -17,12 +18,15 @@ export function sourceMode(d: UserData): SourceMode {
 
 export function visibleItems(d: UserData, today = todayISO()): CatalogItem[] {
   const mode = sourceMode(d)
-  if (mode === 'none' || has('empty')) return []
+  const manual = manualItems(d)
+  if (mode === 'none' || has('empty')) return manual
   const items = getCatalog(today)
-  return mode === 'strava' ? items.filter((it) => it.stravaId !== null) : items
+  const synced = mode === 'strava' ? items.filter((it) => it.stravaId !== null) : items
+  return manual.length ? [...manual, ...synced].sort((a, b) => (a.startLocal < b.startLocal ? 1 : -1)) : synced
 }
 
 function sourcesOf(it: CatalogItem, mode: SourceMode): Source[] {
+  if (it.manual) return ['manual']
   if (mode === 'strava') return ['strava']
   if (mode === 'garmin') return ['garmin']
   return it.stravaId !== null ? ['garmin', 'strava'] : ['garmin']
@@ -138,9 +142,10 @@ export function summarize(it: CatalogItem, d: UserData, planned: PlannedSession[
   const mode = sourceMode(d)
   const g = garminOn(mode)
   const n = d.notes[String(it.id)]
+  const kudosOn = mode !== 'garmin' && it.stravaId !== null && !d.integrations.strava.missingScopes?.length
   return {
     id: it.id,
-    garminId: g ? it.garminId : null,
+    garminId: g && !it.manual ? it.garminId : null,
     stravaId: mode === 'garmin' ? null : it.stravaId,
     sources: sourcesOf(it, mode),
     name: mode !== 'garmin' && it.strava ? it.strava.title : it.name,
@@ -163,6 +168,7 @@ export function summarize(it: CatalogItem, d: UserData, planned: PlannedSession[
     painDuring: n?.painDuring ?? null,
     hasNotes: !!n && (n.note !== '' || n.painDuring !== null || n.rpe !== null || n.tags.length > 0),
     planStatus: planStatusFor(it, planned, d),
+    kudos: kudosOn ? (it.id * 7) % 13 : null,
   }
 }
 

@@ -219,7 +219,7 @@ func (s *Services) Plan(ctx context.Context, uid int64, from, to string) ([]athl
 	}
 	if from == "" && to == "" {
 		today := s.today(p)
-		from, to = analysis.DateAdd(weekStart(today), -28), analysis.DateAdd(today, 60)
+		from, to = analysis.DateAdd(weekStart(today), -28), analysis.DateAdd(today, planHorizonMaxDays)
 	}
 	pm, err := s.matchPlan(ctx, uid, p, from, to)
 	if err != nil {

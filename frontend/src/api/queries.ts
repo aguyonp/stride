@@ -56,7 +56,7 @@ export const qk = {
   },
 }
 
-const DOMAIN_ROOTS = new Set(['activities', 'activity', 'report', 'day', 'plan', 'week', 'calendar', 'efficiency', 'goals', 'shoes', 'integrations', 'profile', 'sync'])
+const DOMAIN_ROOTS = new Set(['activities', 'activity', 'report', 'day', 'plan', 'week', 'calendar', 'events', 'phases', 'records', 'efficiency', 'goals', 'shoes', 'integrations', 'profile', 'sync'])
 
 export function invalidateDomain(qc: QueryClient, roots?: string[]) {
   const set = roots ? new Set(roots) : DOMAIN_ROOTS

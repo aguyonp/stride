@@ -287,3 +287,50 @@ func TestEnsureSubscription(t *testing.T) {
 		t.Fatalf("reuse: %d %v", id, err)
 	}
 }
+
+func TestAthleteStatsKudosAndScopeErrors(t *testing.T) {
+	f, srv := newFake(t)
+	c := newTestClient(srv, nil)
+	ctx := context.Background()
+	f.on("GET /api/v3/athlete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer tok" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"message":"Authorization Error","errors":[{"resource":"AccessToken","field":"access_token","code":"invalid"}]}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"id": 77, "firstname": "Prénom", "lastname": "Nom", "resource_state": 2}`)
+	})
+	f.on("GET /api/v3/athletes/77/stats", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"recent_run_totals":{"count":3,"distance":25000.5,"moving_time":9000,"elevation_gain":120},
+			"ytd_run_totals":{"count":40,"distance":400000},"all_run_totals":{"count":100},"recent_ride_totals":{"count":1},"ytd_ride_totals":{}}`)
+	})
+	f.on("GET /api/v3/athlete/activities", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"message":"Authorization Error","errors":[{"resource":"AccessToken","field":"activity:read_permission","code":"missing"}]}`)
+	})
+	f.on("GET /api/v3/activities/1001", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, strings.TrimSuffix(fakeActivity, "}")+`, "kudos_count": 4,
+			"best_efforts": [{"name": "1k", "distance": 1000, "elapsed_time": 271}, {"name": "5k", "distance": 5000, "elapsed_time": 1402}]}`)
+	})
+	a, err := c.GetAthlete(ctx, "tok")
+	if err != nil || a.ID != 77 || a.Name != "Prénom Nom" || a.Detailed {
+		t.Fatalf("athlete: %+v %v", a, err)
+	}
+	if _, err := c.GetAthlete(ctx, "expired"); !TokenRejected(err) || MissingScope(err) {
+		t.Fatalf("expired token: %v", err)
+	}
+	st, err := c.GetAthleteStats(ctx, "tok", 77)
+	if err != nil || st.RecentRun.Count != 3 || st.RecentRun.DistanceM != 25000.5 || st.YTDRun.Count != 40 || st.AllRun.Count != 100 || st.RecentRide.Count != 1 {
+		t.Fatalf("stats: %+v %v", st, err)
+	}
+	if _, err := c.ListActivities(ctx, "tok", time.Time{}, time.Time{}, 1, 1); !MissingScope(err) || TokenRejected(err) {
+		t.Fatalf("missing scope: %v", err)
+	}
+	act, err := c.GetActivity(ctx, "tok", 1001)
+	if err != nil || act.KudosCount == nil || *act.KudosCount != 4 || len(act.BestEfforts) != 2 || act.BestEfforts[1].ElapsedS != 1402 {
+		t.Fatalf("activity: %+v %v", act, err)
+	}
+	if MissingScope(errors.New("x")) || TokenRejected(nil) {
+		t.Fatal("non-strava errors")
+	}
+}

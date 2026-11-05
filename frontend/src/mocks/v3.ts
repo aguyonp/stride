@@ -21,16 +21,18 @@ import type {
   NotificationInput,
   NotificationTarget,
   PlannedSessionInput,
+  PlanPhase,
   PlanSport,
   ReadinessBanner,
   TrackPoint,
   WorkoutStep,
 } from '../api/types'
-import { addDays, fmtNumber, fmtPace, todayISO } from '../lib/format'
+import { addDays, diffDays, fmtNumber, fmtPace, todayISO } from '../lib/format'
 import type { CatalogItem } from './catalog'
 import { nextId, type MockUser, type UserData, type V3Data } from './db'
 import { loadRatio, plannedWithMatch, sourceMode, summarize, visibleItems } from './domain'
 import { has } from './flags'
+import { v31Of } from './manual'
 import { hashStr, rng } from './sim'
 import { recoveryFor } from './wellness'
 
@@ -81,6 +83,8 @@ function v3(d: UserData): V3Data {
   }
   return d.v3
 }
+
+export const llmConfigured = (d: UserData) => v3(d).llm.configured
 
 /* ---------------------------------- Readiness, efficiency, impact ---------------------------------- */
 
@@ -185,7 +189,30 @@ export function enrichActivityView(v: ActivityView, it: CatalogItem, d: UserData
     const auto = d.shoes.find((s) => s.stravaGearId && !s.retired)
     if (auto) Object.assign(notes, { shoe: auto, shoeId: auto.id, shoeAuto: true })
   }
-  return { ...v, notes, efficiency, impact: impactOf(v, it, d), readiness: readinessFor(it.date, d, items) }
+  const out: ActivityView = { ...v, notes, efficiency, impact: impactOf(v, it, d), readiness: readinessFor(it.date, d, items) }
+  return it.manual ? manualView(out, it) : out
+}
+
+const SERIES_ALERT = /GCT|VO_|DOWNHILL|FADE|DRIFT|SLOPE|STRIDE/
+
+/** A manual activity has no series, splits, GPS or weather: only what the athlete typed. */
+function manualView(v: ActivityView, it: CatalogItem): ActivityView {
+  const empty = { tS: [], hr: [], cadenceSpm: [], powerW: [], paceSecPerKm: [], elevationM: [], gctMs: [], voCm: [], gctBalanceLeftPct: [], gapSecPerKm: [], staminaPct: [] }
+  const b = v.biomechanics
+  return {
+    ...v,
+    sourceLabel: 'Manuel',
+    activity: { ...v.activity, gapSecPerKm: null, maxCadenceSpm: null, stamina: null, strava: null, steps: null, calories: null },
+    weather: null,
+    series: empty,
+    segments: { primary: 'laps', blocks: [], laps: [] },
+    biomechanics: { ...b, groundContactTimeMs: null, verticalOscillationCm: null, verticalRatioPct: null, strideLengthM: null, cadenceMaxSpm: null, cadenceInTargetPct: null, cadenceBelow170Pct: null, cadenceAvgSpm: it.base.avgCadenceSpm, gctBalance: { ...b.gctBalance, available: false, leftPct: null, rightPct: null, gapPct: null, weakerSide: null, alert: null, reason: 'Séance saisie manuellement' }, fatigueDrift: null, slope: null },
+    load: { ...v.load, drift: null, hrZonesS: null, powerZonesS: null, stamina: null },
+    performance: v.performance ? { ...v.performance, timeInZonesS: null, z4z5S: null, bestEfforts: [] } : null,
+    alerts: v.alerts.filter((a) => !SERIES_ALERT.test(a.code)),
+    warnings: ['Séance saisie manuellement : pas de courbes, de splits, de tracé GPS ni de météo.'],
+    dataSources: ['manual'],
+  }
 }
 
 export function enrichDayView(v: DayView, d: UserData): DayView {
@@ -296,7 +323,7 @@ function validSteps(steps: unknown, path: string, errors: string[]): WorkoutStep
   return out
 }
 
-export function parsePlanText(text: string): { drafts: PlannedSessionInput[]; errors: string[] } {
+export function parsePlanText(text: string): { drafts: PlannedSessionInput[]; errors: string[]; phases: PlanPhase[] } {
   const errors: string[] = []
   const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text)
   let raw = fence ? fence[1] : text
@@ -305,11 +332,11 @@ export function parsePlanText(text: string): { drafts: PlannedSessionInput[]; er
     const j = text.lastIndexOf('}')
     if (i >= 0 && j > i) raw = text.slice(i, j + 1)
   }
-  let doc: { format?: string; sessions?: unknown[] }
+  let doc: { format?: string; sessions?: unknown[]; phases?: unknown[] }
   try {
     doc = JSON.parse(raw)
   } catch {
-    return { drafts: [], errors: ['Aucun JSON valide trouvé : colle la réponse complète de l’IA (bloc ```json).'] }
+    return { drafts: [], errors: ['Aucun JSON valide trouvé : colle la réponse complète de l’IA (bloc ```json).'], phases: [] }
   }
   if (doc.format !== 'stride-plan') errors.push('Champ « format » absent ou différent de « stride-plan » : lecture tolérante.')
   const drafts: PlannedSessionInput[] = []
@@ -334,8 +361,14 @@ export function parsePlanText(text: string): { drafts: PlannedSessionInput[]; er
       source: 'import',
     })
   })
+  const phases: PlanPhase[] = []
+  ;(Array.isArray(doc.phases) ? doc.phases : []).forEach((raw, i) => {
+    const p = raw as Partial<PlanPhase>
+    if (!p.name?.trim() || !DATE_RE.test(p.startDate ?? '') || !DATE_RE.test(p.endDate ?? '') || (p.endDate as string) < (p.startDate as string)) return void errors.push(`Phase ${i + 1} : nom ou dates invalides.`)
+    phases.push({ id: 0, name: p.name.trim(), startDate: p.startDate as string, endDate: p.endDate as string, focus: p.focus ?? '', weeklyVolumeKm: typeof p.weeklyVolumeKm === 'number' ? p.weeklyVolumeKm : null, note: p.note ?? '' })
+  })
   if (!drafts.length && !errors.length) errors.push('Aucune séance dans la réponse.')
-  return { drafts, errors }
+  return { drafts, errors, phases }
 }
 
 function sampleDrafts(start: string, horizon: string): PlannedSessionInput[] {
@@ -369,9 +402,31 @@ function sampleDrafts(start: string, horizon: string): PlannedSessionInput[] {
     },
     { ...base, date: addDays(start, 6), sport: 'run', title: 'Sortie longue 55′', instructions: 'Ravitaillement eau.', targetDurationS: 3300, targetCadenceSpm: 174, steps: [{ type: 'run', durationS: 3300, target: pace(335, 350) }] },
   ]
-  return horizon === 'session' ? all.slice(0, 1) : all
+  if (horizon === 'session') return all.slice(0, 1)
+  if (horizon === 'week') return all
+  const weeks = horizon === '2weeks' ? 2 : 3
+  const out: PlannedSessionInput[] = []
+  for (let w = 0; w < weeks; w++) {
+    const k = 1 + w * 0.08
+    for (const s of all) out.push({ ...s, date: addDays(s.date, 7 * w), targetDurationS: s.targetDurationS ? Math.round((s.targetDurationS * k) / 60) * 60 : null, title: w > 0 && s.sport === 'run' && /longue/i.test(s.title) ? `Sortie longue ${Math.round(55 * k)}′` : s.title })
+  }
+  return out
 }
 
+function goalPhases(start: string, goalDate: string): PlanPhase[] {
+  const days = diffDays(start, goalDate)
+  if (days <= 21) return []
+  const cut = (f: number) => addDays(start, Math.round(days * f))
+  const mk = (name: string, a: string, b: string, focus: string, km: number): PlanPhase => ({ id: 0, name, startDate: a, endDate: b, focus, weeklyVolumeKm: km, note: '' })
+  return [
+    mk('Développement', start, addDays(cut(0.4), -1), 'volume aérobie, cadence', 32),
+    mk('Assimilation', cut(0.4), addDays(cut(0.48), -1), 'semaine allégée', 22),
+    mk('Spécifique', cut(0.48), addDays(cut(0.88), -1), 'seuil, allure course', 38),
+    mk('Affûtage', cut(0.88), goalDate, 'fraîcheur, rappels d’allure', 20),
+  ]
+}
+
+const PLAN_CONTRACT_V2 = '{"format":"stride-plan","version":2,"goal":{"title":"…","date":"AAAA-MM-JJ"},"phases":[{"name":"Développement","startDate":"AAAA-MM-JJ","endDate":"AAAA-MM-JJ","focus":"…","weeklyVolumeKm":35,"note":""}],"sessions":[…]}'
 const PLAN_CONTRACT = '{"format":"stride-plan","version":1,"sessions":[{"date":"AAAA-MM-JJ","sport":"run","title":"…","instructions":"…","targetDurationS":2700,"targetCadenceSpm":172,"steps":[{"type":"warmup","durationS":600,"target":{"kind":"pace","min":330,"max":360}}]}]}'
 
 /* ---------------------------------- Calendar ---------------------------------- */
@@ -385,6 +440,7 @@ export function calendar(d: UserData, from: string, to: string, today = todayISO
       date: day,
       planned: planned.filter((p) => p.date === day),
       done: items.filter((it) => it.date === day).map((it) => summarize(it, d, planned)),
+      events: v31Of(d).events.filter((e) => e.startDate <= day && e.endDate >= day),
     })
   }
   return days
@@ -453,24 +509,31 @@ export function registerV3(route: RouteFn, view: (d: UserData, id: number) => { 
   })
 
   route('POST', /^\/api\/plan\/generate$/, async ({ data, init }) => {
-    const b = body<{ mode: string; horizon: string; startDate: string; note?: string }>(init)
-    if (!b || !['prompt', 'llm'].includes(b.mode) || !DATE_RE.test(b.startDate ?? '')) return err(400, 'BAD_REQUEST', 'Paramètres de génération invalides.')
+    const b = body<{ mode: string; horizon: string; startDate: string; goalId?: number; note?: string }>(init)
+    if (!b || !['prompt', 'llm'].includes(b.mode) || !DATE_RE.test(b.startDate ?? '') || !['session', 'week', '2weeks', 'goal'].includes(b.horizon)) return err(400, 'BAD_REQUEST', 'Paramètres de génération invalides.')
+    const dated = data.goals.filter((g) => g.status === 'active' && g.targetDate && g.targetDate >= b.startDate).sort((x, y) => (x.targetDate! < y.targetDate! ? -1 : 1))
+    const goal = b.horizon === 'goal' ? (b.goalId ? dated.find((g) => g.id === b.goalId) : dated[0]) : undefined
+    if (b.horizon === 'goal' && !goal) return err(400, 'BAD_REQUEST', 'Aucun objectif actif avec une date : ajoute une échéance à ton objectif.')
+    const period = { session: 'prochaine séance', week: '7 jours', '2weeks': '14 jours', goal: `jusqu’à l’objectif « ${goal?.title} » (${goal?.targetDate})` }[b.horizon as 'session']
     if (b.mode === 'prompt') {
+      const long = b.horizon === 'goal' && diffDays(b.startDate, goal!.targetDate!) > 21
       const prompt = [
         '### DIRECTIVE',
         'Tu es un coach de course à pied objectif et sans complaisance. Base-toi uniquement sur les données ci-dessous.',
         '',
         '### CONTEXTE',
-        `- Période : ${b.horizon === 'week' ? 'semaine' : 'prochaine séance'} à partir du ${b.startDate}`,
+        `- Période : ${period} à partir du ${b.startDate}`,
         '- Focus : genou (syndrome fémoro-patellaire), côté gauche',
         '- Ratio de charge aigu/chronique : 1,12 · Préparation : vigilance',
         '- 14 derniers jours : 6 sorties, 41 km, cadence moyenne 174 spm',
+        '- **Records personnels :** 5 km 23:50 · 10 km 49:12 · Plus longue sortie 12,4 km',
         ...(b.note ? [`- Note de l’athlète : ${b.note}`] : []),
+        ...(long ? ['', '### PÉRIODISATION', 'Découpe la période en phases (développement, assimilation, spécifique, affûtage) jusqu’à la date de l’objectif, puis détaille uniquement les séances des 3 prochaines semaines.'] : []),
         '',
         '### FORMAT DE RÉPONSE OBLIGATOIRE',
         'Réponds UNIQUEMENT avec un bloc ```json respectant exactement ce schéma (allure en s/km, FC en bpm, cadence en spm) :',
         '```json',
-        PLAN_CONTRACT,
+        b.horizon === 'goal' ? PLAN_CONTRACT_V2 : PLAN_CONTRACT,
         '```',
       ].join('\n')
       return json({ prompt, tokensEstimate: Math.ceil(prompt.length / 4) })
@@ -478,8 +541,13 @@ export function registerV3(route: RouteFn, view: (d: UserData, id: number) => { 
     if (!v3(data).llm.configured) return err(412, 'PROVIDER_NOT_CONNECTED', 'Aucun fournisseur IA configuré.')
     await new Promise((r) => setTimeout(r, 1200))
     if (has('llmerr')) return err(502, 'PROVIDER_UNAVAILABLE', 'Le fournisseur IA n’a pas répondu.')
-    const drafts = sampleDrafts(b.startDate, b.horizon)
-    return json({ drafts, errors: has('importerr') ? ['Séance 5 : date manquante ou invalide.'] : [], raw: JSON.stringify({ format: 'stride-plan', version: 1, sessions: drafts }) })
+    let drafts = sampleDrafts(b.startDate, b.horizon)
+    let phases: PlanPhase[] = []
+    if (goal?.targetDate) {
+      drafts = drafts.filter((x) => x.date <= goal.targetDate!)
+      phases = goalPhases(b.startDate, goal.targetDate)
+    }
+    return json({ drafts, phases, errors: has('importerr') ? ['Séance 5 : date manquante ou invalide.'] : [], raw: JSON.stringify({ format: 'stride-plan', version: phases.length ? 2 : 1, phases, sessions: drafts }) })
   })
   route('POST', /^\/api\/plan\/import$/, ({ init }) => {
     const b = body<{ text?: string }>(init)
@@ -489,8 +557,15 @@ export function registerV3(route: RouteFn, view: (d: UserData, id: number) => { 
     return json(r)
   })
   route('POST', /^\/api\/plan\/bulk$/, ({ data, init }) => {
-    const b = body<{ sessions?: PlannedSessionInput[] }>(init)
-    if (!b?.sessions?.length) return err(400, 'BAD_REQUEST', 'Aucune séance à créer.')
+    const b = body<{ sessions?: PlannedSessionInput[]; phases?: PlanPhase[] }>(init)
+    if (!b || (!b.sessions?.length && !b.phases?.length)) return err(400, 'BAD_REQUEST', 'Aucune séance à créer.')
+    if (b.phases?.length) {
+      const st = v31Of(data)
+      st.phases = st.phases.filter((p) => !b.phases!.some((n) => n.startDate <= p.endDate && n.endDate >= p.startDate))
+      for (const p of b.phases) st.phases.push({ ...p, id: nextId() })
+      st.phases.sort((x, y) => (x.startDate < y.startDate ? -1 : 1))
+    }
+    b.sessions = b.sessions ?? []
     const created = b.sessions.map((s) => {
       const p = { ...s, id: nextId(), steps: s.steps ?? [], source: s.source ?? 'import', garmin: { status: 'none' as const, workoutId: null, pushedAt: null, error: null } }
       data.plan.push(p)
@@ -520,7 +595,7 @@ export function registerV3(route: RouteFn, view: (d: UserData, id: number) => { 
     const from = url.searchParams.get('from') ?? ''
     const to = url.searchParams.get('to') ?? ''
     if (!DATE_RE.test(from) || !DATE_RE.test(to) || to < from) return err(400, 'BAD_REQUEST', 'Période invalide.')
-    if (addDays(from, 62) < to) return err(400, 'BAD_REQUEST', 'Période limitée à 62 jours.')
+    if (addDays(from, 371) < to) return err(400, 'BAD_REQUEST', 'Période limitée à 371 jours.')
     return json({ days: calendar(data, from, to) })
   })
 

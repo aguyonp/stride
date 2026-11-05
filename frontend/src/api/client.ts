@@ -1,4 +1,14 @@
 import type {
+  ActivitySummary,
+  CalendarEvent,
+  CalendarEventInput,
+  ManualActivityInput,
+  PersonalRecord,
+  PlanAdaptPreview,
+  PlanAdaptRequest,
+  PlanPhase,
+  RecordInput,
+  RecordKey,
   BuildInfo,
   LogFilter,
   LogPage,
@@ -255,7 +265,7 @@ export const api = {
 
   planGenerate: <T extends PlanPromptResponse | PlanDraftsResponse>(body: PlanGenerateRequest) => json<T>('/api/plan/generate', { method: 'POST', body }),
   planImport: (text: string) => json<PlanDraftsResponse>('/api/plan/import', { method: 'POST', body: { text } }),
-  planBulk: (sessions: PlannedSessionInput[]) => json<PlannedSession[]>('/api/plan/bulk', { method: 'POST', body: { sessions } }),
+  planBulk: (sessions: PlannedSessionInput[], phases?: PlanPhase[]) => json<PlannedSession[]>('/api/plan/bulk', { method: 'POST', body: phases?.length ? { sessions, phases } : { sessions } }),
   pushGarmin: (id: number) => json<PlannedSession>(`/api/plan/${id}/push-garmin`, { method: 'POST' }),
   workoutFitUrl: (id: number) => `/api/plan/${id}/workout.fit`,
   workoutFit: async (id: number) => {
@@ -280,6 +290,27 @@ export const api = {
     return (await res.json()) as ImportResult
   },
   mergeShoe: (id: number, intoId: number) => json<Shoe | void>(`/api/shoes/${id}/merge`, { method: 'POST', body: { intoId } }),
+
+  records: () => json<{ records: PersonalRecord[] }>('/api/records'),
+  saveRecord: (key: RecordKey, body: RecordInput) => json<PersonalRecord>(`/api/records/${key}`, { method: 'PUT', body }),
+  deleteRecord: (key: RecordKey) => json<void>(`/api/records/${key}`, { method: 'DELETE' }),
+
+  createActivity: (body: ManualActivityInput) => json<ActivitySummary>('/api/activities', { method: 'POST', body }),
+  updateActivity: (id: number, body: Partial<ManualActivityInput>) => json<ActivitySummary>(`/api/activities/${id}`, { method: 'PATCH', body }),
+  deleteActivity: (id: number) => json<void>(`/api/activities/${id}`, { method: 'DELETE' }),
+
+  events: async (from: string, to: string) => {
+    const r = await json<CalendarEvent[] | { events: CalendarEvent[] }>(`/api/calendar/events${qs({ from, to })}`)
+    return Array.isArray(r) ? r : (r?.events ?? [])
+  },
+  createEvent: (body: CalendarEventInput) => json<CalendarEvent>('/api/calendar/events', { method: 'POST', body }),
+  updateEvent: (id: number, body: Partial<CalendarEventInput>) => json<CalendarEvent>(`/api/calendar/events/${id}`, { method: 'PATCH', body }),
+  deleteEvent: (id: number) => json<void>(`/api/calendar/events/${id}`, { method: 'DELETE' }),
+
+  shiftPlanned: (id: number, body: { days?: number; toDate?: string }) => json<PlannedSession>(`/api/plan/${id}/shift`, { method: 'POST', body }),
+  planAdapt: (body: PlanAdaptRequest) => json<PlanAdaptPreview>('/api/plan/adapt', { method: 'POST', body }),
+  planReplace: (body: { removeIds: number[]; sessions: PlannedSessionInput[] }) => json<PlannedSession[]>('/api/plan/replace', { method: 'POST', body }),
+  planPhases: () => json<PlanPhase[]>('/api/plan/phases'),
 }
 
 /** Full-page navigation to the Strava OAuth flow (the mock resolves the redirect locally). */

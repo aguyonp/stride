@@ -25,7 +25,7 @@ export function FeelingSheet() {
       {v ? (
         <FeelingForm activityId={v.activity.id} notes={v.notes} onSaved={ui.closeFeeling} stickyActions />
       ) : open && list.isSuccess && id === null ? (
-        <EmptyState title="Aucune séance à commenter">Synchronise une activité Garmin ou Strava pour saisir ton ressenti.</EmptyState>
+        <EmptyState title="Aucune séance à commenter">Synchronise une activité Garmin ou Strava, ou saisis une séance manuelle depuis le tableau de bord.</EmptyState>
       ) : (
         <div className="grid min-h-40 place-items-center">
           <Spinner label="Chargement de la séance…" />

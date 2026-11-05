@@ -1,11 +1,16 @@
-import { CalendarDays, CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Plus, Sparkles, Target } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Flag, MoreHorizontal, Plus, Sparkles, Target, TriangleAlert, Wand2 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGoalMutations, useGoals, usePlanMutations, useProfile, useWeekPlan } from '../../api/queries'
-import type { ActivitySummary, Goal, PlannedSession, WeekPlan } from '../../api/types'
+import { useCalendarEvents, usePlanPhases } from '../../api/queriesV31'
+import type { ActivitySummary, CalendarEvent, Goal, PlannedSession, WeekPlan } from '../../api/types'
 import { DoneActivityRow } from '../../components/plan/DoneActivityRow'
+import { EventChip, EventDialog } from '../../components/plan/EventDialog'
 import { GenerateDialog } from '../../components/plan/GenerateDialog'
+import { GoalHorizon } from '../../components/plan/GoalHorizon'
+import { datedGoals, horizonGoal, phaseAt } from '../../components/plan/longterm'
 import { MonthCalendar } from '../../components/plan/MonthCalendar'
-import { PlannedSessionDetail } from '../../components/plan/PlannedSessionDetail'
+import { SessionDrawer } from '../../components/plan/SessionDrawer'
+import { MenuItem, Popover } from '../../components/ui/Popover'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useStoredState } from '../../hooks/useStoredState'
 import { GoalDialog } from '../../components/plan/GoalDialog'
@@ -20,10 +25,11 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { cn } from '../../lib/cn'
-import { addDays, capitalize, fmtDateLong, fmtHM, fmtKm, fmtMonthYear, fmtWeekdayShort, mondayOf, parseLocal, todayISO } from '../../lib/format'
+import { addDays, capitalize, fmtDateLong, fmtHM, fmtKm, fmtMonthYear, fmtNumber, fmtWeekdayShort, mondayOf, parseLocal, todayISO } from '../../lib/format'
 import { PLAN_SPORT_LABEL } from '../../lib/labels'
 
 type DayEntry = WeekPlan['days'][number]
+type EventState = { date: string; event: CalendarEvent | null; adaptOnly?: boolean } | null
 
 function emptyWeek(weekStart: string): DayEntry[] {
   return Array.from({ length: 7 }, (_, i) => ({ date: addDays(weekStart, i), planned: [], done: [] }))
@@ -81,13 +87,16 @@ interface DayProps {
   day: DayEntry
   today: string
   layout: 'column' | 'row'
+  events: CalendarEvent[]
+  goal: Goal | null
   onAdd: (date: string) => void
   onEdit: (s: PlannedSession) => void
   onDelete: (s: PlannedSession) => void
   onOpen: (s: PlannedSession) => void
+  onEvent: (e: EventState) => void
 }
 
-function DayBlock({ day, today, layout, onAdd, onEdit, onDelete, onOpen }: DayProps) {
+function DayBlock({ day, today, layout, events, goal, onAdd, onEdit, onDelete, onOpen, onEvent }: DayProps) {
   const isToday = day.date === today
   const past = day.date < today
   const matchedIds = new Set(day.planned.map((p) => p.match?.activityId).filter((id): id is number => id !== null && id !== undefined))
@@ -109,10 +118,45 @@ function DayBlock({ day, today, layout, onAdd, onEdit, onDelete, onOpen }: DayPr
           <span className={cn('num text-lg leading-none font-semibold', isToday ? 'text-ink' : 'text-ink-2')}>{p?.d}</span>
           {isToday && <span className={cn('chip h-5 bg-accent/15 px-2 text-[10px] text-accent', layout === 'column' && 'max-2xl:sr-only')}>Aujourd’hui</span>}
         </div>
-        <button type="button" className="icon-btn size-8 flex-none" onClick={() => onAdd(day.date)} aria-label={`Planifier une séance le ${fmtDateLong(day.date)}`}>
-          <Plus className="size-4" />
-        </button>
+        <span className="flex flex-none items-center">
+          <button type="button" className="icon-btn size-8" onClick={() => onAdd(day.date)} aria-label={`Planifier une séance le ${fmtDateLong(day.date)}`}>
+            <Plus className="size-4" />
+          </button>
+          <Popover
+            trigger={(p) => (
+              <button {...p} type="button" className="icon-btn size-8" aria-label={`Plus d’actions pour le ${fmtDateLong(day.date)}`}>
+                <MoreHorizontal className="size-4" />
+              </button>
+            )}
+            panelClassName="w-60"
+          >
+            {(close) => (
+              <>
+                <MenuItem icon={<TriangleAlert />} onSelect={() => (close(), onEvent({ date: day.date, event: null }))}>
+                  Signaler un imprévu
+                </MenuItem>
+                {day.date >= today && (
+                  <MenuItem icon={<Wand2 />} onSelect={() => (close(), onEvent({ date: day.date, event: null, adaptOnly: true }))}>
+                    Adapter la suite du plan
+                  </MenuItem>
+                )}
+              </>
+            )}
+          </Popover>
+        </span>
       </header>
+      {(events.length > 0 || goal) && (
+        <div className="mb-2 flex flex-wrap gap-1">
+          {goal && (
+            <span className="chip h-6 bg-violet/12 px-2 text-[11px] text-violet" title={goal.title}>
+              <Flag className="size-3" aria-hidden="true" /> <span className="max-w-[9rem] truncate">{goal.title}</span>
+            </span>
+          )}
+          {events.map((e) => (
+            <EventChip key={e.id} e={e} onOpen={(ev) => onEvent({ date: day.date, event: ev })} />
+          ))}
+        </div>
+      )}
       {empty ? (
         <p className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-xs text-ink-3">Rien de prévu</p>
       ) : (
@@ -172,8 +216,12 @@ export default function PlanView() {
   const [deleteSession, setDeleteSession] = useState<PlannedSession | null>(null)
   const [deleteGoal, setDeleteGoal] = useState<Goal | null>(null)
   const [mode, setMode] = useStoredState<'week' | 'month'>('stride.plan.view', 'week', (v) => (v === 'month' || v === 'week' ? v : undefined))
-  const [genOpen, setGenOpen] = useState(false)
-  const [detail, setDetail] = useState<PlannedSession | null>(null)
+  const [genOpen, setGenOpen] = useState<{ horizon?: 'goal' } | null>(null)
+  const [drawer, setDrawer] = useState<{ s: PlannedSession; edit: boolean } | null>(null)
+  const [eventDlg, setEventDlg] = useState<EventState>(null)
+  const [goalPick, setGoalPick] = useState<number | null>(null)
+  const phases = usePlanPhases()
+  const weekEvents = useCalendarEvents(weekStart, addDays(weekStart, 6), mode === 'week')
   const month = (anchor ?? today).slice(0, 7)
   const shiftMonth = (n: number) => {
     const p = parseLocal(`${month}-01`)
@@ -200,9 +248,20 @@ export default function PlanView() {
     }
   }, [goals.data])
 
+  const dated = useMemo(() => datedGoals(goals.data ?? [], today), [goals.data, today])
+  const goal = dated.find((g) => g.id === goalPick) ?? horizonGoal(dated, phases.data ?? [])
+  const goalsByDate = useMemo(() => new Map(dated.map((g) => [g.targetDate as string, g])), [dated])
+  const weekPhase = phaseAt(phases.data ?? [], weekStart) ?? phaseAt(phases.data ?? [], addDays(weekStart, 6))
+  const eventsOf = (date: string) => (weekEvents.data ?? []).filter((e) => e.startDate <= date && e.endDate >= date)
+
   const addSession = (date: string) => setSessionDialog({ open: true, session: null, date })
-  const editSession = (s: PlannedSession) => setSessionDialog({ open: true, session: s, date: s.date })
+  const editSession = (s: PlannedSession) => setDrawer({ s, edit: true })
+  const openSession = (s: PlannedSession) => setDrawer({ s, edit: false })
   const defaultAddDate = weekStart === currentWeek ? today : weekStart
+  const jump = (date: string) => {
+    setAnchor(date)
+    if (mode === 'week' && date > addDays(today, 56)) setMode('month')
+  }
 
   const goalRow = (g: Goal) => (
     <GoalRow
@@ -224,13 +283,13 @@ export default function PlanView() {
     <div className="animate-in">
       <PageHeader
         title="Planning & objectifs"
-        subtitle="Planifie, génère avec ton IA, envoie sur ta montre et compare le prévu au réalisé."
+        subtitle="Planifie jusqu’à ton objectif, adapte-toi aux imprévus, compare le prévu au réalisé."
         actions={
           <>
-            <button type="button" className="btn btn-ghost" onClick={() => setGoalDialog({ open: true, goal: null })}>
-              <Target className="size-4" aria-hidden="true" /> Nouvel objectif
+            <button type="button" className="btn btn-ghost" onClick={() => setEventDlg({ date: today, event: null })}>
+              <TriangleAlert className="size-4 text-warn" aria-hidden="true" /> Imprévu
             </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setGenOpen(true)}>
+            <button type="button" className="btn btn-ghost" onClick={() => setGenOpen({})}>
               <Sparkles className="size-4 text-accent" aria-hidden="true" /> Générer
             </button>
             <button type="button" className="btn btn-primary" onClick={() => addSession(defaultAddDate)}>
@@ -240,11 +299,19 @@ export default function PlanView() {
         }
       />
 
+      {goal && (
+        <GoalHorizon goals={dated} goal={goal} onGoal={setGoalPick} phases={phases.data ?? []} today={today} onJump={jump} onGenerate={() => setGenOpen({ horizon: 'goal' })} />
+      )}
+
       <Card
         as="section"
         aria-label="Semaine affichée"
         title={<span className="num">{mode === 'month' ? monthTitle : weekLabel(weekStart)}</span>}
-        subtitle={mode === 'month' ? 'Prévu vs réalisé sur le mois' : weekStart === currentWeek ? 'Semaine en cours' : weekStart < currentWeek ? 'Semaine passée' : 'Semaine à venir'}
+        subtitle={
+          mode === 'month'
+            ? 'Prévu vs réalisé sur le mois'
+            : `${weekStart === currentWeek ? 'Semaine en cours' : weekStart < currentWeek ? 'Semaine passée' : 'Semaine à venir'}${weekPhase ? ` · ${weekPhase.name}${weekPhase.weeklyVolumeKm ? ` (${fmtNumber(weekPhase.weeklyVolumeKm)} km visés)` : ''}` : ''}`
+        }
         icon={<CalendarRange className="size-4" />}
         action={
           <div className="flex flex-wrap items-center gap-1.5">
@@ -267,6 +334,11 @@ export default function PlanView() {
             <button type="button" className="icon-btn size-9" onClick={() => (mode === 'month' ? shiftMonth(1) : setAnchor(addDays(weekStart, 7)))} aria-label={mode === 'month' ? 'Mois suivant' : 'Semaine suivante'}>
               <ChevronRight className="size-4" />
             </button>
+            {goal && (
+              <button type="button" className="icon-btn size-9" onClick={() => jump(goal.targetDate as string)} aria-label={`Aller à l’échéance : ${goal.title}`} title="Aller à l’échéance">
+                <Flag className="size-4" />
+              </button>
+            )}
           </div>
         }
       >
@@ -274,7 +346,10 @@ export default function PlanView() {
           <MonthCalendar
             month={month}
             today={today}
-            onOpenSession={setDetail}
+            onOpenSession={openSession}
+            onOpenEvent={(e, date) => setEventDlg({ date, event: e })}
+            goals={goalsByDate}
+            phases={phases.data ?? []}
             onPickDay={(d) => {
               setAnchor(d)
               setMode('week')
@@ -292,12 +367,12 @@ export default function PlanView() {
       <div className={cn('mt-4 transition-opacity', stale && 'is-refetching', mode === 'month' && 'hidden')} aria-busy={week.isFetching}>
         <div className="hidden gap-3 xl:grid xl:grid-cols-7">
           {days.map((d) => (
-            <DayBlock key={d.date} day={d} today={today} layout="column" onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} onOpen={setDetail} />
+            <DayBlock key={d.date} day={d} today={today} layout="column" events={eventsOf(d.date)} goal={goalsByDate.get(d.date) ?? null} onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} onOpen={openSession} onEvent={setEventDlg} />
           ))}
         </div>
         <div className="space-y-3 xl:hidden">
           {days.map((d) => (
-            <DayBlock key={d.date} day={d} today={today} layout="row" onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} onOpen={setDetail} />
+            <DayBlock key={d.date} day={d} today={today} layout="row" events={eventsOf(d.date)} goal={goalsByDate.get(d.date) ?? null} onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} onOpen={openSession} onEvent={setEventDlg} />
           ))}
         </div>
         {data && data.days.every((d) => d.planned.length === 0) && (
@@ -369,8 +444,9 @@ export default function PlanView() {
         defaultDate={sessionDialog.date}
         onClose={() => setSessionDialog((s) => ({ ...s, open: false }))}
       />
-      {genOpen && <GenerateDialog open={genOpen} onClose={() => setGenOpen(false)} today={today} />}
-      <PlannedSessionDetail session={detail} onClose={() => setDetail(null)} onEdit={editSession} onDelete={setDeleteSession} />
+      {genOpen && <GenerateDialog open onClose={() => setGenOpen(null)} today={today} goals={dated} initialHorizon={genOpen.horizon} initialGoalId={goal?.id} />}
+      <SessionDrawer session={drawer?.s ?? null} startInEdit={drawer?.edit} onClose={() => setDrawer(null)} />
+      {eventDlg && <EventDialog open onClose={() => setEventDlg(null)} today={today} date={eventDlg.date} event={eventDlg.event} adaptOnly={eventDlg.adaptOnly} />}
       <GoalDialog open={goalDialog.open} goal={goalDialog.goal} onClose={() => setGoalDialog((s) => ({ ...s, open: false }))} />
       <ConfirmDialog
         open={deleteSession !== null}

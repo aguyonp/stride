@@ -2,6 +2,7 @@ import { Check } from 'lucide-react'
 import type { ActivitySummary } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { capitalize, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtRelative } from '../../lib/format'
+import { KudosBadge } from '../dashboard/RecordsCard'
 import { ActivityIcon } from '../ui/icons'
 
 export function ActivityRow({ activity: a, selected, onSelect }: { activity: ActivitySummary; selected: boolean; onSelect: () => void }) {
@@ -17,7 +18,10 @@ export function ActivityRow({ activity: a, selected, onSelect }: { activity: Act
           <ActivityIcon sport={a.sport} type={a.type} className="size-[1.125rem]" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-ink">{a.name}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-ink">{a.name}</span>
+            <KudosBadge count={a.kudos} className="flex-none" />
+          </span>
           <span className="block truncate text-xs text-ink-3">
             {capitalize(fmtRelative(a.startLocal))} · {a.typeLabel}
             {a.painDuring !== null && <span className={cn('ml-1', a.painDuring >= 3 ? 'text-warn' : '')}>· gêne {fmtNumber(a.painDuring, 1, { trim: true })}/10</span>}

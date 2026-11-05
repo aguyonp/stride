@@ -4,6 +4,8 @@ package strava
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 )
 
@@ -56,7 +58,39 @@ type Activity struct {
 	DeviceName           string     `json:"deviceName"`
 	ExternalID           string     `json:"externalId"`
 	Manual               bool       `json:"manual"`
+	KudosCount           *int       `json:"kudosCount"`
+	BestEfforts          []Effort   `json:"bestEfforts,omitempty"`
 	FetchedAt            *time.Time `json:"fetchedAt"`
+}
+
+// Effort is a Strava best effort of a run ("1k", "5k", "10k", "Half-Marathon", "Marathon"…).
+type Effort struct {
+	Name      string  `json:"name"`
+	DistanceM float64 `json:"distanceM"`
+	ElapsedS  float64 `json:"elapsedS"`
+}
+
+// Athlete is the /athlete subset Stride needs. Detailed is true when the token carries profile:read_all.
+type Athlete struct {
+	ID       int64
+	Name     string
+	Detailed bool
+}
+
+// Totals are the run or ride totals of /athletes/{id}/stats.
+type Totals struct {
+	Count     int     `json:"count"`
+	DistanceM float64 `json:"distanceM"`
+	MovingS   float64 `json:"movingS"`
+	ElevGainM float64 `json:"elevGainM"`
+}
+
+type AthleteStats struct {
+	RecentRun  Totals `json:"recentRun"` // last 4 weeks
+	YTDRun     Totals `json:"ytdRun"`
+	AllRun     Totals `json:"allRun"`
+	RecentRide Totals `json:"recentRide"`
+	YTDRide    Totals `json:"ytdRide"`
 }
 
 // Streams are aligned per second-ish samples; missing streams are nil.
@@ -95,6 +129,8 @@ type API interface {
 	GetStreams(ctx context.Context, accessToken string, id int64) (*Streams, error)
 	GetGear(ctx context.Context, accessToken, gearID string) (*Gear, error)
 	ListAthleteGear(ctx context.Context, accessToken string) ([]Gear, error)
+	GetAthlete(ctx context.Context, accessToken string) (*Athlete, error)
+	GetAthleteStats(ctx context.Context, accessToken string, athleteID int64) (*AthleteStats, error)
 	// EnsureSubscription creates the app-wide webhook subscription if missing and returns its id.
 	EnsureSubscription(ctx context.Context, callbackURL, verifyToken string) (int64, error)
 }
@@ -103,3 +139,15 @@ type API interface {
 type ErrUnauthorized struct{ Msg string }
 
 func (e *ErrUnauthorized) Error() string { return "strava unauthorized: " + e.Msg }
+
+// MissingScope reports a 401 caused by a scope the token does not carry (e.g. activity:read_permission).
+func MissingScope(err error) bool {
+	var ue *ErrUnauthorized
+	return errors.As(err, &ue) && strings.Contains(ue.Msg, "_permission")
+}
+
+// TokenRejected reports a 401 on an API call caused by an invalid or expired access token.
+func TokenRejected(err error) bool {
+	var ue *ErrUnauthorized
+	return errors.As(err, &ue) && !strings.Contains(ue.Msg, "_permission")
+}

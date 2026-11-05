@@ -10,6 +10,7 @@
 //            unauthorized (Garmin key refused) · fresh-db / fresh-cache / fresh-live (force freshness) · slow (latency ×4) ·
 //            pkcancel (passkey ceremony cancelled) · stravaerr (Strava OAuth returns an error)
 //   v3       see ./v3.ts (nollm, llmerr, pushok, importerr, notiferr, ready-*, noeff)
+//   3.1      see ./v31.ts (standalone, stravascope, longgoal)
 // Example: /?mock=user,strava,cooldown
 
 import type {
@@ -40,7 +41,8 @@ import { notesOf, plannedWithMatch, summarize, visibleItems, weekPlan } from './
 import { has } from './flags'
 import { activityReport, dayReport, multiReport, parseIncludeParam } from './report'
 import { buildActivityView, buildDayView } from './view'
-import { enrichActivityView, enrichDayView, registerV3 } from './v3'
+import { enrichActivityView, enrichDayView, llmConfigured, registerV3 } from './v3'
+import { registerV31 } from './v31'
 
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -457,7 +459,7 @@ route('GET', /^\/api\/admin\/logs$/, ({ url }) => {
   const page = rows.slice(0, 100)
   return json({ items: page, nextBefore: rows.length > 100 ? page[page.length - 1].id : null, dropped: 0 })
 })
-route('GET', /^\/api\/version$/, () => json({ version: '3.0.0', commit: 'demo123', builtAt: '2026-11-05T20:00:00Z', go: 'go1.27.1', label: '3.0.0 · demo123 · 2026-11-05T20:00:00Z' }))
+route('GET', /^\/api\/version$/, () => json({ version: '3.1.0', commit: 'demo123', builtAt: '2026-11-05T20:00:00Z', go: 'go1.27.1', label: '3.1.0 · demo123 · 2026-11-05T20:00:00Z' }))
 route('POST', /^\/api\/actions$/, () => new Response(null, { status: 204 }))
 route('POST', /^\/api\/admin\/cache\/flush$/, () => json({ removed: 37 + Math.floor(Math.random() * 120) }))
 route('GET', /^\/api\/admin\/connections$/, () => {
@@ -520,11 +522,11 @@ route('GET', /^\/api\/integrations\/strava\/connect$/, ({ data, url }) => {
   const st = data.integrations.strava
   if (!st.available) return new Response(null, { status: 302, headers: { Location: `${ret}${sep}strava=error&reason=unavailable` } })
   if (has('stravaerr')) return new Response(null, { status: 302, headers: { Location: `${ret}${sep}strava=error&reason=access_denied` } })
-  Object.assign(st, { connected: true, status: 'ok', athleteName: 'Alex D.', lastSyncAt: isoNow(), lastError: null })
+  Object.assign(st, { connected: true, status: 'ok', athleteName: 'Alex D.', lastSyncAt: isoNow(), lastError: null, scopes: ['read', 'activity:read_all', 'profile:read_all'], missingScopes: [] })
   return new Response(null, { status: 302, headers: { Location: `${ret}${sep}strava=connected` } })
 })
 route('DELETE', /^\/api\/integrations\/strava$/, ({ data }) => {
-  Object.assign(data.integrations.strava, { connected: false, status: 'disconnected', athleteName: null, lastError: null })
+  Object.assign(data.integrations.strava, { connected: false, status: 'disconnected', athleteName: null, lastError: null, scopes: [], missingScopes: [] })
   return json(data.integrations)
 })
 pub('GET', /^\/api\/webhooks\/strava$/, ({ url }) => json({ 'hub.challenge': url.searchParams.get('hub.challenge') ?? '' }))
@@ -775,6 +777,7 @@ registerV3(route, (data, id) => {
   const it = findVisible(data, String(id))
   return it ? { it, v: enrichActivityView(buildActivityView(it, data), it, data) } : null
 })
+registerV31(route, llmConfigured)
 
 /* ---------------------------------- Entry point ---------------------------------- */
 

@@ -8,6 +8,8 @@ export interface CatalogItem {
   id: number
   garminId: number
   stravaId: number | null
+  /** Manual activity (standalone mode, §12.4). */
+  manual?: boolean
   name: string
   type: string
   typeLabel: string

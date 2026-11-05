@@ -89,6 +89,29 @@ export function parsePace(input: string): number | null {
   return v > 0 ? v : null
 }
 
+/** Parses `h:mm:ss`, `mm:ss` or plain minutes (`45`, `45,5`) → seconds, null when invalid. */
+export function parseDuration(input: string): number | null {
+  const t = input.trim()
+  if (!t) return null
+  const hms = /^(\d{1,2})[:h](\d{1,2})[:'’](\d{1,2})$/.exec(t)
+  if (hms) {
+    const [h, m, s] = hms.slice(1).map(Number)
+    return m < 60 && s < 60 && h * 3600 + m * 60 + s > 0 ? h * 3600 + m * 60 + s : null
+  }
+  const ms = /^(\d{1,3})[:'’](\d{1,2})$/.exec(t)
+  if (ms) {
+    const [m, s] = ms.slice(1).map(Number)
+    return s < 60 && m * 60 + s > 0 ? m * 60 + s : null
+  }
+  const n = Number(t.replace(',', '.'))
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 60) : null
+}
+
+/** `durationInput(6080) = "1:41:20"`, `durationInput(1361) = "22:41"`. */
+export function durationInput(seconds: number | null | undefined): string {
+  return isNum(seconds) && seconds > 0 ? fmtDuration(seconds) : ''
+}
+
 /** `fmtPct(49.2) = "49,2 %"`. */
 export function fmtPct(v: Num, decimals = 1): string {
   if (!isNum(v)) return ND

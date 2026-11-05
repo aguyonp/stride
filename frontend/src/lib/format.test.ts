@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  durationInput,
+  parseDuration,
   addDays,
   diffDays,
   fmtDuration,
@@ -99,5 +101,20 @@ describe('dates', () => {
     const late = new Date(Date.UTC(2026, 10, 3, 23, 30))
     expect(todayISO('Europe/Paris', late)).toBe('2026-11-04')
     expect(todayISO('America/New_York', late)).toBe('2026-11-03')
+  })
+})
+
+describe('parseDuration', () => {
+  it('reads h:mm:ss, mm:ss and minutes', () => {
+    expect(parseDuration('1:41:20')).toBe(6080)
+    expect(parseDuration('22:41')).toBe(1361)
+    expect(parseDuration('45')).toBe(2700)
+    expect(parseDuration('45,5')).toBe(2730)
+    expect(parseDuration('1h05:00')).toBe(3900)
+    expect(parseDuration('22:75')).toBeNull()
+    expect(parseDuration('abc')).toBeNull()
+    expect(parseDuration('')).toBeNull()
+    expect(durationInput(6080)).toBe('1:41:20')
+    expect(durationInput(null)).toBe('')
   })
 })

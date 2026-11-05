@@ -1,4 +1,4 @@
-import { Bike, CloudSun, Loader2, Plug, RefreshCw, Unplug, Watch } from 'lucide-react'
+import { Bike, CloudSun, KeyRound, Loader2, Plug, RefreshCw, ShieldAlert, Unplug, Watch } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useIntegrationMutations, useIntegrations } from '../../api/queries'
 import type { Integrations } from '../../api/types'
@@ -38,7 +38,12 @@ function LastError({ message }: { message: string | null }) {
 export function IntegrationsSection() {
   const integ = useIntegrations()
   return (
-    <Section id="integrations" title="Intégrations" icon={<Plug />} description="Garmin Connect (clé Personal API), Strava (OAuth) et météo. Tu peux connecter l’un, l’autre ou les deux.">
+    <Section
+      id="integrations"
+      title="Intégrations"
+      icon={<Plug />}
+      description="Garmin Connect (clé Personal API), Strava (OAuth) et météo. Connecte l’un, l’autre, les deux… ou aucun : Stride fonctionne aussi en saisie manuelle."
+    >
       {integ.isError ? (
         <ErrorView error={integ.error} onRetry={() => void integ.refetch()} title="Intégrations indisponibles" />
       ) : !integ.data ? (
@@ -52,6 +57,10 @@ export function IntegrationsSection() {
             <GarminCard g={integ.data.garmin} />
             <StravaCard s={integ.data.strava} />
           </div>
+          <p className="flex items-center gap-2 text-sm text-ink-3">
+            <KeyRound className="size-4 flex-none" aria-hidden="true" />
+            Connexions propres à ton compte : ta clé Garmin, tes jetons Strava, ta clé IA et tes chaussures ne sont visibles que par toi (chiffrés côté serveur).
+          </p>
           <p className="flex items-center gap-2 text-sm text-ink-3">
             <CloudSun className="size-4 flex-none" aria-hidden="true" />
             Météo des séances : {integ.data.weather.enabled ? `${integ.data.weather.provider || 'Open-Meteo'} (activée, sans clé)` : 'désactivée sur ce serveur'}
@@ -89,6 +98,7 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
             ]}
           />
           <LastError message={g.lastError} />
+          <p className="mt-3 text-xs text-ink-3">L’API personnelle Garmin n’expose ni records, ni météo, ni chaussures, ni likes, ni envoi de séances : Stride les calcule, les prend chez Strava ou Open-Meteo, ou passe par le fichier .FIT.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className="btn btn-ghost" onClick={test} disabled={m.testGarmin.isPending}>
               {m.testGarmin.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
@@ -144,10 +154,13 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
   )
 }
 
+const SCOPE_LABEL: Record<string, string> = { read: 'profil public', 'activity:read_all': 'activités (y compris privées)', 'profile:read_all': 'profil complet et chaussures' }
+
 function StravaCard({ s }: { s: Integrations['strava'] }) {
   const { toast } = useToast()
   const m = useIntegrationMutations()
   const [confirm, setConfirm] = useState(false)
+  const missing = s.missingScopes ?? []
   return (
     <ProviderCard icon={<Bike />} title="Strava" badge={s.available ? <ProviderBadge status={s.status} connected={s.connected} /> : <span className="chip border border-line bg-track text-ink-3">Indisponible</span>}>
       {!s.available ? (
@@ -158,9 +171,23 @@ function StravaCard({ s }: { s: Integrations['strava'] }) {
             items={[
               ['Athlète', s.athleteName ?? '—'],
               ['Dernière synchro', s.lastSyncAt ? fmtWhen(s.lastSyncAt) : 'jamais'],
+              ...(s.scopes?.length ? ([['Autorisations', s.scopes.map((x) => SCOPE_LABEL[x] ?? x).join(', ')]] as [string, string][]) : []),
             ]}
           />
           <LastError message={s.lastError} />
+          {missing.length > 0 && (
+            <div role="status" className="mt-3 rounded-xl border border-warn/30 bg-warn/[0.08] p-3 text-sm text-ink-2">
+              <p className="flex items-center gap-1.5 font-semibold text-ink">
+                <ShieldAlert className="size-4 text-warn" aria-hidden="true" /> Autorisations Strava incomplètes
+              </p>
+              <p className="mt-1 text-xs">
+                Il manque : {missing.map((x) => SCOPE_LABEL[x] ?? x).join(', ')}. Sans elles, Stride ne lit ni tes activités, ni les kudos, ni tes chaussures Strava. Reconnecte-toi et coche toutes les cases demandées.
+              </p>
+              <div className="mt-2.5">
+                <StravaConnectButton strava={s} returnPath="/settings" label="Reconnecter Strava" />
+              </div>
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className="btn btn-danger" onClick={() => setConfirm(true)}>
               <Unplug className="size-4" aria-hidden="true" />

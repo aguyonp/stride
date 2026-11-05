@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import { invalidateDomain } from './queries'
-import type { LLMAnalysis, LLMAnalyzeRequest, LLMConfigInput, NotificationInput, PlanGenerateRequest, PlannedSessionInput } from './types'
+import type { LLMAnalysis, LLMAnalyzeRequest, LLMConfigInput, NotificationInput, PlanGenerateRequest, PlannedSessionInput, PlanPhase } from './types'
 
 const qk3 = {
   llm: ['llm'] as const,
@@ -12,7 +12,7 @@ const qk3 = {
   notifications: ['notifications'] as const,
 }
 
-const PLAN_ROOTS = ['plan', 'week', 'calendar', 'activity', 'activities', 'day', 'report']
+export const PLAN_ROOTS = ['plan', 'week', 'calendar', 'phases', 'activity', 'activities', 'day', 'report']
 
 export function useLlmConfig() {
   return useQuery({ queryKey: qk3.llm, queryFn: api.llm, staleTime: 5 * 60_000 })
@@ -52,7 +52,7 @@ export function usePlanV3() {
   return {
     generate: useMutation({ mutationFn: (b: PlanGenerateRequest) => api.planGenerate(b) }),
     importText: useMutation({ mutationFn: (text: string) => api.planImport(text) }),
-    bulk: useMutation({ mutationFn: (s: PlannedSessionInput[]) => api.planBulk(s), onSuccess: done }),
+    bulk: useMutation({ mutationFn: (b: { sessions: PlannedSessionInput[]; phases?: PlanPhase[] }) => api.planBulk(b.sessions, b.phases), onSuccess: done }),
     push: useMutation({ mutationFn: (id: number) => api.pushGarmin(id), onSettled: done }),
   }
 }

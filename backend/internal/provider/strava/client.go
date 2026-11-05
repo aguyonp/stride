@@ -403,6 +403,12 @@ type apiActivity struct {
 	DeviceName           string    `json:"device_name"`
 	ExternalID           *string   `json:"external_id"`
 	Manual               bool      `json:"manual"`
+	KudosCount           *int      `json:"kudos_count"`
+	BestEfforts          []struct {
+		Name        string  `json:"name"`
+		Distance    float64 `json:"distance"`
+		ElapsedTime float64 `json:"elapsed_time"`
+	} `json:"best_efforts"`
 }
 
 func str(p *string) string {
@@ -421,7 +427,10 @@ func (a apiActivity) activity() Activity {
 		ElevationGainM: a.TotalElevationGain, AverageSpeedMS: a.AverageSpeed, AverageHeartrate: a.AverageHeartrate,
 		MaxHeartrate: a.MaxHeartrate, AverageCadenceRaw: a.AverageCadence, AverageWatts: a.AverageWatts,
 		WeightedAverageWatts: a.WeightedAverageWatts, SufferScore: a.SufferScore, PerceivedExertion: a.PerceivedExertion,
-		GearID: str(a.GearID), DeviceName: a.DeviceName, ExternalID: str(a.ExternalID), Manual: a.Manual,
+		GearID: str(a.GearID), DeviceName: a.DeviceName, ExternalID: str(a.ExternalID), Manual: a.Manual, KudosCount: a.KudosCount,
+	}
+	for _, e := range a.BestEfforts {
+		out.BestEfforts = append(out.BestEfforts, Effort{Name: e.Name, DistanceM: e.Distance, ElapsedS: e.ElapsedTime})
 	}
 	if out.SportType == "" {
 		out.SportType = a.Type
@@ -531,6 +540,50 @@ func (c *Client) ListAthleteGear(ctx context.Context, accessToken string) ([]Gea
 		out = append(out, g.gear("bike"))
 	}
 	return out, nil
+}
+
+func (c *Client) GetAthlete(ctx context.Context, accessToken string) (*Athlete, error) {
+	var raw struct {
+		ID            int64  `json:"id"`
+		Firstname     string `json:"firstname"`
+		Lastname      string `json:"lastname"`
+		ResourceState int    `json:"resource_state"`
+	}
+	if err := c.do(ctx, request{method: http.MethodGet, endpoint: "GET /athlete", path: "/api/v3/athlete", token: accessToken}, &raw); err != nil {
+		return nil, err
+	}
+	if raw.ID == 0 {
+		return nil, errors.New("strava GET /athlete: missing athlete id")
+	}
+	return &Athlete{ID: raw.ID, Name: strings.TrimSpace(raw.Firstname + " " + raw.Lastname), Detailed: raw.ResourceState >= 3}, nil
+}
+
+type apiTotals struct {
+	Count         int     `json:"count"`
+	Distance      float64 `json:"distance"`
+	MovingTime    float64 `json:"moving_time"`
+	ElevationGain float64 `json:"elevation_gain"`
+}
+
+func (t apiTotals) totals() Totals {
+	return Totals{Count: t.Count, DistanceM: t.Distance, MovingS: t.MovingTime, ElevGainM: t.ElevationGain}
+}
+
+func (c *Client) GetAthleteStats(ctx context.Context, accessToken string, athleteID int64) (*AthleteStats, error) {
+	var raw struct {
+		RecentRun  apiTotals `json:"recent_run_totals"`
+		YTDRun     apiTotals `json:"ytd_run_totals"`
+		AllRun     apiTotals `json:"all_run_totals"`
+		RecentRide apiTotals `json:"recent_ride_totals"`
+		YTDRide    apiTotals `json:"ytd_ride_totals"`
+	}
+	err := c.do(ctx, request{method: http.MethodGet, endpoint: "GET /athletes/{id}/stats",
+		path: "/api/v3/athletes/" + strconv.FormatInt(athleteID, 10) + "/stats", token: accessToken}, &raw)
+	if err != nil {
+		return nil, err
+	}
+	return &AthleteStats{RecentRun: raw.RecentRun.totals(), YTDRun: raw.YTDRun.totals(), AllRun: raw.AllRun.totals(),
+		RecentRide: raw.RecentRide.totals(), YTDRide: raw.YTDRide.totals()}, nil
 }
 
 func (c *Client) appCredentials() url.Values {
