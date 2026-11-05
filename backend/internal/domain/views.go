@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
-	"strings"
 	"time"
 
 	"stride/internal/analysis"
@@ -574,21 +572,3 @@ func (s *Services) ResolveDate(ctx context.Context, uid int64, d string) (string
 	return d, nil
 }
 
-func sortedKeys(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func joinNonEmpty(sep string, parts ...string) string {
-	var out []string
-	for _, p := range parts {
-		if strings.TrimSpace(p) != "" {
-			out = append(out, p)
-		}
-	}
-	return strings.Join(out, sep)
-}
