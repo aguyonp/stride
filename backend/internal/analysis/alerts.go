@@ -149,7 +149,7 @@ func BuildAlerts(in AlertInput, p athlete.Profile) []Alert {
 		if m.Status != "done" && m.Status != "partial" {
 			continue
 		}
-		dev := math.Max(math.Abs(pf(m.DurationDeltaPct)), math.Abs(pf(m.DistanceDeltaPct)))
+		dev := math.Max(math.Abs(first(pf(m.DurationDeltaPct), 0)), math.Abs(first(pf(m.DistanceDeltaPct), 0)))
 		paceOut := m.PaceDeltaSecPerKm != nil && *m.PaceDeltaSecPerKm != 0
 		if (valid(dev) && dev > th.PlanDeviationPct) || paceOut {
 			add("warn", "PLAN_DEVIATION", "Écart prévu / réalisé", m.Summary)
