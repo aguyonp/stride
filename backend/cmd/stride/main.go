@@ -1,8 +1,8 @@
-// Commande server : API Stride + SPA embarqué.
+// Command stride runs the Stride API with the embedded SPA.
 //
-//	server              démarre le serveur HTTP
-//	server healthcheck  GET http://127.0.0.1:$PORT/api/health → exit 0/1 (HEALTHCHECK Docker)
-//	server version      affiche la version
+//	stride [serve]      start the HTTP server (default)
+//	stride healthcheck  GET /health/ready on the local port, exit 0/1 (container healthcheck)
+//	stride version      print the version
 package main
 
 import (
@@ -15,62 +15,60 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
+	"sync"
 	"syscall"
 	"time"
-	_ "time/tzdata" // fuseaux embarqués (image distroless sans tzdata)
+	_ "time/tzdata"
 
-	"stride/internal/analysis"
-	"stride/internal/config"
-	"stride/internal/fitdata"
-	"stride/internal/garmin"
+	"stride/internal/admin"
+	"stride/internal/apimeter"
+	"stride/internal/auth"
+	"stride/internal/cache"
+	"stride/internal/domain"
+	"stride/internal/env"
 	"stride/internal/httpapi"
 	"stride/internal/logx"
-	"stride/internal/report"
+	"stride/internal/provider/strava"
+	"stride/internal/provider/weather"
+	"stride/internal/scheduler"
+	"stride/internal/secret"
+	"stride/internal/store"
 	"stride/internal/web"
 )
 
-// version est injectée au build : -ldflags "-X main.version=1.0.0".
+// version is set at build time: -ldflags "-X main.version=2.0.0".
 var version = "dev"
 
 func main() {
+	cmd := "serve"
 	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "healthcheck":
-			os.Exit(healthcheck())
-		case "version", "--version", "-version", "-v":
-			fmt.Println(appVersion())
-			return
-		default:
-			fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : healthcheck | version)\n", os.Args[1])
-			os.Exit(2)
+		cmd = os.Args[1]
+	}
+	switch cmd {
+	case "serve":
+		if err := run(); err != nil {
+			fmt.Fprintln(os.Stderr, "❌", err)
+			os.Exit(1)
 		}
+	case "healthcheck":
+		os.Exit(healthcheck())
+	case "version", "--version", "-v":
+		fmt.Println(version)
+	default:
+		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version)\n", cmd)
+		os.Exit(2)
 	}
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "❌", err)
-		os.Exit(1)
-	}
-}
-
-func appVersion() string {
-	if version == "dev" {
-		if v := os.Getenv("APP_VERSION"); v != "" {
-			return v
-		}
-	}
-	return version
 }
 
 func healthcheck() int {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	if _, err := strconv.Atoi(port); err != nil {
-		port = "8080"
+	port := "8080"
+	if addr := os.Getenv("STRIDE_LISTEN_ADDR"); addr != "" {
+		if _, p, err := net.SplitHostPort(addr); err == nil && p != "" {
+			port = p
+		}
 	}
 	c := &http.Client{Timeout: 3 * time.Second}
-	resp, err := c.Get("http://127.0.0.1:" + port + "/api/health")
+	resp, err := c.Get("http://127.0.0.1:" + port + "/health/ready")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1
@@ -84,110 +82,145 @@ func healthcheck() int {
 }
 
 func run() error {
-	cfg, err := config.Load()
+	cfg, err := env.Load()
 	if err != nil {
 		return err
 	}
 	log := logx.New(logx.Options{Level: cfg.LogLevel, Format: cfg.LogFormat})
 	slog.SetDefault(log)
-
-	if err := ensureDataDir(cfg.DataDir); err != nil {
-		log.Error("❌ Répertoire de données inutilisable", "dataDir", cfg.DataDir, "err", err.Error())
-		return fmt.Errorf("DATA_DIR %q non inscriptible (droits du volume ?) : %w", cfg.DataDir, err)
-	}
-	settings, err := config.NewStore(cfg.DataDir, cfg)
+	loc, err := time.LoadLocation(cfg.Timezone)
 	if err != nil {
 		return err
 	}
 
-	g := garmin.New(garmin.Options{
-		DataDir:  cfg.DataDir,
-		Key:      func() string { k, _ := settings.APIKey(); return k },
-		Logger:   log,
-		Location: settings.Location,
-	})
-	svc := &analysis.Service{
-		G:        g,
-		FIT:      fitdata.NewStore(g, log),
-		Settings: settings,
-		Reporter: report.Reporter{},
-		Log:      log,
-	}
-	srvAPI := &httpapi.Server{
-		Cfg:      cfg,
-		Settings: settings,
-		G:        g,
-		Svc:      svc,
-		Log:      log,
-		Version:  appVersion(),
-		Static:   web.New(),
-	}
-
-	_, keySrc := settings.APIKey()
-	keyDesc := keySrc
-	if keySrc == "env" {
-		keyDesc = "env (" + cfg.EnvAPIKeyVar + ")"
-	}
-	auth := "off"
-	if cfg.AuthEnabled() {
-		auth = "on"
-	}
-	envFile := "aucun"
-	if cfg.EnvFileLoaded != "" {
-		envFile = fmt.Sprintf("%s (%d variables)", cfg.EnvFileLoaded, cfg.EnvFileVars)
-	}
-	absData, _ := filepath.Abs(cfg.DataDir)
-	log.Info(fmt.Sprintf("🚀 Stride %s démarré sur :%d", appVersion(), cfg.Port),
-		"dataDir", absData, "cléGarmin", keyDesc, "auth", auth, "tz", settings.Timezone(),
-		"envFile", envFile, "frontend", web.HasFrontend())
-	if keySrc == "none" {
-		log.Warn("🔑 Aucune clé Garmin configurée : renseignez-la dans Réglages ou via GARMIN_API_TOKEN")
-	} else {
-		log.Info("🔑 Clé Garmin chargée", "source", keyDesc)
-	}
-
-	srv := &http.Server{
-		Addr:              net.JoinHostPort("", strconv.Itoa(cfg.Port)),
-		Handler:           srvAPI.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if err := ensureWritable(cfg.DataDir); err != nil {
+		return fmt.Errorf("STRIDE_DATA_DIR %q non inscriptible (droits du volume ?) : %w", cfg.DataDir, err)
+	}
+	st, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("base SQLite %s : %w", cfg.DBPath, err)
+	}
+	defer st.Close()
+	if err := st.EnsureSetting(ctx, store.SettingRegistrationMode, cfg.RegistrationMode, time.Now()); err != nil {
+		return err
+	}
+
+	kv, cacheBackend, err := openCache(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer kv.Close()
+
+	sealer, err := secret.New(cfg.MasterKey, cfg.MasterKeyPrevious)
+	if err != nil {
+		return err
+	}
+
+	meter := apimeter.NewLocal(apimeter.Options{Log: log, Recent: recentErrors(ctx, st, log), Sink: persistErrors(st)})
+	defer meter.Close()
+
+	var stravaAPI strava.API
+	if cfg.StravaEnabled() {
+		stravaAPI = strava.NewClient(strava.Config{ClientID: cfg.StravaClientID, ClientSecret: cfg.StravaClientSecret, Meter: meter})
+	}
+	var wx weather.Provider
+	if cfg.WeatherProvider != "off" {
+		if cfg.WeatherProvider != "open-meteo" {
+			log.Warn("⚠️ STRIDE_WEATHER inconnu, Open-Meteo utilisé", "valeur", cfg.WeatherProvider)
+		}
+		wx = weather.NewOpenMeteo(weather.OpenMeteoOptions{Meter: meter})
+	}
+
+	dom, err := domain.New(domain.Deps{Env: cfg, Store: st, Cache: kv, Sealer: sealer, Meter: meter, Strava: stravaAPI, Weather: wx, Log: log})
+	if err != nil {
+		return err
+	}
+	authSvc, err := auth.New(auth.Options{Env: cfg, Store: st, Cache: kv, Log: log,
+		OnUserCreated: dom.OnUserCreated, OnUserDeleted: dom.PurgeUserCache})
+	if err != nil {
+		return err
+	}
+	handler := httpapi.New(httpapi.Deps{
+		Store: st, Cache: kv, Auth: authSvc, Domain: dom, Log: log, Version: version, HTTPS: cfg.CookieSecure, Static: web.New(),
+		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log}),
+	})
+
+	sched := scheduler.New(scheduler.Options{
+		Hour: cfg.SyncHour, JitterMin: cfg.SyncJitterMin, JitterMax: cfg.SyncJitterMax, Location: loc, Log: log,
+		// TODO(domain): list only active users having a provider connection.
+		Users: st.ListActiveUserIDs,
+		Sync:  dom.MorningSync,
+		Purge: maintenance(st, log),
+	})
+
+	srv := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	}
+	ln, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("écoute sur %s impossible : %w", cfg.ListenAddr, err)
+	}
+
+	mode, _ := st.RegistrationMode(ctx)
+	absDB, _ := filepath.Abs(cfg.DBPath)
+	log.Info(fmt.Sprintf("🚀 Stride %s démarré", version),
+		"écoute", cfg.ListenAddr, "urlPublique", cfg.PublicURL, "db", absDB, "cache", cacheBackend,
+		"inscription", mode, "strava", onOff(stravaAPI != nil), "météo", onOff(wx != nil),
+		"tz", cfg.Timezone, "syncMatinale", fmt.Sprintf("%02d:00", cfg.SyncHour), "frontend", web.HasFrontend())
+
+	var wg sync.WaitGroup
+	schedCtx, stopSched := context.WithCancel(context.Background())
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sched.Run(schedCtx)
+	}()
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 		close(errCh)
 	}()
 
+	var serveErr error
 	select {
-	case err := <-errCh:
-		if err != nil {
-			log.Error("❌ Serveur HTTP arrêté sur erreur", "err", err.Error())
-			return err
+	case serveErr = <-errCh:
+		if serveErr != nil {
+			log.Error("❌ Serveur HTTP arrêté sur erreur", "err", serveErr.Error())
 		}
-		return nil
 	case <-ctx.Done():
+		log.Info("🛑 Arrêt demandé, fermeture des connexions…")
 	}
-	log.Info("🛑 Arrêt demandé, fermeture des connexions…")
 	shCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shCtx); err != nil {
 		log.Warn("⚠️ Arrêt forcé", "err", err.Error())
 	}
+	stopSched()
+	wg.Wait()
 	log.Info("🛑 Serveur arrêté")
-	return nil
+	return serveErr
 }
 
-// ensureDataDir crée DATA_DIR (0700) et vérifie qu'il est inscriptible.
-func ensureDataDir(dir string) error {
-	if err := os.MkdirAll(filepath.Join(dir, "cache"), 0o700); err != nil {
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+func ensureWritable(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	f, err := os.CreateTemp(dir, ".write-test-*")
@@ -197,4 +230,72 @@ func ensureDataDir(dir string) error {
 	name := f.Name()
 	f.Close()
 	return os.Remove(name)
+}
+
+// openCache connects to Valkey with backoff (it may still be starting) or falls back to memory when not configured.
+func openCache(ctx context.Context, cfg env.Config, log *slog.Logger) (cache.Cache, string, error) {
+	if cfg.ValkeyURL == "" {
+		return cache.NewMemory(), "mémoire", nil
+	}
+	delay := 500 * time.Millisecond
+	deadline := time.Now().Add(60 * time.Second)
+	for attempt := 1; ; attempt++ {
+		v, err := cache.NewValkey(cfg.ValkeyURL)
+		if err == nil {
+			pctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			err = v.Ping(pctx)
+			cancel()
+			if err == nil {
+				return v, "valkey", nil
+			}
+			v.Close()
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return nil, "", fmt.Errorf("valkey injoignable après %d tentatives : %w", attempt, err)
+		}
+		log.Warn("⏳ Valkey pas encore prêt, nouvelle tentative", "tentative", attempt, "dans", delay.String())
+		select {
+		case <-ctx.Done():
+			return nil, "", ctx.Err()
+		case <-time.After(delay):
+		}
+		delay = min(delay*2, 5*time.Second)
+	}
+}
+
+func recentErrors(ctx context.Context, st *store.Store, log *slog.Logger) []apimeter.ErrorEvent {
+	evs, err := st.RecentAPIEvents(ctx, 50)
+	if err != nil {
+		log.Warn("⚠️ Historique des erreurs API illisible", "err", err.Error())
+		return nil
+	}
+	out := make([]apimeter.ErrorEvent, 0, len(evs))
+	for _, e := range evs {
+		out = append(out, apimeter.ErrorEvent{Time: e.At, Provider: e.Provider, UserID: e.UserID, Endpoint: e.Endpoint, Status: e.Status, Message: e.Message})
+	}
+	return out
+}
+
+func persistErrors(st *store.Store) func(context.Context, []apimeter.ErrorEvent) error {
+	return func(ctx context.Context, evs []apimeter.ErrorEvent) error {
+		rows := make([]store.APIEvent, 0, len(evs))
+		for _, e := range evs {
+			rows = append(rows, store.APIEvent{At: e.Time, Provider: e.Provider, UserID: e.UserID, Endpoint: e.Endpoint, Status: e.Status, Message: e.Message})
+		}
+		return st.InsertAPIEvents(ctx, rows)
+	}
+}
+
+func maintenance(st *store.Store, log *slog.Logger) func(context.Context) error {
+	const keep = 7 * 24 * time.Hour
+	return func(ctx context.Context) error {
+		now := time.Now()
+		sessions, err1 := st.PurgeExpiredSessions(ctx, now)
+		invitations, err2 := st.PurgeInvitations(ctx, now, keep)
+		events, err3 := st.PurgeAPIEvents(ctx, now.Add(-keep))
+		if sessions+invitations+events > 0 {
+			log.Info("🧹 Maintenance", "sessionsExpirées", sessions, "invitations", invitations, "événementsAPI", events)
+		}
+		return errors.Join(err1, err2, err3)
+	}
 }

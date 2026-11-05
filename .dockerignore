@@ -1,20 +1,24 @@
-# Secrets et données locales : jamais dans le contexte de build
+# Secrets and local data never enter the build context
 .env
 .env.*
 !.env.example
+**/*.env
 data/
 *.fit
+*.db
+*.db-*
 
-# Artefacts / dépendances reconstruits dans l'image
+# Rebuilt inside the image
 **/node_modules
 frontend/dist
 backend/internal/web/dist
 bin/
 .build/
 
-# Divers
+# Misc
 .git
 .gitignore
+.claude
 .code-review-graph
 .vscode
 .idea
@@ -22,3 +26,4 @@ bin/
 docs/
 Makefile
 compose.yml
+README.md

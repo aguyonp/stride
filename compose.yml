@@ -3,19 +3,38 @@ services:
     build:
       context: .
       args:
-        VERSION: ${STRIDE_VERSION:-1.0.0}
-    image: stride:${STRIDE_VERSION:-1.0.0}
-    container_name: stride
+        VERSION: ${STRIDE_VERSION:-2.0.0}
+    image: stride:${STRIDE_VERSION:-2.0.0}
     env_file: .env
     environment:
-      # forcés pour rester cohérents avec l'image (un PORT/DATA_DIR du .env local ne doit pas casser le mapping)
-      PORT: "8080"
-      DATA_DIR: /data
-    # Linux : ./data doit appartenir à cet UID/GID (make docker-up le règle sur l'utilisateur courant)
+      # forced so a local .env cannot break the container layout
+      STRIDE_LISTEN_ADDR: ":8080"
+      STRIDE_DATA_DIR: /data
+      STRIDE_VALKEY_URL: redis://valkey:6379/0
+    # Linux: ./data must belong to this UID/GID (make docker-up sets the current user)
     user: "${STRIDE_UID:-65532}:${STRIDE_GID:-65532}"
     volumes:
       - ./data:/data
     ports:
-      - "${STRIDE_BIND:-127.0.0.1}:${STRIDE_PORT:-8080}:8080"
+      - "${STRIDE_HOST_BIND:-127.0.0.1}:${STRIDE_HOST_PORT:-8080}:8080"
+    depends_on:
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/stride", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
     restart: unless-stopped
-    # healthcheck hérité de l'image (HEALTHCHECK → /app/stride healthcheck)
+
+  valkey:
+    image: valkey/valkey:9-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
