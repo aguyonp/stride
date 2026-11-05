@@ -326,6 +326,9 @@ func TestParseInclude(t *testing.T) {
 	if _, err := ParseInclude("pain,weather"); err == nil {
 		t.Error("unknown chip must fail")
 	}
+	if inc, err := ParseInclude("none"); err != nil || inc == nil || inc.String() != "" || inc.Has("pain") {
+		t.Errorf("none → no optional section: %v %v", inc, err)
+	}
 	if inc, err := ParseIncludeList(nil); err != nil || len(inc) != len(Chips) {
 		t.Error("nil list → all")
 	}

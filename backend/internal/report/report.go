@@ -62,11 +62,17 @@ func ParseInclude(csv string) (Include, error) {
 	return ParseIncludeList(strings.Split(csv, ","))
 }
 
+// ParseIncludeList: empty means every chip, "none" means no optional section.
 func ParseIncludeList(list []string) (Include, error) {
 	inc := Include{}
+	none := false
 	for _, raw := range list {
 		c := strings.ToLower(strings.TrimSpace(raw))
 		if c == "" {
+			continue
+		}
+		if c == "none" {
+			none = true
 			continue
 		}
 		known := false
@@ -80,7 +86,7 @@ func ParseIncludeList(list []string) (Include, error) {
 		}
 		inc[c] = true
 	}
-	if len(inc) == 0 {
+	if len(inc) == 0 && !none {
 		return All(), nil
 	}
 	return inc, nil
