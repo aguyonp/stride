@@ -26,7 +26,7 @@ open http://localhost:8080
 
 ## Images
 
-CI tests, then pushes `ghcr.io/aguyonp/stride` (amd64, arm64): `main` → `latest`, other branches → `dev`, plus `sha-<commit>`. Use `STRIDE_TAG=dev` for the dev image; update with `docker compose pull && docker compose up -d`.
+CI tests, then pushes `ghcr.io/aguyonp/stride` (amd64, arm64): tag `vX.Y.Z` → `latest` + `vX.Y.Z` and a GitHub release with the changelog; `main` → `prerelease`; other branches → `dev`; always `sha-<commit>`. Release: bump `VERSION` in your PR, merge, then `make release` on `main`. Pick an image with `STRIDE_TAG`; update with `docker compose pull && docker compose up -d`.
 
 ## Configuration (`.env`)
 

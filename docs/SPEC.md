@@ -416,7 +416,7 @@ No splits. Structure:
 | `STRIDE_GARMIN_BASE_URL` | Garmin personal API | tests |
 | `STRIDE_ALLOW_PRIVATE_EGRESS` | `false` | `true` lets user-supplied URLs (LLM `openai_compat` base URL, notification webhooks) reach loopback/private networks (e.g. a local Ollama) |
 | `TZ`, `LOG_LEVEL`, `LOG_FORMAT` | `Europe/Paris`, `info`, `pretty` | |
-| compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID` | `127.0.0.1`, `8080`, `latest`, `65532`, `65532` | published port, image tag (`latest` = main, `dev` = other branches), container user |
+| compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID` | `127.0.0.1`, `8080`, `latest`, `65532`, `65532` | published port, image tag (`latest` / `vX.Y.Z` = releases, `prerelease` = main, `dev` = other branches), container user |
 
 ## 10. Domain implementation notes
 
