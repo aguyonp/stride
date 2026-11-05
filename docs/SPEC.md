@@ -527,3 +527,8 @@ Progressive disclosure: the dashboard first screen shows only the readiness bann
 - **LLM**: `openai` sends `max_completion_tokens`, `openai_compat` `max_tokens`; `baseUrl` stored without trailing `/v1`; `include` accepts a CSV string or an array; `question` is appended as `### QUESTION DE L'ATHLÈTE`; 200 analyses kept per user.
 - **Notifications**: window 48 h after the start; when Garmin and Strava are both connected, a single-source activity waits for the fusion until it is final (2 h after its end); rescue imports are not notified; failures never echo the target URL or token.
 - **Track**: `{points: [], bounds: null}` when no GPS series (FIT, rescue import or Strava `latlng`) is stored; `Cache-Control: private, no-store`.
+
+### 11.10 Version and audit logs
+- `GET /api/version` (user) → `{version, commit, builtAt, go, label}` from `-ldflags -X stride/internal/buildinfo.*` (repo `VERSION` file; CI adds `-dev` off `main`); shown discreetly at the bottom of Settings with a copy button.
+- `app_logs` (migration `0004_logs.sql`): categories `request` (API requests: method, path, status, latency; outbound provider calls via `apimeter`: provider, endpoint template, status, latency — error texts are never stored) and `user_action` (mapped from routed patterns: login, sync, prompt generation, LLM analysis, plan changes, settings…; `POST /api/actions {action: "prompt.copy"|"prompt.download"|"prompt.share"}` for browser-only events). Levels `info` / `error` (HTTP ≥ 400, rate limits, network errors). Asynchronous batched writes (bounded buffer), purge after 14 days and above 100 000 rows.
+- `GET /api/admin/logs?category=all|request|user_action&level=all|error&userId=&before=&limit=` (admin) → `{items, nextBefore, dropped}`.

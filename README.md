@@ -2,6 +2,8 @@
 
 Stride pulls your training and recovery data (Garmin Connect Personal API, Strava, Open-Meteo weather), merges duplicates, computes biomechanics, fatigue, aerobic efficiency, joint impact, load and readiness, tracks your plan, goals and pain, and turns any session into a compact Markdown prompt for your AI coach — or sends it to your own LLM (Gemini, Claude, OpenAI, Ollama). Generated or imported workouts land in the calendar and export as `.FIT` for the watch. Multi-user, passkey-only sign-in.
 
+![Stride dashboard (demo data)](docs/screenshot.png)
+
 ## Quick start
 
 ```bash
@@ -17,6 +19,10 @@ open http://localhost:8080
 - **Back up `STRIDE_MASTER_KEY`**: it encrypts every stored credential.
 - Passkeys need HTTPS except on `localhost` (set `STRIDE_PUBLIC_URL=https://…` behind a proxy).
 - Private image: `docker login ghcr.io` with a `read:packages` token.
+
+## Architecture
+
+![Architecture](docs/architecture.svg)
 
 ## Images
 

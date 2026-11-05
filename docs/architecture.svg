@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-label="Architecture de Stride">
+<defs>
+<marker id="ah" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="11" markerHeight="11" orient="auto"><path d="M1.5,1.5 L10,6 L1.5,10.5" fill="none" stroke="#1e1e1e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="ahs" viewBox="0 0 12 12" refX="2" refY="6" markerWidth="11" markerHeight="11" orient="auto"><path d="M10.5,1.5 L2,6 L10.5,10.5" fill="none" stroke="#1e1e1e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect width="1000" height="560" rx="18" fill="#ffffff"/>
+<rect x="40" y="205" width="190" height="120" rx="14" fill="#a5d8ff"/>
+<path d="M53.4,203.9 L216.5,203.6 Q230.0,205.0 230.1,218.6 L228.6,311.0 Q230.0,325.0 214.5,324.8 L52.6,323.7 Q40.0,325.0 39.8,312.0 L38.8,218.1 Q40.0,205.0 53.4,203.9" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54.4,206.4 L216.2,204.7 Q230.0,205.0 231.5,217.5 L231.1,310.3 Q230.0,325.0 214.9,323.8 L53.4,326.0 Q40.0,325.0 39.0,311.3 L40.4,218.6 Q40.0,205.0 54.4,206.4" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="135.0" y="235" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">React PWA</text>
+<text x="135.0" y="257" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Dashboard allégé</text>
+<text x="135.0" y="276" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Planning · Réglages · /admin</text>
+<text x="135.0" y="295" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Passkeys (WebAuthn)</text>
+<rect x="330" y="150" width="270" height="230" rx="14" fill="#b2f2bb"/>
+<path d="M344.2,148.6 L584.6,149.1 Q600.0,150.0 600.6,163.8 L599.4,366.3 Q600.0,380.0 585.9,379.4 L344.9,380.6 Q330.0,380.0 329.2,366.2 L330.1,165.2 Q330.0,150.0 344.2,148.6" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M344.7,149.3 L587.5,148.8 Q600.0,150.0 599.7,164.8 L598.9,366.0 Q600.0,380.0 584.5,380.5 L344.8,380.2 Q330.0,380.0 331.2,365.4 L330.6,164.3 Q330.0,150.0 344.7,149.3" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="465.0" y="180" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Go API</text>
+<text x="465.0" y="202" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Auth passkeys · sessions</text>
+<text x="465.0" y="221" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Sync &amp; fusion Garmin + Strava</text>
+<text x="465.0" y="240" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Insights : biomécanique, EF,</text>
+<text x="465.0" y="259" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">impacts, préparation</text>
+<text x="465.0" y="278" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Prompts IA · séances .FIT</text>
+<text x="465.0" y="297" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Scheduler (jitter) · journaux</text>
+<rect x="300" y="440" width="150" height="80" rx="14" fill="#ffec99"/>
+<path d="M314.3,439.9 L437.1,441.4 Q450.0,440.0 449.9,454.5 L448.6,506.6 Q450.0,520.0 436.5,521.6 L315.0,519.3 Q300.0,520.0 299.6,506.5 L298.5,453.9 Q300.0,440.0 314.3,439.9" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M312.9,438.8 L434.6,440.9 Q450.0,440.0 448.8,453.2 L449.7,507.2 Q450.0,520.0 434.7,519.8 L314.2,521.2 Q300.0,520.0 301.0,507.2 L299.3,453.7 Q300.0,440.0 312.9,438.8" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="375.0" y="470" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">SQLite (WAL)</text>
+<text x="375.0" y="492" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">données · historique</text>
+<rect x="480" y="440" width="150" height="80" rx="14" fill="#ffc9c9"/>
+<path d="M493.5,441.2 L617.5,438.9 Q630.0,440.0 629.0,453.1 L629.1,506.0 Q630.0,520.0 616.3,519.2 L492.4,519.7 Q480.0,520.0 479.6,506.2 L481.4,454.6 Q480.0,440.0 493.5,441.2" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M494.0,440.4 L616.6,438.6 Q630.0,440.0 631.3,454.9 L631.2,507.0 Q630.0,520.0 615.7,519.7 L492.7,520.4 Q480.0,520.0 478.6,504.6 L479.1,452.9 Q480.0,440.0 494.0,440.4" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="555.0" y="470" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Valkey</text>
+<text x="555.0" y="492" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">cache TTL</text>
+<rect x="720" y="40" width="240" height="74" rx="14" fill="#d0bfff"/>
+<path d="M733.5,38.6 L944.4,38.9 Q960.0,40.0 958.7,53.6 L958.5,101.2 Q960.0,114.0 946.4,112.9 L733.2,113.5 Q720.0,114.0 719.6,98.8 L721.1,55.6 Q720.0,40.0 733.5,38.6" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M733.9,39.9 L944.7,38.7 Q960.0,40.0 959.5,53.2 L961.1,98.9 Q960.0,114.0 944.5,115.4 L734.1,112.9 Q720.0,114.0 720.1,98.5 L720.1,55.5 Q720.0,40.0 733.9,39.9" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="840.0" y="70" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Garmin Connect</text>
+<text x="840.0" y="92" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Personal API · FIT</text>
+<rect x="720" y="138" width="240" height="74" rx="14" fill="#ffd8a8"/>
+<path d="M735.2,138.6 L945.2,137.6 Q960.0,138.0 958.9,152.9 L960.1,198.9 Q960.0,212.0 945.5,211.1 L735.0,213.6 Q720.0,212.0 721.1,199.0 L721.0,152.8 Q720.0,138.0 735.2,138.6" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M733.1,138.1 L945.5,136.5 Q960.0,138.0 958.5,151.3 L959.2,198.6 Q960.0,212.0 947.5,211.8 L735.4,213.6 Q720.0,212.0 721.5,197.6 L719.1,151.1 Q720.0,138.0 733.1,138.1" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="840.0" y="168" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Strava</text>
+<text x="840.0" y="190" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">OAuth · webhooks</text>
+<rect x="720" y="236" width="240" height="74" rx="14" fill="#eebefa"/>
+<path d="M733.0,235.1 L946.4,237.3 Q960.0,236.0 961.1,249.9 L960.5,297.0 Q960.0,310.0 944.7,310.5 L735.3,310.9 Q720.0,310.0 720.8,295.9 L719.0,250.9 Q720.0,236.0 733.0,235.1" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M733.5,237.0 L947.5,235.7 Q960.0,236.0 959.7,251.4 L960.7,294.9 Q960.0,310.0 944.8,308.9 L735.3,311.0 Q720.0,310.0 718.9,297.0 L721.5,250.5 Q720.0,236.0 733.5,237.0" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="840.0" y="266" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">LLM externes</text>
+<text x="840.0" y="288" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Gemini · Claude · OpenAI · Ollama</text>
+<rect x="720" y="334" width="240" height="74" rx="14" fill="#c5f6fa"/>
+<path d="M733.5,334.2 L944.8,332.4 Q960.0,334.0 961.5,348.5 L960.1,395.4 Q960.0,408.0 945.8,409.2 L735.0,407.1 Q720.0,408.0 719.2,393.3 L719.2,348.3 Q720.0,334.0 733.5,334.2" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M733.2,333.7 L944.8,335.3 Q960.0,334.0 959.5,347.9 L960.3,395.3 Q960.0,408.0 945.7,409.3 L734.0,408.1 Q720.0,408.0 720.1,392.5 L719.8,347.0 Q720.0,334.0 733.2,333.7" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="840.0" y="364" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Open-Meteo</text>
+<text x="840.0" y="386" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">météo de la séance</text>
+<rect x="720" y="432" width="240" height="74" rx="14" fill="#e9ecef"/>
+<path d="M732.4,433.0 L945.0,431.9 Q960.0,432.0 960.7,446.2 L959.4,492.1 Q960.0,506.0 946.2,506.9 L732.7,506.2 Q720.0,506.0 719.2,491.3 L720.9,446.0 Q720.0,432.0 732.4,433.0" fill="none" stroke="#1e1e1e" stroke-width="1.8" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M734.2,432.8 L947.3,431.8 Q960.0,432.0 960.4,446.0 L960.0,492.6 Q960.0,506.0 945.8,506.1 L733.9,507.4 Q720.0,506.0 720.6,493.2 L721.4,445.2 Q720.0,432.0 734.2,432.8" fill="none" stroke="#1e1e1e" stroke-width="1" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="840.0" y="462" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Webhooks perso</text>
+<text x="840.0" y="484" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#3b3b3b" text-anchor="middle">Discord · Telegram · n8n</text>
+<path d="M232.1,262.7 C272.0,247.8 287.7,249.7 326.0,262.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)" marker-start="url(#ahs)"/>
+<path d="M231.3,261.6 C267.4,251.0 291.7,252.4 326.0,262.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<text x="280" y="236" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#495057" text-anchor="middle">HTTPS · JSON</text>
+<path d="M419.4,384.3 C411.0,402.9 392.3,417.8 378.0,436.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)"/>
+<path d="M419.6,384.7 C409.4,404.9 392.9,417.0 378.0,436.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<text x="380" y="412" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#495057" text-anchor="middle">SQL</text>
+<path d="M509.5,383.9 C520.1,404.0 543.2,416.9 553.0,436.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)"/>
+<path d="M510.4,383.2 C520.3,404.6 542.1,417.0 553.0,436.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<text x="552" y="412" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#495057" text-anchor="middle">cache</text>
+<path d="M604.2,265.0 C647.4,267.9 676.7,79.8 716.0,77.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)"/>
+<path d="M603.4,264.6 C647.2,266.7 673.6,74.8 716.0,77.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<path d="M603.9,265.7 C651.9,263.6 672.9,177.5 716.0,175.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)"/>
+<path d="M604.1,265.3 C647.5,262.3 676.1,174.6 716.0,175.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<path d="M603.3,265.7 C650.8,266.8 672.5,275.1 716.0,273.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)"/>
+<path d="M603.3,265.6 C649.7,264.0 675.3,275.6 716.0,273.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<path d="M603.6,264.4 C650.2,263.4 672.7,369.0 716.0,371.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)"/>
+<path d="M603.3,264.5 C648.9,263.8 676.6,369.7 716.0,371.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<path d="M604.0,264.5 C649.1,262.1 673.5,466.1 716.0,469.0" fill="none" stroke="#1e1e1e" stroke-width="1.7" stroke-opacity="1" stroke-linecap="round" marker-end="url(#ah)"/>
+<path d="M604.4,265.1 C648.1,264.8 677.6,466.6 716.0,469.0" fill="none" stroke="#1e1e1e" stroke-width="0.9" stroke-opacity="0.4" stroke-linecap="round"/>
+<text x="585" y="112" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#495057" text-anchor="middle">API sortantes</text>
+<text x="585" y="128" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#868e96" text-anchor="middle">(meter · rate-limit · egress guard)</text>
+<text x="40" y="60" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e1e1e" text-anchor="start">Stride — architecture</text>
+<text x="40" y="86" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#495057" text-anchor="start">compose.yml : stride (Go + SPA embarquée) · valkey</text>
+</svg>
