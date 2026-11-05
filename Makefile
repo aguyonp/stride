@@ -1,7 +1,9 @@
 # Stride — development shortcuts
-VERSION ?= 2.0.0
+VERSION ?= $(shell cat VERSION)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BIN     ?= bin/stride
-LDFLAGS := -s -w -X main.version=$(VERSION)
+LDFLAGS := -s -w -X stride/internal/buildinfo.Version=$(VERSION) -X stride/internal/buildinfo.Commit=$(COMMIT) -X stride/internal/buildinfo.Date=$(BUILD_DATE)
 # the backend reads ENV_FILE (default ./.env relative to backend/)
 ENV_FILE_ARG := $(if $(wildcard .env),ENV_FILE=../.env,)
 
@@ -52,7 +54,7 @@ up:
 
 docker-up:
 	mkdir -p data
-	STRIDE_UID=$$(id -u) STRIDE_GID=$$(id -g) $(COMPOSE_DEV) up -d --build
+	STRIDE_UID=$$(id -u) STRIDE_GID=$$(id -g) STRIDE_BUILD_VERSION=$(VERSION) STRIDE_COMMIT=$(COMMIT) STRIDE_BUILD_DATE=$(BUILD_DATE) $(COMPOSE_DEV) up -d --build
 
 docker-down:
 	docker compose down

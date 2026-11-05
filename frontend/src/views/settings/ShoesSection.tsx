@@ -22,7 +22,7 @@ const norm = (x: string) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\(strava\)|[^a-z0-9]+/g, '')
-export const shoeKey = (s: Shoe) => norm(`${s.brand}${s.model}`) || norm(s.name)
+const shoeKey = (s: Shoe) => norm(`${s.brand}${s.model}`) || norm(s.name)
 
 function MergeDialog({ source, shoes, onClose }: { source: Shoe | null; shoes: Shoe[]; onClose: () => void }) {
   const merge = useMergeShoe()

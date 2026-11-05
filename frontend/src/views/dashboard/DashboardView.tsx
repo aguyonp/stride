@@ -71,7 +71,7 @@ const ALERT_SECTION: Record<string, string> = {
   IMPACT_HIGH: 'efficiency',
 }
 
-export function sectionForAlert(code: string, v: ActivityView): string | null {
+function sectionForAlert(code: string, v: ActivityView): string | null {
   const s = ALERT_SECTION[code] ?? (/CADENCE|GCT|VO_|STRIDE|SLOPE|DESCENT/.test(code) ? 'biomech' : /HRV|SLEEP|RHR|BB_/.test(code) ? 'recovery' : /LOAD|FLOOR|DRIFT/.test(code) ? 'load' : null)
   if (s === 'biomech' && !v.activity.isRunning) return null
   return s

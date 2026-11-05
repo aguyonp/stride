@@ -18,6 +18,7 @@ import { PasskeysSection } from './PasskeysSection'
 import { ProfileSection } from './ProfileSection'
 import { Section } from './Section'
 import { ShoesSection } from './ShoesSection'
+import { VersionFooter } from './VersionFooter'
 
 const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'profil', label: 'Profil & seuils', icon: UserRound },
@@ -137,6 +138,7 @@ export default function SettingsView({ me }: { me: Me }) {
           <BackupSection />
           <ImportSection />
           <AccountSection me={me} />
+          <VersionFooter />
         </div>
       </div>
     </div>

@@ -42,6 +42,8 @@ type Options struct {
 	Sink func(context.Context, []ErrorEvent) error
 	// Recent preloads the recent errors ring (newest first), e.g. from api_events at startup.
 	Recent []ErrorEvent
+	// OnCall receives every observed call (audit trail); it must not block.
+	OnCall func(Call)
 	Now    func() time.Time
 	Log    *slog.Logger
 }
@@ -78,6 +80,7 @@ type Local struct {
 	log       *slog.Logger
 
 	sink   func(context.Context, []ErrorEvent) error
+	onCall func(Call)
 	events chan ErrorEvent
 	done   chan struct{}
 	closed bool
@@ -90,6 +93,7 @@ func NewLocal(o Options) *Local {
 		now:       o.Now,
 		log:       o.Log,
 		sink:      o.Sink,
+		onCall:    o.OnCall,
 	}
 	if m.limits == nil {
 		m.limits = DefaultLimits()
@@ -181,6 +185,9 @@ func (m *Local) release(provider string, userID int64) {
 }
 
 func (m *Local) Observe(c Call) {
+	if m.onCall != nil {
+		m.onCall(c)
+	}
 	now := m.now()
 	m.mu.Lock()
 	p := m.state(c.Provider)

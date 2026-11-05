@@ -13,6 +13,7 @@
 // Example: /?mock=user,strava,cooldown
 
 import type {
+  LogEntry,
   AdminConnection,
   AdminUser,
   ApiErrorBody,
@@ -431,6 +432,33 @@ route('PUT', /^\/api\/admin\/settings$/, ({ init }) => {
   return json({ registrationMode: mode })
 })
 route('GET', /^\/api\/admin\/meter$/, () => json(meter()))
+route('GET', /^\/api\/admin\/logs$/, ({ url }) => {
+  const q = url.searchParams
+  const users = db().users
+  const all: LogEntry[] = []
+  const reqs = ['GET /api/activities', 'GET /api/activities/12', 'POST /api/sync', 'GET /api/days/today', 'PUT /api/profile', 'GET /api/plan/week']
+  const acts = ['auth.login', 'sync.start', 'prompt.generate', 'prompt.copy', 'plan.create', 'settings.llm', 'llm.analyze']
+  for (let i = 0; i < 260; i++) {
+    const u = users[i % Math.max(1, users.length)]
+    const at = new Date(Date.now() - i * 97_000).toISOString()
+    const id = 1000 - i
+    if (i % 5 === 0) {
+      all.push({ id, at, category: 'user_action', level: i % 35 === 0 ? 'error' : 'info', userId: u?.id ?? null, userName: u?.displayName ?? null, method: 'POST', target: '/api/sync', provider: '', status: i % 35 === 0 ? 502 : 200, durationMs: 0, action: acts[i % acts.length], message: '' })
+    } else if (i % 7 === 0) {
+      all.push({ id, at, category: 'request', level: i % 21 === 0 ? 'error' : 'info', userId: u?.id ?? null, userName: u?.displayName ?? null, method: 'OUT', target: '/activity-service/activity', provider: i % 2 ? 'garmin' : 'llm', status: i % 21 === 0 ? 429 : 200, durationMs: 180 + (i % 9) * 40, action: '', message: i % 21 === 0 ? 'limite de débit atteinte' : '' })
+    } else {
+      const [method, target] = reqs[i % reqs.length].split(' ')
+      const status = i % 23 === 0 ? 404 : 200
+      all.push({ id, at, category: 'request', level: status >= 400 ? 'error' : 'info', userId: u?.id ?? null, userName: u?.displayName ?? null, method, target, provider: '', status, durationMs: 4 + (i % 13) * 3, action: '', message: '' })
+    }
+  }
+  const cat = q.get('category'), lvl = q.get('level'), uid = Number(q.get('userId') || 0), before = Number(q.get('before') || 0)
+  const rows = all.filter((e) => (!cat || cat === 'all' || e.category === cat) && (!lvl || lvl === 'all' || e.level === lvl) && (!uid || e.userId === uid) && (!before || e.id < before))
+  const page = rows.slice(0, 100)
+  return json({ items: page, nextBefore: rows.length > 100 ? page[page.length - 1].id : null, dropped: 0 })
+})
+route('GET', /^\/api\/version$/, () => json({ version: '3.0.0', commit: 'demo123', builtAt: '2026-11-05T20:00:00Z', go: 'go1.27.1', label: 'v3.0.0 · demo123 · 2026-11-05T20:00:00Z' }))
+route('POST', /^\/api\/actions$/, () => new Response(null, { status: 204 }))
 route('POST', /^\/api\/admin\/cache\/flush$/, () => json({ removed: 37 + Math.floor(Math.random() * 120) }))
 route('GET', /^\/api\/admin\/connections$/, () => {
   const out: AdminConnection[] = []

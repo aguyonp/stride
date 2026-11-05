@@ -15,6 +15,7 @@ import (
 
 	"stride/internal/admin"
 	"stride/internal/apimeter"
+	"stride/internal/applog"
 	"stride/internal/auth"
 	"stride/internal/cache"
 	"stride/internal/domain"
@@ -44,7 +45,7 @@ func newRouter(t *testing.T, c cache.Cache, logOut io.Writer) http.Handler {
 	}
 	dom, _ := domain.New(domain.Deps{Store: st, Cache: c, Log: log})
 	return New(Deps{
-		Store: st, Cache: c, Auth: a, Domain: dom, Log: log, Version: "test", HTTPS: true, Static: web.New(),
+		Store: st, Cache: c, Auth: a, Domain: dom, Log: log, Logs: applog.New(st.DB, log), HTTPS: true, Static: web.New(),
 		Admin: admin.New(admin.Deps{Store: st, Cache: c, Meter: apimeter.Nop(), Auth: a, Log: log}),
 	})
 }

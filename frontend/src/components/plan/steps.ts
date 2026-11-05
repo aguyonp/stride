@@ -24,14 +24,14 @@ export const STEP_TONE: Record<StepType, string> = {
 }
 
 /** « 10′ », « 1′30 », « 45″ ». */
-export function fmtStepDuration(s: number): string {
+function fmtStepDuration(s: number): string {
   const m = Math.floor(s / 60)
   const r = Math.round(s % 60)
   if (m === 0) return `${r}″`
   return r ? `${m}′${String(r).padStart(2, '0')}` : `${m}′`
 }
 
-export function fmtStepDistance(m: number): string {
+function fmtStepDistance(m: number): string {
   return m >= 1000 ? `${fmtNumber(m / 1000, m % 1000 ? 1 : 0)} km` : `${fmtNumber(m)} m`
 }
 

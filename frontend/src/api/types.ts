@@ -682,7 +682,7 @@ export interface LLMTestResult {
   latencyMs: number
   message: string
 }
-export type LLMAnalysisKind = 'activity' | 'day' | 'multi'
+type LLMAnalysisKind = 'activity' | 'day' | 'multi'
 export interface LLMAnalyzeRequest {
   kind: LLMAnalysisKind
   activityId?: number
@@ -715,7 +715,7 @@ export interface WorkoutStep {
   target?: { kind: TargetKind; min?: number; max?: number }
   note?: string
 }
-export type PlanSource = 'manual' | 'llm' | 'import'
+type PlanSource = 'manual' | 'llm' | 'import'
 export interface GarminPush {
   status: 'none' | 'pushed' | 'failed' | 'unsupported'
   workoutId: number | null
@@ -758,7 +758,7 @@ export interface ActivityImpact {
   jointIndex: number | null
   jointIndex7d: number | null
 }
-export interface EfficiencyPoint {
+interface EfficiencyPoint {
   date: string
   activityId: number
   efSpeed: number | null
@@ -771,7 +771,7 @@ export interface EfficiencyTrend {
   rollingEfSpeed: (number | null)[]
   changePct: number | null
 }
-export type ReadinessLevel = 'green' | 'orange' | 'red' | 'unknown'
+type ReadinessLevel = 'green' | 'orange' | 'red' | 'unknown'
 export interface ReadinessBanner {
   level: ReadinessLevel
   title: string
@@ -816,4 +816,39 @@ export interface NotificationTestResult {
 export interface ImportResult {
   activityId: number
   merged: boolean
+}
+
+export interface BuildInfo {
+  version: string
+  commit: string
+  builtAt: string
+  go: string
+  label: string
+}
+
+type LogCategory = 'request' | 'user_action'
+export interface LogEntry {
+  id: number
+  at: string
+  category: LogCategory
+  level: 'info' | 'error'
+  userId: number | null
+  userName: string | null
+  method: string
+  target: string
+  provider: string
+  status: number
+  durationMs: number
+  action: string
+  message: string
+}
+export interface LogPage {
+  items: LogEntry[]
+  nextBefore: number | null
+  dropped: number
+}
+export interface LogFilter {
+  category: 'all' | LogCategory
+  level: 'all' | 'error'
+  userId: number | null
 }

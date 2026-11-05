@@ -3,7 +3,7 @@ import { api } from './client'
 import { invalidateDomain } from './queries'
 import type { LLMAnalysis, LLMAnalyzeRequest, LLMConfigInput, NotificationInput, PlanGenerateRequest, PlannedSessionInput } from './types'
 
-export const qk3 = {
+const qk3 = {
   llm: ['llm'] as const,
   analyses: (kind: string, ref: string) => ['llm', 'analyses', kind, ref] as const,
   calendar: (from: string, to: string) => ['calendar', from, to] as const,

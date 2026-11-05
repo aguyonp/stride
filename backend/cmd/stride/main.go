@@ -22,7 +22,9 @@ import (
 
 	"stride/internal/admin"
 	"stride/internal/apimeter"
+	"stride/internal/applog"
 	"stride/internal/auth"
+	"stride/internal/buildinfo"
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/env"
@@ -35,9 +37,6 @@ import (
 	"stride/internal/store"
 	"stride/internal/web"
 )
-
-// version is set at build time: -ldflags "-X main.version=2.0.0".
-var version = "dev"
 
 func main() {
 	cmd := "serve"
@@ -53,7 +52,7 @@ func main() {
 	case "healthcheck":
 		os.Exit(healthcheck())
 	case "version", "--version", "-v":
-		fmt.Println(version)
+		fmt.Println(buildinfo.Get().Label)
 	default:
 		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version)\n", cmd)
 		os.Exit(2)
@@ -119,7 +118,9 @@ func run() error {
 		return err
 	}
 
-	meter := apimeter.NewLocal(apimeter.Options{Log: log, Recent: recentErrors(ctx, st, log), Sink: persistErrors(st)})
+	logs := applog.New(st.DB, log)
+	defer logs.Close()
+	meter := apimeter.NewLocal(apimeter.Options{Log: log, Recent: recentErrors(ctx, st, log), Sink: persistErrors(st), OnCall: auditCall(logs)})
 	defer meter.Close()
 
 	var stravaAPI strava.API
@@ -147,7 +148,7 @@ func run() error {
 		return err
 	}
 	handler := httpapi.New(httpapi.Deps{
-		Store: st, Cache: kv, Auth: authSvc, Domain: dom, Log: log, Version: version, HTTPS: cfg.CookieSecure, Static: web.New(),
+		Store: st, Cache: kv, Auth: authSvc, Domain: dom, Log: log, Logs: logs, HTTPS: cfg.CookieSecure, Static: web.New(),
 		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log}),
 	})
 
@@ -156,7 +157,7 @@ func run() error {
 		Users:    dom.ConnectedUserIDs,
 		LastSync: dom.LastSyncAt,
 		Sync:     dom.MorningSync,
-		Purge:    maintenance(st, log),
+		Purge:    maintenance(st, logs, log),
 	})
 
 	srv := &http.Server{
@@ -175,7 +176,7 @@ func run() error {
 
 	mode, _ := st.RegistrationMode(ctx)
 	absDB, _ := filepath.Abs(cfg.DBPath)
-	log.Info(fmt.Sprintf("🚀 Stride %s démarré", version),
+	log.Info(fmt.Sprintf("🚀 Stride %s démarré", buildinfo.Get().Label),
 		"écoute", cfg.ListenAddr, "urlPublique", cfg.PublicURL, "db", absDB, "cache", cacheBackend,
 		"inscription", mode, "strava", onOff(stravaAPI != nil), "météo", onOff(wx != nil),
 		"tz", cfg.Timezone, "syncMatinale", fmt.Sprintf("%02d:00", cfg.SyncHour), "frontend", web.HasFrontend())
@@ -290,16 +291,39 @@ func persistErrors(st *store.Store) func(context.Context, []apimeter.ErrorEvent)
 	}
 }
 
-func maintenance(st *store.Store, log *slog.Logger) func(context.Context) error {
+func maintenance(st *store.Store, logs *applog.Log, log *slog.Logger) func(context.Context) error {
 	const keep = 7 * 24 * time.Hour
 	return func(ctx context.Context) error {
 		now := time.Now()
 		sessions, err1 := st.PurgeExpiredSessions(ctx, now)
 		invitations, err2 := st.PurgeInvitations(ctx, now, keep)
 		events, err3 := st.PurgeAPIEvents(ctx, now.Add(-keep))
-		if sessions+invitations+events > 0 {
-			log.Info("🧹 Maintenance", "sessionsExpirées", sessions, "invitations", invitations, "événementsAPI", events)
+		auditRows, err4 := logs.Purge(ctx, now)
+		if sessions+invitations+events+auditRows > 0 {
+			log.Info("🧹 Maintenance", "sessionsExpirées", sessions, "invitations", invitations, "événementsAPI", events, "journaux", auditRows)
 		}
-		return errors.Join(err1, err2, err3)
+		return errors.Join(err1, err2, err3, err4)
+	}
+}
+
+// auditCall records outbound provider calls; error texts are never stored (they may embed URLs with secrets).
+func auditCall(logs *applog.Log) func(apimeter.Call) {
+	return func(c apimeter.Call) {
+		e := applog.Entry{Category: applog.CategoryRequest, Method: "OUT", Target: c.Endpoint, Provider: c.Provider,
+			Status: c.Status, DurationMs: c.Duration.Milliseconds()}
+		if c.UserID > 0 {
+			e.UserID = &c.UserID
+		}
+		switch {
+		case c.Status == http.StatusTooManyRequests:
+			e.Level, e.Message = applog.LevelError, "limite de débit atteinte"
+		case c.Err != nil && errors.Is(c.Err, context.DeadlineExceeded):
+			e.Level, e.Message = applog.LevelError, "délai dépassé"
+		case c.Err != nil && c.Status == 0:
+			e.Level, e.Message = applog.LevelError, "erreur réseau"
+		case c.Status >= 400:
+			e.Level = applog.LevelError
+		}
+		logs.Add(e)
 	}
 }

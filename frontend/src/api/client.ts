@@ -1,4 +1,7 @@
 import type {
+  BuildInfo,
+  LogFilter,
+  LogPage,
   ActivityListResponse,
   ActivityNotes,
   ActivityTrack,
@@ -176,6 +179,14 @@ export const api = {
   adminSettings: () => json<AdminSettings>('/api/admin/settings'),
   adminUpdateSettings: (body: AdminSettings) => json<AdminSettings>('/api/admin/settings', { method: 'PUT', body }),
   adminMeter: () => json<MeterSnapshot>('/api/admin/meter'),
+  adminLogs: (f: LogFilter, before?: number) => {
+    const q = new URLSearchParams({ category: f.category, level: f.level, limit: '100' })
+    if (f.userId) q.set('userId', String(f.userId))
+    if (before) q.set('before', String(before))
+    return json<LogPage>(`/api/admin/logs?${q.toString()}`)
+  },
+  version: () => json<BuildInfo>('/api/version'),
+  trackAction: (action: 'prompt.copy' | 'prompt.download' | 'prompt.share') => json<void>('/api/actions', { method: 'POST', body: { action } }),
   adminFlushCache: () => json<{ removed: number }>('/api/admin/cache/flush', { method: 'POST' }),
   adminConnections: () => json<AdminConnection[]>('/api/admin/connections'),
   adminResync: (id: number) => json<void>(`/api/admin/users/${id}/resync`, { method: 'POST' }),

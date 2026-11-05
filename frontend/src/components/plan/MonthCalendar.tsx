@@ -16,7 +16,7 @@ const STATUS_CLS: Record<MatchStatus, string> = {
 }
 const STATUS_DOT: Record<MatchStatus, string> = { done: 'bg-ok', partial: 'bg-warn', missed: 'bg-danger', upcoming: 'bg-ink-3', extra: 'bg-info' }
 
-export function monthRange(month: string): { from: string; to: string } {
+function monthRange(month: string): { from: string; to: string } {
   const from = mondayOf(`${month}-01`)
   return { from, to: addDays(from, 41) }
 }

@@ -8,7 +8,7 @@ export function Markdown({ text, className }: { text: string; className?: string
 
 const INLINE = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_|\[[^\]]+\]\([^)\s]+\))/g
 
-export function renderInline(s: string, keyBase = 'i'): ReactNode[] {
+function renderInline(s: string, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   let k = 0
@@ -44,7 +44,7 @@ const cells = (row: string) =>
     .split('|')
     .map((c) => c.trim())
 
-export function renderBlocks(text: string): ReactNode[] {
+function renderBlocks(text: string): ReactNode[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const out: ReactNode[] = []
   let i = 0

@@ -17,6 +17,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"stride/internal/apimeter"
+	"stride/internal/applog"
 	"stride/internal/cache"
 	"stride/internal/env"
 	"stride/internal/httpx"
@@ -122,6 +123,7 @@ func (s *Service) setCookie(w http.ResponseWriter, name, value, path string, max
 }
 
 func (s *Service) issueSession(ctx context.Context, w http.ResponseWriter, r *http.Request, userID int64) error {
+	applog.SetUser(r.Context(), userID)
 	token := randomToken(32)
 	now := s.now()
 	ua := r.UserAgent()
@@ -168,6 +170,7 @@ func (s *Service) lookup(w http.ResponseWriter, r *http.Request) (*store.User, e
 type storeUserKey struct{}
 
 func withSessionUser(r *http.Request, u *store.User) *http.Request {
+	applog.SetUser(r.Context(), u.ID)
 	ctx := WithUser(r.Context(), User{ID: u.ID, DisplayName: u.DisplayName, Role: u.Role})
 	ctx = apimeter.WithUser(ctx, u.ID)
 	ctx = context.WithValue(ctx, storeUserKey{}, u)

@@ -11,6 +11,7 @@ import {
 } from '@tanstack/react-query'
 import { api, ApiError, type ListActivitiesParams } from './client'
 import type {
+  LogFilter,
   ActivityNotesInput,
   ActivityView,
   AdminSettings,
@@ -334,6 +335,17 @@ export function useAdminSettings() {
 }
 export function useAdminMeter() {
   return useQuery({ queryKey: qk.admin.meter, queryFn: api.adminMeter, refetchInterval: 15_000 })
+}
+export function useAdminLogs(f: LogFilter) {
+  return useInfiniteQuery({
+    queryKey: ['admin', 'logs', f.category, f.level, f.userId ?? 0],
+    queryFn: ({ pageParam }) => api.adminLogs(f, pageParam || undefined),
+    initialPageParam: 0,
+    getNextPageParam: (last) => last.nextBefore ?? undefined,
+  })
+}
+export function useVersion() {
+  return useQuery({ queryKey: ['version'], queryFn: api.version, staleTime: Infinity })
 }
 export function useAdminConnections() {
   return useQuery({ queryKey: qk.admin.connections, queryFn: api.adminConnections })

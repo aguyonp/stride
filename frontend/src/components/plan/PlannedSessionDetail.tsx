@@ -15,7 +15,7 @@ import { StepsView } from './StepsView'
 const SOURCE_LABEL = { manual: 'Saisie manuelle', llm: 'Générée par ton IA', import: 'Importée (copier-coller IA)' } as const
 
 /** Push to Garmin (degrades to « unsupported ») and FIT download, with toasts. */
-export function useWorkoutActions() {
+function useWorkoutActions() {
   const { push } = usePlanV3()
   const { toast } = useToast()
   const [downloading, setDownloading] = useState<number | null>(null)

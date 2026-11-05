@@ -6,7 +6,7 @@ import { fmtDateShort, fmtNumber, isNum } from '../../lib/format'
 import { Card } from '../ui/Card'
 import { Stat } from '../ui/Value'
 
-export function Sparkline({ values, highlight, className, label }: { values: (number | null)[]; highlight?: number; className?: string; label: string }) {
+function Sparkline({ values, highlight, className, label }: { values: (number | null)[]; highlight?: number; className?: string; label: string }) {
   const nums = values.filter(isNum)
   if (nums.length < 2) return null
   const min = Math.min(...nums)

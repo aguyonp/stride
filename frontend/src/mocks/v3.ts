@@ -65,7 +65,7 @@ function body<T>(init?: RequestInit): T | null {
 
 const NO_LLM: LLMConfig = { configured: false, provider: null, model: null, baseUrl: null, keyHint: null, updatedAt: null }
 
-export function v3(d: UserData): V3Data {
+function v3(d: UserData): V3Data {
   if (!d.v3) {
     const seeded = d.shoes.length > 0
     d.v3 = {

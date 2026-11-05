@@ -10,7 +10,9 @@ import (
 	"github.com/klauspost/compress/gzhttp"
 
 	"stride/internal/admin"
+	"stride/internal/applog"
 	"stride/internal/auth"
+	"stride/internal/buildinfo"
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/domainapi"
@@ -19,14 +21,14 @@ import (
 )
 
 type Deps struct {
-	Store   *store.Store
-	Cache   cache.Cache
-	Auth    *auth.Service
-	Admin   *admin.Handler
-	Domain  *domain.Services
-	Log     *slog.Logger
-	Version string
-	HTTPS   bool
+	Store  *store.Store
+	Cache  cache.Cache
+	Auth   *auth.Service
+	Admin  *admin.Handler
+	Domain *domain.Services
+	Log    *slog.Logger
+	Logs   *applog.Log
+	HTTPS  bool
 	// Static serves the SPA for every non-API path (nil: no frontend).
 	Static http.Handler
 }
@@ -34,10 +36,17 @@ type Deps struct {
 func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
-		httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok", "version": d.Version})
+		httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
 	})
 	mux.HandleFunc("GET /health/ready", d.ready)
 	d.Auth.Register(mux)
+	mux.Handle("GET /api/version", d.Auth.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		httpx.JSON(w, http.StatusOK, buildinfo.Get())
+	})))
+	if d.Logs != nil {
+		mux.Handle("POST /api/actions", d.Auth.RequireUser(postAction(d.Logs)))
+		mux.Handle("GET /api/admin/logs", d.Auth.RequireAdmin(adminLogs(d.Logs)))
+	}
 	d.Admin.Register(mux)
 	domainapi.Register(mux, domainapi.Deps{
 		Services:     d.Domain,
@@ -57,6 +66,7 @@ func New(d Deps) http.Handler {
 	h = withCSRF(h)
 	h = withBodyLimit(h)
 	h = withSecurityHeaders(d.HTTPS, h)
+	h = withAudit(d.Logs, h)
 	h = withLogging(d.Log, h)
 	h = withRecover(d.Log, h)
 	return h
