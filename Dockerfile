@@ -30,6 +30,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=backend /out/stride /app/stride
 COPY --from=backend --chown=65532:65532 /out/data /data
+# readable by any UID (compose may run as the host user); the default /home/nonroot is not
+WORKDIR /app
 ENV STRIDE_DATA_DIR=/data \
     STRIDE_LISTEN_ADDR=:8080 \
     TZ=Europe/Paris \
