@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"math"
 	"path/filepath"
 	"strings"
@@ -160,45 +159,20 @@ func firstNum(vs ...float64) float64 {
 	return math.NaN()
 }
 
-// ImportFileAsync validates the file format upfront and enqueues import.activity on the critical worker queue.
-func (s *Services) ImportFileAsync(ctx context.Context, uid int64, filename string, data []byte) (*queue.JobStatus, error) {
+// ImportFile stores a rescue import (§11.7) through the sync worker pool: merged into a matching
+// activity lacking a FIT, otherwise inserted as an import-only activity. It returns the
+// *view.ImportResult, or the *queue.JobStatus when async or still running after the wait.
+func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, data []byte, async bool) (any, error) {
 	if importFormat(filename, data) == "" {
 		return nil, badRequest("Format non reconnu : fichiers .fit, .gpx ou .tcx uniquement.")
 	}
-	return s.queue.Enqueue(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindImportActivity,
-		Queue:       queue.QueueCritical,
-		Label:       "Import de " + filepath.Base(filename),
-		MaxAttempts: 1,
-		Payload:     importJobPayload{Filename: filename, Data: data},
-	})
-}
-
-// ImportFile stores a rescue import (§11.7) via the critical worker queue: merged into a matching
-// activity lacking a FIT, otherwise inserted as an import-only activity.
-func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, data []byte) (*view.ImportResult, error) {
-	if importFormat(filename, data) == "" {
-		return nil, badRequest("Format non reconnu : fichiers .fit, .gpx ou .tcx uniquement.")
-	}
-	_, res, err := s.queue.EnqueueAndWait(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindImportActivity,
-		Queue:       queue.QueueCritical,
-		Label:       "Import de " + filepath.Base(filename),
-		MaxAttempts: 1,
-		Payload:     importJobPayload{Filename: filename, Data: data},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if out, ok := res.(*view.ImportResult); ok {
-		return out, nil
-	}
-	var out view.ImportResult
-	raw, _ := json.Marshal(res)
-	_ = json.Unmarshal(raw, &out)
-	return &out, nil
+	return awaitJob[view.ImportResult](ctx, s, queue.EnqueueRequest{
+		UserID:  uid,
+		Kind:    queue.KindImportActivity,
+		Queue:   queue.QueueCritical,
+		Label:   "Import de " + filepath.Base(filename),
+		Payload: importJobPayload{Filename: filename, Data: data},
+	}, async)
 }
 
 func (s *Services) importFileExec(ctx context.Context, uid int64, filename string, data []byte) (*view.ImportResult, error) {

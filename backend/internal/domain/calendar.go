@@ -202,29 +202,9 @@ func (s *Services) prepareAdaptPlan(ctx context.Context, uid int64, in *AdaptInp
 	}, nil
 }
 
-// AdaptPlanAsync enqueues llm.plan_adapt onto the critical worker queue when mode == "llm".
-func (s *Services) AdaptPlanAsync(ctx context.Context, uid int64, in AdaptInput) (any, bool, error) {
-	rulesRes, payload, err := s.prepareAdaptPlan(ctx, uid, &in)
-	if err != nil {
-		return nil, false, err
-	}
-	if rulesRes != nil {
-		return rulesRes, false, nil
-	}
-	payload.Async = true
-	job, err := s.queue.Enqueue(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindLLMPlanAdapt,
-		Queue:       queue.QueueCritical,
-		Label:       "Adaptation du plan IA",
-		MaxAttempts: 1,
-		Payload:     *payload,
-	})
-	return job, true, err
-}
-
-// AdaptPlan previews the plan adapted to the calendar events (rules or LLM via critical worker queue); nothing is saved.
-func (s *Services) AdaptPlan(ctx context.Context, uid int64, in AdaptInput) (*AdaptResult, error) {
+// AdaptPlan previews the plan adapted to the calendar events, by rules or by the LLM worker pool
+// (*AdaptResult, or the *queue.JobStatus when async or still running); nothing is saved.
+func (s *Services) AdaptPlan(ctx context.Context, uid int64, in AdaptInput, async bool) (any, error) {
 	rulesRes, payload, err := s.prepareAdaptPlan(ctx, uid, &in)
 	if err != nil {
 		return nil, err
@@ -232,25 +212,14 @@ func (s *Services) AdaptPlan(ctx context.Context, uid int64, in AdaptInput) (*Ad
 	if rulesRes != nil {
 		return rulesRes, nil
 	}
-	payload.Async = false
-	_, res, err := s.queue.EnqueueAndWait(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindLLMPlanAdapt,
-		Queue:       queue.QueueCritical,
-		Label:       "Adaptation du plan IA",
-		MaxAttempts: 1,
-		Payload:     *payload,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if out, ok := res.(*AdaptResult); ok {
-		return out, nil
-	}
-	var out AdaptResult
-	raw, _ := json.Marshal(res)
-	_ = json.Unmarshal(raw, &out)
-	return &out, nil
+	payload.Async = async
+	return awaitJob[AdaptResult](ctx, s, queue.EnqueueRequest{
+		UserID:  uid,
+		Kind:    queue.KindLLMPlanAdapt,
+		Queue:   queue.QueueCritical,
+		Label:   "Adaptation du plan IA",
+		Payload: *payload,
+	}, async)
 }
 
 func plural(n int, word string) string {

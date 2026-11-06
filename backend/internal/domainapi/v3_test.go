@@ -417,6 +417,19 @@ func TestV3LLM(t *testing.T) {
 		fake.body["messages"].([]any)[0].(m)["role"] != "user" {
 		t.Fatalf("anthropic request: %v", fake.body)
 	}
+	var job m
+	if code, body := e.do(1, "POST", "/api/llm/analyze?async=1", m{"kind": "day", "date": e.fx.day(-1)}, &job); code != 202 ||
+		job["kind"] != "llm.analyze" || job["state"] != "queued" {
+		t.Fatalf("async analyze: %d %s", code, body)
+	}
+	e.svc.Wait()
+	if code, body := e.do(1, "GET", fmt.Sprintf("/api/jobs/%v", job["id"]), nil, &job); code != 200 || job["state"] != "completed" ||
+		job["result"].(m)["markdown"] != "## Analyse Claude" {
+		t.Fatalf("async analyze job: %d %s", code, body)
+	}
+	if code, _ := e.do(2, "GET", fmt.Sprintf("/api/jobs/%v", job["id"]), nil, nil); code != 404 {
+		t.Fatal("job visible to another user")
+	}
 	e.do(1, "PUT", "/api/llm", m{"provider": "openai", "model": "gpt-4.1", "apiKey": "k-openai-synthetique"}, nil)
 	if code, body := e.do(1, "POST", "/api/llm/analyze", m{"kind": "multi", "weeks": 2, "include": []string{"load"}}, &an); code != 200 || an["markdown"] != "## Analyse OpenAI" {
 		t.Fatalf("analyze openai: %d %s", code, body)
@@ -480,6 +493,10 @@ func (f *hookFake) handler() http.Handler {
 		}
 		f.calls[key] = append(f.calls[key], string(raw))
 		f.mu.Unlock()
+		if key == "/gone" {
+			w.WriteHeader(410)
+			return
+		}
 		w.WriteHeader(204)
 	})
 }
@@ -491,6 +508,7 @@ func TestV3NotificationsAndImport(t *testing.T) {
 	e := setupWith(t, nil, func(d *domain.Deps) {
 		d.Env.AllowPrivateEgress = true
 		d.BaseURLs = map[string]string{"telegram": srv.URL}
+		d.JobBackoff = time.Millisecond
 	})
 	bootGarmin(t, e)
 	var dc, tg, js m
@@ -521,6 +539,9 @@ func TestV3NotificationsAndImport(t *testing.T) {
 	if code, _ := e.do(2, "POST", fmt.Sprintf("/api/notifications/%v/test", tg["id"]), nil, nil); code != 404 {
 		t.Fatal("test of another user's target")
 	}
+	var dead, gone m
+	e.do(1, "POST", "/api/notifications", m{"kind": "json", "label": "Morte", "enabled": true, "url": "http://127.0.0.1:1/hook/s3cr3t-tok"}, &dead)
+	e.do(1, "POST", "/api/notifications", m{"kind": "json", "label": "Disparue", "enabled": true, "url": srv.URL + "/gone"}, &gone)
 	// dispatch: recent complete activities, once
 	for i := 0; i < 2; i++ {
 		if err := e.svc.MorningSync(context.Background(), 1); err != nil {
@@ -540,10 +561,26 @@ func TestV3NotificationsAndImport(t *testing.T) {
 		!strings.Contains(strings.Join(discord, ""), "km") || !strings.Contains(strings.Join(tgCalls, ""), `"parse_mode":"Markdown"`) {
 		t.Fatalf("payloads: %s", all)
 	}
+	// refused connections are retried, 4xx are not, and no job error exposes the target URL
+	attempts := func(label string) (n int, state string) {
+		_ = e.st.DB.QueryRow(`SELECT attempts, state FROM async_jobs WHERE kind = 'webhook.deliver' AND label = ?`, "Notification "+label).Scan(&n, &state)
+		return n, state
+	}
+	if n, state := attempts(fmt.Sprint(dead["label"])); n != 3 || state != "failed" {
+		t.Fatalf("dead target: %d attempts, %s", n, state)
+	}
+	if n, state := attempts(fmt.Sprint(gone["label"])); n != 1 || state != "failed" {
+		t.Fatalf("410 target: %d attempts, %s", n, state)
+	}
+	if _, body := e.do(1, "GET", "/api/jobs?limit=100", nil, nil); strings.Contains(body, "s3cr3t") || strings.Contains(body, "127.0.0.1:1/") ||
+		!strings.Contains(body, "Échec de l'envoi") {
+		t.Fatalf("job errors: %s", body)
+	}
 	var list []m
 	e.do(1, "PATCH", fmt.Sprintf("/api/notifications/%v", dc["id"]), m{"enabled": false}, nil)
 	e.do(1, "GET", "/api/notifications", nil, &list)
-	if len(list) != 3 || list[0]["enabled"] != false || list[1]["lastStatus"] != "ok" {
+	if len(list) != 5 || list[0]["enabled"] != false || list[1]["lastStatus"] != "ok" || list[3]["lastStatus"] != "error" ||
+		strings.Contains(fmt.Sprint(list[3]["lastError"]), "s3cr3t") {
 		t.Fatalf("list: %v", list)
 	}
 	if code, _ := e.do(1, "DELETE", fmt.Sprintf("/api/notifications/%v", js["id"]), nil, nil); code != 204 {

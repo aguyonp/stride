@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
 	"time"
 
 	"stride/internal/apimeter"
 	"stride/internal/athlete"
+	"stride/internal/egress"
 	"stride/internal/frfmt"
 	"stride/internal/provider/strava"
 	"stride/internal/queue"
@@ -62,6 +65,32 @@ type webhookDeliverPayload struct {
 	JSONPayload  map[string]any `json:"jsonPayload"`
 }
 
+// syncJobWait bounds synchronous waits on a job well below the HTTP WriteTimeout (150 s).
+const syncJobWait = 100 * time.Second
+
+// awaitJob enqueues req and, unless async, waits for its *T result. It returns the job status
+// instead (HTTP 202) when async or when the job outlives syncJobWait.
+func awaitJob[T any](ctx context.Context, s *Services, req queue.EnqueueRequest, async bool) (any, error) {
+	if async {
+		st, err := s.queue.Enqueue(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return st, nil
+	}
+	st, res, err := s.queue.EnqueueAndWait(ctx, req, syncJobWait)
+	switch {
+	case errors.Is(err, queue.ErrPending):
+		return st, nil
+	case err != nil:
+		return nil, err
+	}
+	if v, ok := res.(*T); ok {
+		return v, nil
+	}
+	return nil, fmt.Errorf("job %s: unexpected result %T", req.Kind, res)
+}
+
 // ListJobs returns recent async jobs owned by uid.
 func (s *Services) ListJobs(ctx context.Context, uid int64, limit int) (queue.JobListResponse, error) {
 	return s.queue.ListJobs(ctx, uid, limit)
@@ -76,14 +105,45 @@ func (s *Services) GetJob(ctx context.Context, uid int64, jobID string) (*queue.
 	return st, err
 }
 
-func (s *Services) registerJobs() {
-	if s.queue == nil {
-		return
+// jobErr turns a domain error into a job failure carrying a public message only.
+func jobErr(err error, retryable bool) error {
+	if retryable {
+		return queue.Transient(publicText(err), err)
 	}
+	return queue.Permanent(publicText(err), err)
+}
 
+// publicText is the French message shown for a failed job; raw error texts never leave the process
+// (they may embed webhook URLs or bot tokens).
+func publicText(err error) string {
+	var pe *ProviderError
+	var br *BadRequestError
+	var ce *ConflictError
+	switch {
+	case errors.As(err, &pe):
+		return pe.Message()
+	case errors.As(err, &br):
+		return br.Msg
+	case errors.As(err, &ce):
+		return ce.Msg
+	case errors.Is(err, ErrLLMNotConfigured):
+		return "IA non configurée : renseignez votre fournisseur dans Réglages › IA."
+	case errors.Is(err, ErrNotConnected):
+		return "Fournisseur non connecté."
+	case errors.Is(err, ErrNotFound):
+		return "Ressource introuvable."
+	case errors.Is(err, context.DeadlineExceeded):
+		return "Délai dépassé."
+	}
+	return "La tâche a échoué (détails dans les journaux du serveur)."
+}
+
+func (s *Services) registerJobs() {
 	s.queue.Register(queue.KindSyncProvider, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p syncProviderPayload
-		_ = json.Unmarshal(jc.Payload, &p)
+		if err := json.Unmarshal(jc.Payload, &p); err != nil {
+			return nil, jobErr(err, false)
+		}
 		cctx, cancel := context.WithTimeout(apimeter.WithUser(ctx, jc.UserID), syncTimeout)
 		defer cancel()
 		err := s.runSyncWithProgress(cctx, jc.UserID, p.Morning, jc)
@@ -92,7 +152,7 @@ func (s *Services) registerJobs() {
 		}
 		if err != nil {
 			s.log.Warn("🔄 Synchronisation en échec", "user", jc.UserID, "err", errText(err))
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		return map[string]any{"synced": true}, nil
 	})
@@ -106,7 +166,7 @@ func (s *Services) registerJobs() {
 			return map[string]any{"skipped": true}, nil
 		}
 		if err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		return map[string]any{"resynced": true}, nil
 	})
@@ -114,16 +174,16 @@ func (s *Services) registerJobs() {
 	s.queue.Register(queue.KindSyncStravaWebhook, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p stravaWebhookPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		cctx, cancel := context.WithTimeout(ctx, webhookTimeout)
 		defer cancel()
 		if err := s.processStravaEvent(cctx, p.Event, p.Attempt); err != nil {
-			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrNotConnected) {
-				return nil, queue.NonRetryable(err)
+			permanent := errors.Is(err, ErrNotFound) || errors.Is(err, ErrNotConnected)
+			if !permanent {
+				s.log.Warn("🔗 Événement Strava non traité", "type", p.Event.ObjectType, "aspect", p.Event.AspectType, "err", errText(err))
 			}
-			s.log.Warn("🔗 Événement Strava non traité", "type", p.Event.ObjectType, "aspect", p.Event.AspectType, "err", errText(err))
-			return nil, err
+			return nil, jobErr(err, !permanent)
 		}
 		return map[string]any{"ok": true}, nil
 	})
@@ -131,13 +191,13 @@ func (s *Services) registerJobs() {
 	s.queue.Register(queue.KindImportActivity, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p importJobPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		pct := 25.0
 		jc.UpdateProgress("Décodage et analyse de la trace…", nil, nil, &pct)
 		res, err := s.importFileExec(ctx, jc.UserID, p.Filename, p.Data)
 		if err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		return res, nil
 	})
@@ -145,132 +205,136 @@ func (s *Services) registerJobs() {
 	s.queue.Register(queue.KindLLMAnalyze, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p llmAnalyzeJobPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		a, err := s.execAnalyzeLLM(ctx, jc, p)
 		if err != nil {
-			errMsg := errText(err)
-			s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{
-				JobID: jc.ID, Kind: p.Kind, Ref: p.Ref, Error: &errMsg,
-			})
-			return nil, queue.NonRetryable(err)
+			s.emitLLMFailed(jc, p.Kind, p.Ref, err)
+			return nil, jobErr(err, false)
 		}
-		s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{
-			JobID: jc.ID, Kind: p.Kind, Ref: p.Ref, Analysis: a,
-		})
+		s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{JobID: jc.ID, Kind: p.Kind, Ref: p.Ref, Analysis: a})
 		return a, nil
 	})
 
 	s.queue.Register(queue.KindLLMPlanGenerate, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p llmPlanGenerateJobPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
-		c, err := s.llmConfig(ctx, jc.UserID)
+		text, err := s.runLLMJob(ctx, jc, "Génération du plan d'entraînement IA…", p.Prompt, p.Async, "plan_generate", p.Ref)
 		if err != nil {
-			return nil, queue.NonRetryable(err)
-		}
-		if c == nil {
-			return nil, queue.NonRetryable(ErrLLMNotConfigured)
-		}
-		cctx, cancel := context.WithTimeout(ctx, llmTimeout)
-		defer cancel()
-		jc.UpdateProgress("Génération du plan d'entraînement IA…", nil, nil, nil)
-		wantStream := p.Async || s.hasSSESubscribers(jc.UserID)
-		text, err := s.callLLMStream(cctx, jc.UserID, c, llmRequest{
-			system: systemDirective(), prompt: p.Prompt, maxTokens: llmMaxTokens,
-		}, wantStream, func(delta string) {
-			s.emitLLMToken(jc.UserID, jc.ID, "plan_generate", p.Ref, delta)
-		})
-		if err != nil {
-			errMsg := errText(err)
-			s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{
-				JobID: jc.ID, Kind: "plan_generate", Ref: p.Ref, Error: &errMsg,
-			})
-			return nil, queue.NonRetryable(err)
+			return nil, err
 		}
 		drafts, phases, errs := athlete.ParsePlan(text, "llm")
 		out := &PlanDraftsResult{Drafts: drafts, Phases: phases, Errors: errs, Raw: text}
-		s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{
-			JobID: jc.ID, Kind: "plan_generate", Ref: p.Ref, PlanDrafts: out,
-		})
+		s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{JobID: jc.ID, Kind: "plan_generate", Ref: p.Ref, PlanDrafts: out})
 		return out, nil
 	})
 
 	s.queue.Register(queue.KindLLMPlanAdapt, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p llmPlanAdaptJobPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
-		c, err := s.llmConfig(ctx, jc.UserID)
+		text, err := s.runLLMJob(ctx, jc, "Adaptation du plan IA aux imprévus…", p.Prompt, p.Async, "plan_adapt", p.From)
 		if err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, err
 		}
-		if c == nil {
-			return nil, queue.NonRetryable(ErrLLMNotConfigured)
-		}
-		cctx, cancel := context.WithTimeout(ctx, llmTimeout)
-		defer cancel()
-		jc.UpdateProgress("Adaptation du plan IA aux imprévus…", nil, nil, nil)
-		wantStream := p.Async || s.hasSSESubscribers(jc.UserID)
-		text, err := s.callLLMStream(cctx, jc.UserID, c, llmRequest{
-			system: systemDirective(), prompt: p.Prompt, maxTokens: llmMaxTokens,
-		}, wantStream, func(delta string) {
-			s.emitLLMToken(jc.UserID, jc.ID, "plan_adapt", p.From, delta)
-		})
-		if err != nil {
-			errMsg := errText(err)
-			s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{
-				JobID: jc.ID, Kind: "plan_adapt", Ref: p.From, Error: &errMsg,
-			})
-			return nil, queue.NonRetryable(err)
-		}
-		drafts, _, errs := athlete.ParsePlan(text, "llm")
-		out := &AdaptResult{Sessions: []athlete.PlannedSession{}, RemoveIDs: []int64{}}
-		for _, d := range drafts {
-			if d.Date >= p.From && d.Date <= p.To {
-				out.Sessions = append(out.Sessions, d)
-			} else {
-				errs = append(errs, fmt.Sprintf("Séance du %s hors période ignorée", frfmt.Date(d.Date)))
-			}
-		}
-		if len(out.Sessions) == 0 {
-			out.Summary = "L'IA n'a proposé aucune séance exploitable : plan inchangé."
-		} else {
-			out.RemoveIDs = append(out.RemoveIDs, p.RemainingIDs...)
-			out.Summary = fmt.Sprintf("Proposition de l'IA : %s du %s au %s, en remplacement des %s.",
-				plural(len(out.Sessions), "séance"), frfmt.Date(p.From), frfmt.Date(p.To), plural(len(p.RemainingIDs), "séance prévue"))
-		}
-		if len(errs) > 0 {
-			out.Summary += " Avertissements : " + strings.Join(errs, " ; ") + "."
-		}
-		s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{
-			JobID: jc.ID, Kind: "plan_adapt", Ref: p.From, AdaptPreview: out,
-		})
+		out := adaptFromLLM(text, p)
+		s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{JobID: jc.ID, Kind: "plan_adapt", Ref: p.From, AdaptPreview: out})
 		return out, nil
 	})
 
 	s.queue.Register(queue.KindWebhookDeliver, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p webhookDeliverPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		t, err := s.notifyTarget(ctx, jc.UserID, p.TargetID)
 		if err != nil {
-			return nil, queue.NonRetryable(err)
+			return nil, jobErr(err, false)
 		}
 		sctx, cancel := context.WithTimeout(ctx, notifyTimeout)
 		defer cancel()
 		status, err := s.deliverPrepared(sctx, jc.UserID, t, p)
-		if err == nil || jc.Attempt >= jc.MaxAttempts {
+		retry := err != nil && webhookRetryable(status, err) && jc.Attempt < jc.MaxAttempts
+		if !retry {
 			s.recordSend(context.WithoutCancel(ctx), jc.UserID, t.ID, err)
 		}
 		if err != nil {
 			s.log.Warn("🔔 Notification en échec", "user", jc.UserID, "kind", t.Kind, "attempt", jc.Attempt, "err", sendErrText(err))
-			return nil, err
+			msg := "Échec de l'envoi : " + sendErrText(err)
+			if retry {
+				return nil, queue.Transient(msg, err)
+			}
+			return nil, queue.Permanent(msg, err)
 		}
 		return map[string]any{"status": status}, nil
 	})
+}
+
+// runLLMJob calls the athlete's LLM for a plan job, streaming tokens over SSE.
+func (s *Services) runLLMJob(ctx context.Context, jc *queue.JobContext, label, prompt string, async bool, kind, ref string) (string, error) {
+	c, err := s.llmConfig(ctx, jc.UserID)
+	if err == nil && c == nil {
+		err = ErrLLMNotConfigured
+	}
+	if err != nil {
+		s.emitLLMFailed(jc, kind, ref, err)
+		return "", jobErr(err, false)
+	}
+	cctx, cancel := context.WithTimeout(ctx, llmTimeout)
+	defer cancel()
+	jc.UpdateProgress(label, nil, nil, nil)
+	text, err := s.callLLMStream(cctx, jc.UserID, c, llmRequest{system: systemDirective(), prompt: prompt, maxTokens: llmMaxTokens},
+		async || s.hasSSESubscribers(jc.UserID), func(delta string) { s.emitLLMToken(jc.UserID, jc.ID, kind, ref, delta) })
+	if err != nil {
+		s.emitLLMFailed(jc, kind, ref, err)
+		return "", jobErr(err, false)
+	}
+	return text, nil
+}
+
+func adaptFromLLM(text string, p llmPlanAdaptJobPayload) *AdaptResult {
+	drafts, _, errs := athlete.ParsePlan(text, "llm")
+	out := &AdaptResult{Sessions: []athlete.PlannedSession{}, RemoveIDs: []int64{}}
+	for _, d := range drafts {
+		if d.Date >= p.From && d.Date <= p.To {
+			out.Sessions = append(out.Sessions, d)
+		} else {
+			errs = append(errs, fmt.Sprintf("Séance du %s hors période ignorée", frfmt.Date(d.Date)))
+		}
+	}
+	if len(out.Sessions) == 0 {
+		out.Summary = "L'IA n'a proposé aucune séance exploitable : plan inchangé."
+	} else {
+		out.RemoveIDs = append(out.RemoveIDs, p.RemainingIDs...)
+		out.Summary = fmt.Sprintf("Proposition de l'IA : %s du %s au %s, en remplacement des %s.",
+			plural(len(out.Sessions), "séance"), frfmt.Date(p.From), frfmt.Date(p.To), plural(len(p.RemainingIDs), "séance prévue"))
+	}
+	if len(errs) > 0 {
+		out.Summary += " Avertissements : " + strings.Join(errs, " ; ") + "."
+	}
+	return out
+}
+
+// webhookRetryable retries only what was certainly not delivered: refused connections, 429 and 5xx.
+// A timeout after the request left may have been delivered, so it is not retried.
+func webhookRetryable(status int, err error) bool {
+	if status == http.StatusTooManyRequests || status >= 500 {
+		return true
+	}
+	if status > 0 || egress.IsForbidden(err) {
+		return false
+	}
+	var cd *apimeter.CooldownError
+	var op *net.OpError
+	return errors.As(err, &cd) || (errors.As(err, &op) && op.Op == "dial")
+}
+
+func (s *Services) emitLLMFailed(jc *queue.JobContext, kind, ref string, err error) {
+	msg := publicText(err)
+	s.emitLLMDone(jc.UserID, sse.StreamLLMDoneEvent{JobID: jc.ID, Kind: kind, Ref: ref, Error: &msg})
 }
 
 func (s *Services) execAnalyzeLLM(ctx context.Context, jc *queue.JobContext, p llmAnalyzeJobPayload) (*view.LLMAnalysis, error) {

@@ -554,46 +554,20 @@ func (s *Services) prepareAnalyze(ctx context.Context, uid int64, in AnalyzeInpu
 	return ref, prompt, nil
 }
 
-// AnalyzeAsync validates the request and enqueues llm.analyze onto the critical worker queue.
-func (s *Services) AnalyzeAsync(ctx context.Context, uid int64, in AnalyzeInput) (*queue.JobStatus, error) {
+// Analyze builds the requested prompt and runs it on the LLM worker pool (tokens streamed over SSE).
+// It returns the stored *view.LLMAnalysis, or the *queue.JobStatus when async or still running.
+func (s *Services) Analyze(ctx context.Context, uid int64, in AnalyzeInput, async bool) (any, error) {
 	ref, prompt, err := s.prepareAnalyze(ctx, uid, in)
 	if err != nil {
 		return nil, err
 	}
-	return s.queue.Enqueue(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindLLMAnalyze,
-		Queue:       queue.QueueCritical,
-		Label:       "Analyse coach IA (" + in.Kind + ")",
-		MaxAttempts: 1,
-		Payload:     llmAnalyzeJobPayload{Kind: in.Kind, Ref: ref, Prompt: prompt, Async: true},
-	})
-}
-
-// Analyze builds the requested prompt, dispatches it through the critical worker queue (streaming SSE tokens), and returns the stored analysis.
-func (s *Services) Analyze(ctx context.Context, uid int64, in AnalyzeInput) (*view.LLMAnalysis, error) {
-	ref, prompt, err := s.prepareAnalyze(ctx, uid, in)
-	if err != nil {
-		return nil, err
-	}
-	_, res, err := s.queue.EnqueueAndWait(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindLLMAnalyze,
-		Queue:       queue.QueueCritical,
-		Label:       "Analyse coach IA (" + in.Kind + ")",
-		MaxAttempts: 1,
-		Payload:     llmAnalyzeJobPayload{Kind: in.Kind, Ref: ref, Prompt: prompt, Async: false},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if a, ok := res.(*view.LLMAnalysis); ok {
-		return a, nil
-	}
-	var out view.LLMAnalysis
-	raw, _ := json.Marshal(res)
-	_ = json.Unmarshal(raw, &out)
-	return &out, nil
+	return awaitJob[view.LLMAnalysis](ctx, s, queue.EnqueueRequest{
+		UserID:  uid,
+		Kind:    queue.KindLLMAnalyze,
+		Queue:   queue.QueueCritical,
+		Label:   "Analyse coach IA (" + in.Kind + ")",
+		Payload: llmAnalyzeJobPayload{Kind: in.Kind, Ref: ref, Prompt: prompt, Async: async},
+	}, async)
 }
 
 // Analyses lists the latest 20 stored analyses, optionally filtered by kind and ref.

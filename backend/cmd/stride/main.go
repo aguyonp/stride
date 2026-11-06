@@ -194,7 +194,7 @@ func run() error {
 		Users:    dom.ConnectedUserIDs,
 		LastSync: dom.LastSyncAt,
 		Sync:     dom.MorningSync,
-		Purge:    maintenance(st, logs, log),
+		Purge:    maintenance(st, dom, logs, log),
 	})
 
 	srv := &http.Server{
@@ -249,7 +249,7 @@ func run() error {
 	}
 	stopSched()
 	wg.Wait()
-	dom.Wait()
+	dom.Close(shCtx)
 	log.Info("🛑 Serveur arrêté")
 	return serveErr
 }
@@ -328,7 +328,7 @@ func persistErrors(st *store.Store) func(context.Context, []apimeter.ErrorEvent)
 	}
 }
 
-func maintenance(st *store.Store, logs *applog.Log, log *slog.Logger) func(context.Context) error {
+func maintenance(st *store.Store, dom *domain.Services, logs *applog.Log, log *slog.Logger) func(context.Context) error {
 	const keep = 7 * 24 * time.Hour
 	return func(ctx context.Context) error {
 		now := time.Now()
@@ -336,10 +336,12 @@ func maintenance(st *store.Store, logs *applog.Log, log *slog.Logger) func(conte
 		invitations, err2 := st.PurgeInvitations(ctx, now, keep)
 		events, err3 := st.PurgeAPIEvents(ctx, now.Add(-keep))
 		auditRows, err4 := logs.Purge(ctx, now)
-		if sessions+invitations+events+auditRows > 0 {
-			log.Info("🧹 Maintenance", "sessionsExpirées", sessions, "invitations", invitations, "événementsAPI", events, "journaux", auditRows)
+		jobs, links, err5 := dom.PurgeStale(ctx)
+		if sessions+invitations+events+auditRows+jobs+links > 0 {
+			log.Info("🧹 Maintenance", "sessionsExpirées", sessions, "invitations", invitations, "événementsAPI", events,
+				"journaux", auditRows, "tâches", jobs, "liensPartage", links)
 		}
-		return errors.Join(err1, err2, err3, err4)
+		return errors.Join(err1, err2, err3, err4, err5)
 	}
 }
 

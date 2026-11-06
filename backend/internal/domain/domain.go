@@ -38,10 +38,11 @@ type Deps struct {
 	Weather weather.Provider // nil when weather is disabled
 	SSE     *sse.Hub
 	Metrics *observability.Metrics
-	Queue   *queue.Manager
 	Log     *slog.Logger
 	// BaseURLs overrides fixed external endpoints in tests (keys: gemini, anthropic, openai, telegram).
 	BaseURLs map[string]string
+	// JobBackoff is the first retry delay of failed jobs (default 10 s; tests shorten it).
+	JobBackoff time.Duration
 }
 
 type Services struct {
@@ -50,17 +51,15 @@ type Services struct {
 	// Now is overridable in tests.
 	Now func() time.Time
 
-	mu        sync.Mutex
-	clients   map[int64]*garmin.Client
-	running   map[int64]bool
-	syncJobs  map[int64]string
-	subsOnce  sync.Once
-	sf        singleflight.Group
-	bg        sync.WaitGroup
-	queue     *queue.Manager
-	ownsQueue bool
-	egress    *http.Client
-	llmHTTP   *http.Client
+	mu       sync.Mutex
+	clients  map[int64]*garmin.Client
+	running  map[int64]bool
+	syncJobs map[int64]string
+	subsOnce sync.Once
+	sf       singleflight.Group
+	queue    *queue.Manager
+	egress   *http.Client
+	llmHTTP  *http.Client
 }
 
 func New(d Deps) (*Services, error) {
@@ -80,26 +79,11 @@ func New(d Deps) (*Services, error) {
 		clients:  map[int64]*garmin.Client{},
 		running:  map[int64]bool{},
 		syncJobs: map[int64]string{},
-		queue:    d.Queue,
 		egress:   egress.Client(d.Env.AllowPrivateEgress, llmTimeout),
 		llmHTTP:  &http.Client{Timeout: llmTimeout},
 	}
-	if s.queue == nil {
-		qm, err := queue.NewManager(queue.Options{
-			DB:          d.Store.DB,
-			SSE:         d.SSE,
-			Metrics:     d.Metrics,
-			Log:         d.Log,
-			Concurrency: 4,
-			BaseBackoff: 40 * time.Millisecond,
-			Now:         func() time.Time { return s.now() },
-		})
-		if err != nil {
-			return nil, err
-		}
-		s.queue = qm
-		s.ownsQueue = true
-	}
+	s.queue = queue.NewManager(queue.Options{DB: d.Store.DB, SSE: d.SSE, Metrics: d.Metrics, Log: d.Log,
+		BaseBackoff: d.JobBackoff, Now: func() time.Time { return s.now() }})
 	s.registerJobs()
 	if err := s.queue.Start(); err != nil {
 		return nil, err
@@ -131,30 +115,15 @@ func (s *Services) db() *sql.DB { return s.deps.Store.DB }
 
 func (s *Services) repo() athlete.Repo { return athlete.Repo{DB: s.db(), Now: s.Now} }
 
-// Wait blocks until background work and worker queue jobs (including chained jobs) are drained.
-func (s *Services) Wait() {
-	for range 3 {
-		s.bg.Wait()
-		if s.queue != nil {
-			s.queue.Wait()
-		}
-	}
-}
+// Wait blocks until background work and jobs, including the jobs and goroutines they chain, are drained.
+func (s *Services) Wait() { s.queue.Wait() }
 
-// Close releases internal worker resources when owned by Services.
-func (s *Services) Close() {
-	if s.ownsQueue && s.queue != nil {
-		s.queue.Close()
-	}
-}
-
-// Queue exposes the worker queue manager.
-func (s *Services) Queue() *queue.Manager { return s.queue }
+// Close stops the job workers: queued jobs are dropped (failed at next start) and running ones get
+// until ctx expires to finish.
+func (s *Services) Close(ctx context.Context) { s.queue.Shutdown(ctx) }
 
 func (s *Services) goBackground(name string, timeout time.Duration, fn func(ctx context.Context)) {
-	s.bg.Add(1)
-	go func() {
-		defer s.bg.Done()
+	s.queue.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				s.log.Error("💥 Tâche de fond interrompue", "task", name, "panic", fmt.Sprint(r))
@@ -163,7 +132,7 @@ func (s *Services) goBackground(name string, timeout time.Duration, fn func(ctx 
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		fn(ctx)
-	}()
+	})
 }
 
 // profile returns the athlete profile (defaults when never saved).
@@ -229,6 +198,23 @@ func (s *Services) PurgeUserCache(ctx context.Context, userID int64) error {
 	s.dropClient(userID)
 	_, err := s.deps.Cache.DelPrefix(ctx, userKey(userID))
 	return err
+}
+
+// staleRetention is how long finished jobs and revoked or expired share links are kept.
+const staleRetention = 14 * 24 * time.Hour
+
+// PurgeStale deletes finished jobs and dead share links older than staleRetention (hourly maintenance).
+func (s *Services) PurgeStale(ctx context.Context) (jobs, links int64, err error) {
+	cutoff := s.now().Add(-staleRetention)
+	if jobs, err = s.queue.Purge(ctx, cutoff); err != nil {
+		return 0, 0, err
+	}
+	res, err := s.db().ExecContext(ctx, `DELETE FROM share_links WHERE revoked_at < ? OR expires_at < ?`, cutoff.Unix(), cutoff.Unix())
+	if err != nil {
+		return jobs, 0, err
+	}
+	links, err = res.RowsAffected()
+	return jobs, links, err
 }
 
 // ConnectedUserIDs lists active users with at least one connected provider (scheduler lister).

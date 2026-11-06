@@ -195,28 +195,9 @@ func (s *Services) preparePlanGenerate(ctx context.Context, uid int64, in *PlanG
 	return report.Plan(dv, p, req), req.StartDate + ".." + req.EndDate, nil
 }
 
-// GeneratePlanAsync enqueues llm.plan_generate onto the critical worker queue when mode == "llm".
-func (s *Services) GeneratePlanAsync(ctx context.Context, uid int64, in PlanGenerateInput) (any, bool, error) {
-	prompt, ref, err := s.preparePlanGenerate(ctx, uid, &in)
-	if err != nil {
-		return nil, false, err
-	}
-	if in.Mode == "prompt" {
-		return &PlanPromptResult{Prompt: prompt, TokensEstimate: report.EstimateTokens(prompt)}, false, nil
-	}
-	job, err := s.queue.Enqueue(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindLLMPlanGenerate,
-		Queue:       queue.QueueCritical,
-		Label:       "Génération du plan IA",
-		MaxAttempts: 1,
-		Payload:     llmPlanGenerateJobPayload{Ref: ref, Prompt: prompt, Async: true},
-	})
-	return job, true, err
-}
-
-// GeneratePlan builds the plan prompt (prompt mode) or asks the athlete's LLM for drafts via the critical worker queue.
-func (s *Services) GeneratePlan(ctx context.Context, uid int64, in PlanGenerateInput) (any, error) {
+// GeneratePlan builds the plan prompt (prompt mode) or asks the athlete's LLM for drafts on the LLM
+// worker pool (*PlanDraftsResult, or the *queue.JobStatus when async or still running).
+func (s *Services) GeneratePlan(ctx context.Context, uid int64, in PlanGenerateInput, async bool) (any, error) {
 	prompt, ref, err := s.preparePlanGenerate(ctx, uid, &in)
 	if err != nil {
 		return nil, err
@@ -224,24 +205,13 @@ func (s *Services) GeneratePlan(ctx context.Context, uid int64, in PlanGenerateI
 	if in.Mode == "prompt" {
 		return &PlanPromptResult{Prompt: prompt, TokensEstimate: report.EstimateTokens(prompt)}, nil
 	}
-	_, res, err := s.queue.EnqueueAndWait(ctx, queue.EnqueueRequest{
-		UserID:      uid,
-		Kind:        queue.KindLLMPlanGenerate,
-		Queue:       queue.QueueCritical,
-		Label:       "Génération du plan IA",
-		MaxAttempts: 1,
-		Payload:     llmPlanGenerateJobPayload{Ref: ref, Prompt: prompt, Async: false},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if d, ok := res.(*PlanDraftsResult); ok {
-		return d, nil
-	}
-	var out PlanDraftsResult
-	raw, _ := json.Marshal(res)
-	_ = json.Unmarshal(raw, &out)
-	return &out, nil
+	return awaitJob[PlanDraftsResult](ctx, s, queue.EnqueueRequest{
+		UserID:  uid,
+		Kind:    queue.KindLLMPlanGenerate,
+		Queue:   queue.QueueCritical,
+		Label:   "Génération du plan IA",
+		Payload: llmPlanGenerateJobPayload{Ref: ref, Prompt: prompt, Async: async},
+	}, async)
 }
 
 func (s *Services) loadRatio(ctx context.Context, uid int64, p athlete.Profile, today string) (*analysis.LoadRatio, error) {

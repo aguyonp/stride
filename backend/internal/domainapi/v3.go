@@ -12,6 +12,8 @@ import (
 
 	"stride/internal/domain"
 	"stride/internal/httpx"
+	"stride/internal/queue"
+	"stride/internal/view"
 )
 
 func registerV3(user func(string, http.HandlerFunc), a *api) {
@@ -61,6 +63,18 @@ func (a *api) reply3(w http.ResponseWriter, r *http.Request, v any, err error) {
 		return
 	}
 	a.reply(w, r, v, err)
+}
+
+// isAsync reports ?async=1: the job is only enqueued and its status returned (202).
+func isAsync(r *http.Request) bool { return r.URL.Query().Get("async") == "1" }
+
+// replyJob answers 202 with the job status when the work was deferred, else like reply3.
+func (a *api) replyJob(w http.ResponseWriter, r *http.Request, v any, err error) {
+	if st, ok := v.(*queue.JobStatus); ok && err == nil {
+		httpx.JSON(w, http.StatusAccepted, st)
+		return
+	}
+	a.reply3(w, r, v, err)
 }
 
 func (a *api) withID(w http.ResponseWriter, r *http.Request, h func(uid, id int64)) {
@@ -157,8 +171,8 @@ func (a *api) analyze(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, "Corps JSON invalide ({kind, activityId?, date?, activityIds?, weeks?, include?, question?} attendu).")
 			return
 		}
-		v, err := a.s.Analyze(r.Context(), uid, body)
-		a.reply3(w, r, v, err)
+		v, err := a.s.Analyze(r.Context(), uid, body, isAsync(r))
+		a.replyJob(w, r, v, err)
 	})
 }
 
@@ -179,8 +193,8 @@ func (a *api) planGenerate(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, "Corps JSON invalide ({mode, horizon, startDate, goalId?, note?} attendu).")
 			return
 		}
-		v, err := a.s.GeneratePlan(r.Context(), uid, body)
-		a.reply3(w, r, v, err)
+		v, err := a.s.GeneratePlan(r.Context(), uid, body, isAsync(r))
+		a.replyJob(w, r, v, err)
 	})
 }
 
@@ -316,11 +330,11 @@ func (a *api) importFile(w http.ResponseWriter, r *http.Request) {
 			httpx.Fail(w, http.StatusRequestEntityTooLarge, httpx.CodeBadRequest, "Fichier trop volumineux (25 Mo max).")
 			return
 		}
-		v, err := a.s.ImportFile(r.Context(), uid, hdr.Filename, data)
-		if err == nil && v.Merged {
-			a.reply(w, r, v, nil)
+		v, err := a.s.ImportFile(r.Context(), uid, hdr.Filename, data, isAsync(r))
+		if res, ok := v.(*view.ImportResult); ok && !res.Merged {
+			a.created(w, r, res, err)
 			return
 		}
-		a.created(w, r, v, err)
+		a.replyJob(w, r, v, err)
 	})
 }
