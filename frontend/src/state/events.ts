@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type {
   JobStatus,
   LLMAnalysis,
@@ -56,8 +56,18 @@ const subscribeStore = (cb: () => void) => {
   return () => storeListeners.delete(cb)
 }
 
+// The snapshot is memoized per (state, selector): selectors that build arrays or objects would
+// otherwise return a new reference on every read and make useSyncExternalStore loop forever.
 export function useEventStore<T>(selector: (s: EventStoreState) => T): T {
-  return useSyncExternalStore(subscribeStore, () => selector(state))
+  const cache = useRef<{ state: EventStoreState; selector: (s: EventStoreState) => T; value: T } | null>(null)
+  const getSnapshot = () => {
+    const c = cache.current
+    if (c && c.state === state && c.selector === selector) return c.value
+    const value = selector(state)
+    cache.current = { state, selector, value }
+    return value
+  }
+  return useSyncExternalStore(subscribeStore, getSnapshot)
 }
 
 export function getEventStoreState(): EventStoreState {
@@ -260,26 +270,32 @@ export function isJobStatus(v: unknown): v is JobStatus {
   )
 }
 
-export function useActiveJobs(): JobStatus[] {
-  return useEventStore((s) => {
-    const active: JobStatus[] = []
-    for (const job of Object.values(s.jobs)) {
-      if (job.state === 'queued' || job.state === 'running' || job.state === 'retrying') {
-        active.push(job)
-      }
+function selectActiveJobs(s: EventStoreState): JobStatus[] {
+  const active: JobStatus[] = []
+  for (const job of Object.values(s.jobs)) {
+    if (job.state === 'queued' || job.state === 'running' || job.state === 'retrying') {
+      active.push(job)
     }
-    active.sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1))
-    return active
-  })
+  }
+  active.sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1))
+  return active
+}
+
+export function useActiveJobs(): JobStatus[] {
+  return useEventStore(selectActiveJobs)
 }
 
 export function useLlmStream(jobId: string | null, kind?: string, ref?: string): LLMStreamState | null {
-  return useEventStore((s) => {
-    if (jobId && s.llmByJob[jobId]) return s.llmByJob[jobId]
-    if (kind !== undefined && ref !== undefined) {
-      const mappedId = s.llmJobByRef[streamRefKey(kind, ref)]
-      if (mappedId && s.llmByJob[mappedId]) return s.llmByJob[mappedId]
-    }
-    return null
-  })
+  const select = useCallback(
+    (s: EventStoreState) => {
+      if (jobId && s.llmByJob[jobId]) return s.llmByJob[jobId]
+      if (kind !== undefined && ref !== undefined) {
+        const mappedId = s.llmJobByRef[streamRefKey(kind, ref)]
+        if (mappedId && s.llmByJob[mappedId]) return s.llmByJob[mappedId]
+      }
+      return null
+    },
+    [jobId, kind, ref],
+  )
+  return useEventStore(select)
 }
