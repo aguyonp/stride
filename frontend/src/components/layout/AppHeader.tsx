@@ -21,7 +21,7 @@ export function AppHeader({ me }: { me: Me | null }) {
     <header className="app-header">
       <div className="app-header-grid mx-auto h-14 max-w-[1440px] px-4 sm:px-6 lg:h-16 lg:px-8">
         <Link href="/" className="flex min-w-0 items-center gap-2.5 justify-self-start rounded-xl" aria-label="Stride, tableau de bord">
-          <span className="grid size-9 flex-none place-items-center rounded-xl bg-gradient-to-br from-accent/20 to-accent-2/5 text-ink ring-1 ring-accent/25 ring-inset">
+          <span className="grid size-9 flex-none place-items-center rounded-xl bg-accent/15 text-accent ring-1 ring-accent/20 ring-inset">
             <StrideMark className="w-6" />
           </span>
           <span className="min-w-0 truncate text-[1.1rem] leading-none font-semibold tracking-tight">Stride</span>
@@ -40,8 +40,8 @@ export function AppHeader({ me }: { me: Me | null }) {
                       href={n.href}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold whitespace-nowrap transition-colors xl:px-3.5',
-                        active ? 'bg-gradient-to-br from-accent to-accent-2 text-on-accent shadow-[0_6px_18px_-8px_var(--accent)]' : 'text-ink-2 hover:bg-track hover:text-ink',
+                        'flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium whitespace-nowrap transition-colors xl:px-3.5',
+                        active ? 'bg-accent text-on-accent shadow-xs' : 'text-ink-2 hover:bg-track hover:text-ink',
                       )}
                     >
                       <Icon className="size-4 flex-none" aria-hidden="true" />

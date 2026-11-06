@@ -120,7 +120,7 @@ export function WeekCard({ date, today, className }: { date: string; today: stri
                 </span>
               </div>
               <div className="h-2 rounded-full bg-track" role="img" aria-label={`Volume réalisé ${pct ?? 0} % du prévu`}>
-                <div className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2" style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
+                <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
               </div>
             </div>
           )}

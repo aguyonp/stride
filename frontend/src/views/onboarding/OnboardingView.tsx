@@ -30,7 +30,7 @@ function Progress({ step }: { step: Step }) {
         const current = i === step
         return (
           <li key={s.short} className="min-w-0" aria-current={current ? 'step' : undefined}>
-            <div className={cn('h-1.5 rounded-full transition-colors', done || current ? 'bg-gradient-to-r from-accent to-accent-2' : 'bg-track')} />
+            <div className={cn('h-1.5 rounded-full transition-colors', done || current ? 'bg-accent' : 'bg-track')} />
             <p className={cn('mt-1.5 flex items-center gap-1 truncate text-[11px] font-semibold', current ? 'text-ink' : done ? 'text-ink-2' : 'text-ink-3')}>
               {done && <Check className="size-3 flex-none text-accent" aria-hidden="true" />}
               <span className="truncate">{s.short}</span>
@@ -136,8 +136,7 @@ export default function OnboardingView({ me }: { me: Me }) {
     <div className="mx-auto max-w-2xl py-2 sm:py-6">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="label-caps">Bienvenue sur Stride</p>
-          <p className="truncate text-lg font-semibold tracking-tight">Bonjour {me.displayName}</p>
+          <h1 className="truncate text-xl font-semibold tracking-tight text-ink">Bonjour {me.displayName}</h1>
         </div>
         {step < 3 && (
           <button type="button" className="flex-none text-sm font-medium text-ink-3 underline-offset-4 hover:text-ink hover:underline" onClick={finish} disabled={updateMe.isPending}>

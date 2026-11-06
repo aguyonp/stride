@@ -11,7 +11,7 @@ export function UserMenu({ me }: { me: Me }) {
   return (
     <Popover
       trigger={(p) => (
-        <button {...p} type="button" className="icon-btn bg-gradient-to-br from-accent/25 to-accent-2/10 text-[0.8rem] font-bold" aria-label={`Compte : ${me.displayName}`}>
+        <button {...p} type="button" className="icon-btn bg-accent/15 text-[0.8rem] font-semibold text-accent" aria-label={`Compte : ${me.displayName}`}>
           {initials(me.displayName)}
         </button>
       )}

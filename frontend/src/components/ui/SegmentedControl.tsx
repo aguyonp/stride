@@ -55,7 +55,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, a
     >
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-xl bg-gradient-to-br from-accent to-accent-2 shadow-[0_6px_18px_-8px_var(--accent)] transition-transform duration-300 ease-[var(--ease-out-soft)]"
+        className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-xl bg-accent shadow-xs transition-transform duration-200 ease-[var(--ease-out-soft)]"
         style={{ width: `calc((100% - 0.5rem) / ${options.length})`, transform: `translateX(${index * 100}%)` }}
       />
       {options.map((o, i) => {
@@ -73,7 +73,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, a
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(o.value)}
             className={cn(
-              'relative z-10 flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 font-semibold transition-colors duration-200',
+              'relative z-10 flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 font-medium transition-colors duration-200',
               size === 'sm' ? 'h-8 text-xs' : 'h-10 text-[0.8125rem] sm:text-sm',
               selected ? 'text-on-accent' : 'text-ink-2 hover:text-ink',
             )}

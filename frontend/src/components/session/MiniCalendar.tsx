@@ -116,7 +116,7 @@ export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, on
               }}
               className={cn(
                 'relative flex aspect-square min-h-9 flex-col items-center justify-center rounded-xl text-sm transition-colors',
-                isSel ? 'bg-gradient-to-br from-accent to-accent-2 font-semibold text-on-accent' : 'hover:bg-track',
+                isSel ? 'bg-accent font-medium text-on-accent' : 'hover:bg-track',
                 !isSel && isToday && 'font-bold text-accent ring-1 ring-accent/50 ring-inset',
                 !isSel && !isToday && (acts.length ? 'text-ink' : 'text-ink-3'),
                 future && 'opacity-35',

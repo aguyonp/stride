@@ -90,7 +90,7 @@ export function FeelingForm({ activityId, notes, onSaved, stickyActions }: Feeli
                 onClick={() => set('rpe', on ? null : v)}
                 className={cn(
                   'num h-11 rounded-xl border text-sm font-semibold transition-colors',
-                  on ? 'border-transparent bg-gradient-to-br from-accent to-accent-2 text-on-accent' : 'border-line text-ink-2 hover:bg-track',
+                  on ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink-2 hover:bg-track',
                 )}
               >
                 {v}
