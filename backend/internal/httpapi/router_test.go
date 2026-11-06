@@ -20,6 +20,8 @@ import (
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/env"
+	"stride/internal/observability"
+	"stride/internal/sse"
 	"stride/internal/store"
 	"stride/internal/web"
 )
@@ -43,10 +45,15 @@ func newRouter(t *testing.T, c cache.Cache, logOut io.Writer) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dom, _ := domain.New(domain.Deps{Store: st, Cache: c, Log: log})
+	metrics := observability.New()
+	hub := sse.NewHub(sse.Options{Metrics: metrics, Log: log})
+	t.Cleanup(hub.Close)
+	dom, _ := domain.New(domain.Deps{Store: st, Cache: c, Log: log, SSE: hub, Metrics: metrics})
 	return New(Deps{
 		Store: st, Cache: c, Auth: a, Domain: dom, Log: log, Logs: applog.New(st.DB, log), HTTPS: true, Static: web.New(),
-		Admin: admin.New(admin.Deps{Store: st, Cache: c, Meter: apimeter.Nop(), Auth: a, Log: log}),
+		Admin:   admin.New(admin.Deps{Store: st, Cache: c, Meter: apimeter.Nop(), Auth: a, Log: log}),
+		Metrics: metrics,
+		SSE:     hub,
 	})
 }
 
@@ -144,5 +151,45 @@ func TestRecoverAndBodyLimit(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("body limit: %d", rec.Code)
+	}
+}
+
+func TestPlatformEndpoints(t *testing.T) {
+	h := newRouter(t, cache.NewMemory(), nil)
+
+	// GET /version
+	rec := call(h, "GET", "/version", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("version code: %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"version":"4.0.0"`) {
+		t.Fatalf("version body: %s", rec.Body.String())
+	}
+
+	// GET /metrics
+	rec = call(h, "GET", "/metrics", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("metrics code: %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "stride_") {
+		t.Fatalf("metrics body: %s", rec.Body.String())
+	}
+
+	// GET /openapi.json
+	rec = call(h, "GET", "/openapi.json", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("openapi.json code: %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"openapi": "3.0.3"`) {
+		t.Fatalf("openapi.json body: %s", rec.Body.String())
+	}
+
+	// GET /openapi.yaml
+	rec = call(h, "GET", "/openapi.yaml", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("openapi.yaml code: %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "openapi: 3.0.3") {
+		t.Fatalf("openapi.yaml body: %s", rec.Body.String())
 	}
 }

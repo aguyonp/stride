@@ -479,9 +479,7 @@ func (s *Services) DayView(ctx context.Context, uid int64, date string) (*view.D
 		return nil, err
 	}
 	fr := &fresh{}
-	if err := s.firstSyncIfNeeded(ctx, uid, fr); err != nil {
-		s.log.Warn("⚠️ Première synchronisation incomplète", "user", uid, "err", errText(err))
-	}
+	s.triggerFirstSyncIfNeeded(ctx, uid)
 	r := s.repo()
 	rows, err := s.activitiesBetween(ctx, uid, analysis.DateAdd(date, -27), date)
 	if err != nil {

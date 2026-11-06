@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"math"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"stride/internal/analysis"
 	"stride/internal/fitdata"
+	"stride/internal/queue"
 	"stride/internal/view"
 )
 
@@ -158,9 +160,48 @@ func firstNum(vs ...float64) float64 {
 	return math.NaN()
 }
 
-// ImportFile stores a rescue import (§11.7): merged into a matching activity lacking a FIT,
-// otherwise inserted as an import-only activity.
+// ImportFileAsync validates the file format upfront and enqueues import.activity on the critical worker queue.
+func (s *Services) ImportFileAsync(ctx context.Context, uid int64, filename string, data []byte) (*queue.JobStatus, error) {
+	if importFormat(filename, data) == "" {
+		return nil, badRequest("Format non reconnu : fichiers .fit, .gpx ou .tcx uniquement.")
+	}
+	return s.queue.Enqueue(ctx, queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindImportActivity,
+		Queue:       queue.QueueCritical,
+		Label:       "Import de " + filepath.Base(filename),
+		MaxAttempts: 1,
+		Payload:     importJobPayload{Filename: filename, Data: data},
+	})
+}
+
+// ImportFile stores a rescue import (§11.7) via the critical worker queue: merged into a matching
+// activity lacking a FIT, otherwise inserted as an import-only activity.
 func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, data []byte) (*view.ImportResult, error) {
+	if importFormat(filename, data) == "" {
+		return nil, badRequest("Format non reconnu : fichiers .fit, .gpx ou .tcx uniquement.")
+	}
+	_, res, err := s.queue.EnqueueAndWait(ctx, queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindImportActivity,
+		Queue:       queue.QueueCritical,
+		Label:       "Import de " + filepath.Base(filename),
+		MaxAttempts: 1,
+		Payload:     importJobPayload{Filename: filename, Data: data},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if out, ok := res.(*view.ImportResult); ok {
+		return out, nil
+	}
+	var out view.ImportResult
+	raw, _ := json.Marshal(res)
+	_ = json.Unmarshal(raw, &out)
+	return &out, nil
+}
+
+func (s *Services) importFileExec(ctx context.Context, uid int64, filename string, data []byte) (*view.ImportResult, error) {
 	format := importFormat(filename, data)
 	if format == "" {
 		return nil, badRequest("Format non reconnu : fichiers .fit, .gpx ou .tcx uniquement.")
@@ -233,6 +274,11 @@ func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, d
 	})
 	if err != nil {
 		return nil, err
+	}
+	s.deps.Metrics.AddTelemetryPoints(format, len(act.Records))
+	s.deps.Metrics.IncActivitySynced("import")
+	if res.Merged {
+		s.deps.Metrics.IncActivitySynced("fusion")
 	}
 	s.log.Info("📥 Import de secours enregistré", "user", uid, "format", format, "fusion", res.Merged)
 	return res, nil

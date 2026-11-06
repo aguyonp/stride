@@ -5,7 +5,9 @@ export type ErrorCode =
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'NOT_FOUND'
+  | 'GONE'
   | 'CONFLICT'
+  | 'PRECONDITION_FAILED'
   | 'RATE_LIMITED'
   | 'PROVIDER_UNAUTHORIZED'
   | 'PROVIDER_UNAVAILABLE'
@@ -133,6 +135,7 @@ export interface SyncStatus {
   lastLiveAt: string | null
   cooldownUntil: string | null
   providers: { garmin: ProviderSync | null; strava: ProviderSync | null }
+  jobId?: string | null
 }
 export interface AdminConnection {
   userId: number
@@ -923,4 +926,366 @@ export interface PlanAdaptPreview {
   sessions: (PlannedSessionInput & { id?: number })[]
   removeIds: number[]
   summary: string
+}
+
+/* ---------------------------------- 4.0.0 (§13) ---------------------------------- */
+
+export type JobQueue = 'critical' | 'default' | 'low'
+export type JobState = 'queued' | 'running' | 'retrying' | 'completed' | 'failed'
+export type JobKind =
+  | 'sync.provider'
+  | 'sync.strava_webhook'
+  | 'sync.resync'
+  | 'import.activity'
+  | 'llm.analyze'
+  | 'llm.plan_generate'
+  | 'llm.plan_adapt'
+  | 'webhook.deliver'
+
+export interface JobStatus {
+  id: string
+  userId: number
+  kind: JobKind
+  queue: JobQueue
+  state: JobState
+  label: string
+  progressPct: number | null
+  processed: number | null
+  total: number | null
+  attempts: number
+  maxAttempts: number
+  error: string | null
+  result: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface JobListResponse {
+  items: JobStatus[]
+}
+
+export interface StreamConnectedEvent {
+  status: 'ok'
+  userId: number
+  serverTime: string
+}
+
+export interface StreamAlertEvent {
+  id: string
+  activityId: number | null
+  date: string
+  level: 'info' | 'warn' | 'critical'
+  code: string
+  title: string
+  detail: string
+  createdAt: string
+}
+
+export interface StreamLLMTokenEvent {
+  jobId: string
+  kind: string
+  ref: string
+  delta: string
+}
+
+export interface StreamLLMDoneEvent {
+  jobId: string
+  kind: string
+  ref: string
+  error?: string | null
+  analysis?: LLMAnalysis | null
+  planDrafts?: PlanDraftsResponse | null
+  adaptPreview?: PlanAdaptPreview | null
+}
+
+export interface StrideStreamEventMap {
+  connected: StreamConnectedEvent
+  'job.updated': JobStatus
+  'sync.updated': SyncStatus
+  'alert.triggered': StreamAlertEvent
+  'llm.token': StreamLLMTokenEvent
+  'llm.done': StreamLLMDoneEvent
+  'meter.updated': MeterSnapshot
+}
+
+export type PhaseType = 'foundation' | 'build' | 'threshold' | 'specific' | 'assimilation' | 'taper' | 'recovery'
+export type CyclePlanStatus = 'active' | 'completed' | 'archived'
+
+export interface CycleActuals {
+  plannedVolumeKm: number
+  actualVolumeKm: number
+  volumeCompletionPct: number | null
+  plannedLoad: number
+  actualLoad: number
+  loadCompletionPct: number | null
+  plannedDurationS: number
+  actualDurationS: number
+  sessionsPlanned: number
+  sessionsCompleted: number
+}
+
+export interface TrainingPlan {
+  id: number
+  goalId: number | null
+  name: string
+  sport: 'run' | 'bike' | 'other'
+  startDate: string
+  endDate: string
+  targetEventLabel: string
+  status: CyclePlanStatus
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TrainingPlanInput {
+  name: string
+  goalId?: number | null
+  sport?: 'run' | 'bike' | 'other'
+  startDate: string
+  endDate: string
+  targetEventLabel?: string
+  status?: CyclePlanStatus
+  note?: string
+  autoScaffold?: boolean
+  peakWeeklyVolumeKm?: number | null
+  peakWeeklyLoad?: number | null
+}
+
+export interface TrainingWeek {
+  id: number
+  planId: number | null
+  phaseId: number | null
+  weekStart: string
+  weekEnd: string
+  weekNumber: number
+  isAssimilation: boolean
+  targetVolumeKm: number | null
+  targetLoad: number | null
+  targetDurationS: number | null
+  note: string
+  actuals: CycleActuals
+  workouts: PlannedSession[]
+}
+
+export interface TrainingWeekInput {
+  planId?: number | null
+  phaseId?: number | null
+  weekStart: string
+  isAssimilation?: boolean
+  targetVolumeKm?: number | null
+  targetLoad?: number | null
+  targetDurationS?: number | null
+  note?: string
+}
+
+export interface TrainingPhase {
+  id: number
+  planId: number | null
+  name: string
+  phaseType: PhaseType
+  orderIndex: number
+  startDate: string
+  endDate: string
+  focus: string
+  weeklyVolumeKm: number | null
+  targetWeeklyLoad: number | null
+  targetWeeklyDurationS: number | null
+  note: string
+  actuals: CycleActuals
+  weeks: TrainingWeek[]
+}
+
+export interface TrainingPhaseInput {
+  planId?: number | null
+  name: string
+  phaseType?: PhaseType
+  orderIndex?: number
+  startDate: string
+  endDate: string
+  focus?: string
+  weeklyVolumeKm?: number | null
+  targetWeeklyLoad?: number | null
+  targetWeeklyDurationS?: number | null
+  note?: string
+}
+
+export interface TrainingCycleOverview {
+  plans: TrainingPlan[]
+  activePlan: TrainingPlan | null
+  phases: TrainingPhase[]
+  standaloneWeeks: TrainingWeek[]
+  totals: CycleActuals
+}
+
+export type BodyZone =
+  | 'knee_pfps'
+  | 'achilles'
+  | 'plantar_fascia'
+  | 'shin_splints'
+  | 'iliotibial_band'
+  | 'hamstrings_calves'
+
+export type BodySide = 'left' | 'right' | 'both'
+
+export interface BodyStressEntry {
+  id: number
+  date: string
+  activityId: number | null
+  activityName: string | null
+  zone: BodyZone
+  zoneLabel: string
+  side: BodySide
+  painScore: number
+  coldNextDayScore: number | null
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BodyStressInput {
+  date: string
+  activityId?: number | null
+  zone: BodyZone
+  side?: BodySide
+  painScore: number
+  coldNextDayScore?: number | null
+  note?: string
+}
+
+export interface BodyZoneSummary {
+  zone: BodyZone
+  zoneLabel: string
+  latestScore: number | null
+  latestColdNextDayScore: number | null
+  latestSide: BodySide | null
+  latestDate: string | null
+  maxScore30d: number | null
+  entriesCount90d: number
+  trend: 'improving' | 'stable' | 'worsening' | 'none'
+}
+
+export interface BodyShoeHighlight {
+  shoeId: number
+  shoeName: string
+  dropMm: number | null
+  distanceKm: number
+  painEpisodes: number
+}
+
+export interface BodyCorrelationFactor {
+  zone: BodyZone
+  zoneLabel: string
+  factor: 'shoe_drop' | 'shoe_wear' | 'elev_loss' | 'gct' | 'impact_load'
+  factorLabel: string
+  unit: string
+  symptomaticMean: number | null
+  baselineMean: number | null
+  deltaPct: number | null
+  symptomaticRuns: number
+  baselineRuns: number
+  confidence: 'insufficient' | 'low' | 'moderate' | 'high'
+  shoeHighlight: BodyShoeHighlight | null
+  summary: string
+}
+
+export interface BodyMapOverview {
+  zones: BodyZoneSummary[]
+  entries: BodyStressEntry[]
+  correlations: BodyCorrelationFactor[]
+  windowDays: number
+}
+
+export interface ShareLink {
+  id: number
+  label: string
+  tokenPrefix: string
+  url: string
+  expiresAt: string | null
+  revoked: boolean
+  revokedAt: string | null
+  accessCount: number
+  lastAccessedAt: string | null
+  createdAt: string
+}
+
+export interface ShareLinkInput {
+  label: string
+  expiresInDays?: number | null
+  expiresAt?: string | null
+}
+
+export interface PublicActivityItem {
+  id: number
+  date: string
+  startLocal: string
+  name: string
+  sport: string
+  typeLabel: string
+  distanceM: number | null
+  durationS: number | null
+  avgPaceSecPerKm: number | null
+  gapSecPerKm: number | null
+  avgHR: number | null
+  avgCadenceSpm: number | null
+  gctMs: number | null
+  elevGainM: number | null
+  elevLossM: number | null
+  trainingLoad: number | null
+  impactLoad: number | null
+  jointIndex: number | null
+  efSpeed: number | null
+  shoeName: string | null
+  shoeDropMm: number | null
+  painDuring: number | null
+  painNextMorning: number | null
+}
+
+export interface PublicLoadPoint {
+  date: string
+  acute: number
+  chronic: number
+  acwr: number | null
+  efSpeed: number | null
+  impactLoad7d: number | null
+  jointIndex7d: number | null
+}
+
+export interface PublicShoeItem {
+  id: number
+  name: string
+  brand: string
+  model: string
+  dropMm: number | null
+  type: 'soft' | 'tempo' | 'carbon'
+  distanceKm: number
+  retired: boolean
+}
+
+export interface PublicShareView {
+  generatedAt: string
+  shareLabel: string
+  expiresAt: string | null
+  athlete: {
+    displayName: string
+    focusArea: string
+    focusLabel: string
+    injuredSide: 'left' | 'right' | 'both' | null
+  }
+  readiness: ReadinessBanner
+  loadSummary: {
+    acute: number
+    chronic: number
+    acwr: number | null
+    verdict: 'low' | 'optimal' | 'high' | 'danger' | null
+    efLatest: number | null
+    efTrendPct: number | null
+    impactLoad7d: number | null
+    jointIndex7d: number | null
+  }
+  loadSeries: PublicLoadPoint[]
+  cycles: TrainingCycleOverview
+  recentSessions: PublicActivityItem[]
+  bodyMap: BodyMapOverview
+  shoes: PublicShoeItem[]
 }

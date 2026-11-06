@@ -1,12 +1,15 @@
+import { useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Bot, ClipboardPaste, Copy, Loader2, Sparkles, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'wouter'
+import { api } from '../../api/client'
 import { useLlmConfig, usePlanV3 } from '../../api/queriesV3'
-import type { Goal, PlanDraftsResponse, PlanHorizon, PlannedSessionInput, PlanPhase, PlanPromptResponse } from '../../api/types'
+import type { Goal, PlanDraftsResponse, PlanGenerateRequest, PlanHorizon, PlannedSessionInput, PlanPhase, PlanPromptResponse } from '../../api/types'
 import { copyText } from '../../lib/clipboard'
 import { cn } from '../../lib/cn'
 import { addDays, capitalize, fmtDateLong, fmtDateShort, fmtNumber, mondayOf } from '../../lib/format'
 import { PLAN_SPORT_LABEL } from '../../lib/labels'
+import { clearLlmStream, isJobStatus, startLlmStream, useLlmStream } from '../../state/events'
 import { Dialog } from '../ui/Dialog'
 import { Checkbox, Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
@@ -143,25 +146,44 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
   const [answer, setAnswer] = useState('')
   const [result, setResult] = useState<PlanDraftsResponse | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [streamJobId, setStreamJobId] = useState<string | null>(null)
   const effMode: Mode = llmOn ? (mode ?? 'llm') : 'prompt'
+  const liveStream = useLlmStream(streamJobId, 'plan_generate', startDate)
 
   const showDrafts = (r: PlanDraftsResponse) => {
+    setStreamJobId(null)
     setResult(r)
     setSelected(new Set(r.drafts.map((_, i) => i)))
     setStep('preview')
   }
+
+  const genMut = useMutation({
+    mutationFn: (b: PlanGenerateRequest) => api.planGenerateStream(b, b.mode === 'llm'),
+    onSuccess: (r) => {
+      if (isJobStatus(r)) {
+        setStreamJobId(r.id)
+        startLlmStream(r.id, 'plan_generate', startDate)
+        return
+      }
+      if ('prompt' in r) {
+        setPrompt(r)
+        setStep('paste')
+      } else {
+        showDrafts(r)
+      }
+    },
+  })
+
+  useEffect(() => {
+    if (liveStream?.done && liveStream.planDrafts) {
+      showDrafts(liveStream.planDrafts)
+    }
+  }, [liveStream?.done, liveStream?.planDrafts])
+
   const generate = () => {
-    plan.generate.mutate(
-      { mode: effMode, horizon, startDate, goalId: horizon === 'goal' ? goal?.id : undefined, note: note.trim() || undefined },
-      {
-        onSuccess: (r) => {
-          if ('prompt' in r) {
-            setPrompt(r)
-            setStep('paste')
-          } else showDrafts(r)
-        },
-      },
-    )
+    clearLlmStream(streamJobId, 'plan_generate', startDate)
+    setStreamJobId(null)
+    genMut.mutate({ mode: effMode, horizon, startDate, goalId: horizon === 'goal' ? goal?.id : undefined, note: note.trim() || undefined })
   }
   const parse = () => plan.importText.mutate(answer, { onSuccess: showDrafts })
   const confirm = () => {
@@ -178,8 +200,10 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
     )
   }
   const phaseCount = result?.phases?.length ?? 0
-  const busy = plan.generate.isPending || plan.importText.isPending || plan.bulk.isPending
-  const error = plan.generate.error ?? plan.importText.error ?? plan.bulk.error
+  const isStreaming = Boolean(streamJobId && (!liveStream || !liveStream.done))
+  const busy = genMut.isPending || isStreaming || plan.importText.isPending || plan.bulk.isPending
+  const streamErr = liveStream?.done && liveStream.error ? new Error(liveStream.error) : null
+  const error = streamErr ?? genMut.error ?? plan.importText.error ?? plan.bulk.error
 
   const footer =
     step === 'config' ? (
@@ -188,7 +212,7 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
           Annuler
         </button>
         <button type="button" className="btn btn-primary" onClick={generate} disabled={busy || !startDate}>
-          {plan.generate.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : effMode === 'llm' ? <Sparkles className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+          {genMut.isPending || isStreaming ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : effMode === 'llm' ? <Sparkles className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
           {effMode === 'llm' ? 'Générer' : 'Obtenir le prompt'}
         </button>
       </div>
@@ -317,7 +341,20 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
           </>
         )}
 
-        {plan.generate.isPending && effMode === 'llm' && <p className="text-sm text-ink-3">Ton IA prépare le plan… (jusqu’à 2 minutes)</p>}
+        {(genMut.isPending || isStreaming) && effMode === 'llm' && (
+          <div className="space-y-2 rounded-2xl border border-accent/25 bg-track/35 p-3">
+            <p className="flex items-center gap-2 text-sm text-ink-2">
+              <Loader2 className="size-4 animate-spin text-accent" aria-hidden="true" />
+              {liveStream?.text ? 'Flux de génération IA en direct…' : 'Ton IA prépare le plan…'}
+            </p>
+            {liveStream?.text && (
+              <pre className="scroll-thin max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-ink-3">
+                {liveStream.text}
+                <span className="inline-block h-3.5 w-1.5 animate-pulse bg-accent align-middle" aria-hidden="true" />
+              </pre>
+            )}
+          </div>
+        )}
         {error && <InlineError>{error.message}</InlineError>}
       </div>
     </Dialog>

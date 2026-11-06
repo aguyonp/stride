@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrNotFound       = errors.New("ressource introuvable")
+	ErrGone           = errors.New("ressource expirée")
 	ErrNotConnected   = errors.New("fournisseur non connecté")
 	ErrStravaDisabled = errors.New("Strava n'est pas configuré sur ce serveur")
 )

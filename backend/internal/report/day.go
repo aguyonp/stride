@@ -14,6 +14,7 @@ import (
 func Day(v *view.DayView, prof athlete.Profile, inc Include) string {
 	b := newBuilder()
 	writeReadinessPriority(b, v.Readiness)
+	writeBodyStress(b, v.BodyStress)
 	if inc.Has(ChipPlan) {
 		today := "Aucune"
 		if len(v.Planned) > 0 {

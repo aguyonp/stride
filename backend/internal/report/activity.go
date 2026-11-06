@@ -14,6 +14,7 @@ import (
 func Activity(v *view.ActivityView, prof athlete.Profile, inc Include) string {
 	b := newBuilder()
 	writeReadinessPriority(b, v.Readiness)
+	writeBodyStress(b, v.BodyStress)
 	if inc.Has(ChipPlan) {
 		writeContext(b, prof, v.Goals, plannedTodayText(v), v.Upcoming, v.Records)
 	}

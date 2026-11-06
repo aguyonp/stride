@@ -12,6 +12,7 @@ import (
 	"stride/internal/apimeter"
 	"stride/internal/athlete"
 	"stride/internal/provider/strava"
+	"stride/internal/queue"
 )
 
 // stravaRetryDelays are the waits before re-trying to fuse a Strava activity Garmin does not have yet.
@@ -19,13 +20,20 @@ var stravaRetryDelays = []time.Duration{5 * time.Minute, 30 * time.Minute}
 
 const webhookTimeout = 2 * time.Minute
 
-// HandleStravaEvent processes a webhook event asynchronously (the HTTP handler acks at once).
+// HandleStravaEvent enqueues webhook processing on the worker queue (the HTTP handler acks at once).
 func (s *Services) HandleStravaEvent(ev strava.WebhookEvent) {
-	s.goBackground("strava-webhook", webhookTimeout, func(ctx context.Context) {
-		if err := s.processStravaEvent(ctx, ev, 0); err != nil {
-			s.log.Warn("🔗 Événement Strava non traité", "type", ev.ObjectType, "aspect", ev.AspectType, "err", errText(err))
-		}
+	uid, _ := s.userForAthlete(context.Background(), ev.OwnerID)
+	_, err := s.queue.Enqueue(context.Background(), queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindSyncStravaWebhook,
+		Queue:       queue.QueueDefault,
+		Label:       "Synchronisation webhook Strava",
+		MaxAttempts: 3,
+		Payload:     stravaWebhookPayload{Event: ev, Attempt: 0},
 	})
+	if err != nil {
+		s.log.Warn("🔗 Mise en file de l'événement Strava impossible", "err", errText(err))
+	}
 }
 
 func (s *Services) userForAthlete(ctx context.Context, athleteID int64) (int64, error) {
@@ -89,20 +97,23 @@ func (s *Services) processStravaEvent(ctx context.Context, ev strava.WebhookEven
 	if id == 0 {
 		delay := stravaRetryDelays[attempt]
 		s.log.Info("🔗 Activité Strava en attente de Garmin, nouvelle tentative programmée", "user", uid, "dans", delay.String())
-		s.bg.Add(1)
-		time.AfterFunc(delay, func() {
-			defer s.bg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), webhookTimeout)
-			defer cancel()
-			if err := s.processStravaEvent(ctx, ev, attempt+1); err != nil {
-				s.log.Warn("🔗 Nouvelle tentative Strava en échec", "user", uid, "err", errText(err))
-			}
+		_, _ = s.queue.Enqueue(context.Background(), queue.EnqueueRequest{
+			UserID:      uid,
+			Kind:        queue.KindSyncStravaWebhook,
+			Queue:       queue.QueueDefault,
+			Label:       "Nouvelle tentative de fusion Strava",
+			MaxAttempts: 3,
+			Delay:       delay,
+			Payload:     stravaWebhookPayload{Event: ev, Attempt: attempt + 1},
 		})
 		return nil
 	}
 	if st, err := s.deps.Strava.GetStreams(ctx, tok, act.ID); err == nil {
 		b, _ := json.Marshal(st)
 		_ = s.putBlob(ctx, uid, id, "strava_streams", b)
+		if st != nil {
+			s.deps.Metrics.AddTelemetryPoints("strava_stream", len(st.TimeS))
+		}
 	} else {
 		s.log.Warn("⚠️ Flux Strava indisponibles", "user", uid, "err", errText(providerErr(pStrava, err)))
 	}

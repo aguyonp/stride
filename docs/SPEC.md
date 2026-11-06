@@ -601,5 +601,44 @@ Responses gain `phases: PlanPhase[]` (drafts with `id: 0`); `POST /api/plan/bulk
 - `week` = 7 days, `2weeks` = 14 days from `startDate`. `goal`: `goalId` without `targetDate`, no dated active goal, or a goal more than 366 days away → 400. With phases (> 21 days), the detailed window starts the day after the last session already planned before the goal (asking again extends the detail) and lasts 4 weeks (2 weeks when fewer than 8 weeks remain). Prompts list existing phases and calendar events of the period; contract v2 only when phases are requested. Tolerant phase parsing (`start`/`end`, `"35 km"`).
 - `bulk`: ≤ 120 sessions and ≤ 12 phases, `sessions` may be empty when `phases` are given; one transaction. `GET /api/plan` without dates now covers up to today + 366 days.
 
-### 12.7 Version
-`VERSION` = `3.1.1` (no `v`, see release cycle).
+### 12.7 Version (3.1.x)
+`VERSION` was `3.1.1` prior to the `4.0.0` architectural upgrade below.
+
+---
+
+## 13. 4.0.0 — Goose Migrations, OpenAPI v3, Valkey Worker, Native SSE, Prometheus, Cycles, Body Map, Share View & Cmd+K
+
+### 13.1 Platform & Observability Endpoints
+| Method & path | Auth | Response |
+| --- | --- | --- |
+| `GET /version` | Public | `BuildInfo` (`{version, commit, builtAt, go, label}`), identical payload to authenticated `GET /api/version` |
+| `GET /metrics` | Public | Prometheus text exposition (`stride_http_*`, `stride_cache_*`, `stride_worker_*`, `stride_telemetry_*`, `stride_activities_synced_total`, `stride_external_api_*`, `stride_sse_clients_connected`; full spec in [METRICS.md](METRICS.md)) |
+| `GET /openapi.json` · `GET /openapi.yaml` | Public | OpenAPI 3.0.3 specification reflected from Go structs & routes (`stride openapi ../docs` → `npm run generate:api`) |
+| `GET /api/jobs` · `GET /api/jobs/{id}` | User | Async worker job list & per-job status (`critical`, `default`, `low` Valkey `Asynq` queues + in-memory fallback) |
+| `GET /api/events/stream` | User | Native SSE stream (`connected`, `job.updated`, `sync.updated`, `alert.triggered`, `llm.token`, `llm.done`, `meter.updated`; 20 s heartbeat; replaces all frontend polling) |
+
+### 13.2 Versioned SQL Migrations (`internal/database`)
+- Powered by `pressly/goose/v3` with embedded `.up.sql` and `.down.sql` pairs (`00001_platform` .. `00006_v4`).
+- Legacy v3.x `schema_migrations` rows are automatically bridged into `goose_db_version` before applying `00006_v4.up.sql`.
+- Startup `VerifySchema` enforces `PRAGMA quick_check = "ok"`, zero `PRAGMA foreign_key_check` violations, and presence of all core + v4 tables/columns.
+
+### 13.3 Three-Tier Training Cycles (`/api/cycles`)
+- Relational hierarchy: `training_plans` (Macrocycle) → `plan_phases` (Mesocycle: `foundation | build | threshold | specific | assimilation | taper | recovery`, volume & load targets) → `training_weeks` (Microcycle, Monday-aligned, `isAssimilation` flag) → `planned_sessions` (`plan_id`, `phase_id`, `week_id`).
+- `GET /api/cycles`, `POST /api/cycles/plans` (supports `autoScaffold`), `PATCH` / `DELETE /api/cycles/plans/{id}`, `POST` / `PATCH` / `DELETE /api/cycles/phases/{id}`, `PUT /api/cycles/weeks`.
+- Computes `CycleActuals` comparing planned vs actual volume (`km`), training load, duration, and session count across Macro, Méso, and Micro tiers, rendered in `/plan` as a zoomable Gantt timeline.
+
+### 13.4 Body Stress Map & Correlation Engine (`/api/bodymap`)
+- 6 canonical anatomical zones: `knee_pfps`, `achilles`, `plantar_fascia`, `shin_splints`, `iliotibial_band`, `hamstrings_calves`, scored `0–10` (`painScore`) plus optional next-day cold feeling (`coldNextDayScore`, `0–10`).
+- `internal/analysis/bodymap.go` correlates symptomatic episodes (`>= 3`) vs asymptomatic baseline runs across `shoe_drop` (`mm`), `shoe_wear` (`km`), `elev_loss` (`D-`), `gct` (`ms`), and `impact_load`, identifying suspect shoes (`shoeHighlight`) and confidence levels.
+- When entries exist, `internal/report` injects `### CARTOGRAPHIE CORPORELLE & CORRÉLATIONS` into activity, daily, and multi-session AI prompts after the mandatory objectivity directive.
+
+### 13.5 Encrypted Read-Only Physio & Coach Share View (`/api/share` & `/share/:token`)
+- `POST /api/share`, `GET /api/share`, `DELETE /api/share/{id}` manage named, optionally expiring, 1-click revocable share links.
+- Raw `st4_<base64url>` tokens use 256 bits of `crypto/rand`; SQLite stores `SHA-256(token)` for lookup and `AES-256-GCM` (`secret.Sealer`) ciphertext of the share URL for the owner.
+- `GET /api/public/share/{token}` (`Cache-Control: private, no-store`) exposes only clinical load (`ACWR`, `EF`, `Impact Load`), Macro/Méso cycles, sanitized recent sessions, Body Stress Map, and shoe wear correlations — never credentials, GPS tracks, settings, or write actions.
+
+### 13.6 Universal Command Palette (`Cmd+K` / `Ctrl+K`)
+- 100 % keyboard-driven modal palette across the SPA providing instant navigation, session search (title, date, sport, tag), and direct actions (sync, manual session, body stress log, physio share link, AI prompt copy, streaming LLM analysis).
+
+### 13.7 Version
+`VERSION` = `4.0.0` (no `v`, see release cycle).

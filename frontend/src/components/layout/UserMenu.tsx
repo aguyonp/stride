@@ -1,4 +1,4 @@
-import { KeyRound, LogOut, Settings, ShieldCheck } from 'lucide-react'
+import { Footprints, KeyRound, LogOut, Settings, Share2, ShieldCheck, Sparkles } from 'lucide-react'
 import { useLocation } from 'wouter'
 import { useLogout } from '../../api/queries'
 import type { Me } from '../../api/types'
@@ -23,6 +23,15 @@ export function UserMenu({ me }: { me: Me }) {
             <p className="text-xs text-ink-3">{me.role === 'admin' ? 'Administrateur' : 'Athlète'}</p>
           </div>
           <div className="pt-1.5">
+            <MenuItem icon={<Footprints />} onSelect={() => (close(), navigate('/shoes'))}>
+              Chaussures
+            </MenuItem>
+            <MenuItem icon={<Sparkles />} onSelect={() => (close(), navigate('/export'))}>
+              Export IA
+            </MenuItem>
+            <MenuItem icon={<Share2 />} onSelect={() => (close(), navigate('/settings#partage'))}>
+              Partage Kiné & Coach
+            </MenuItem>
             <MenuItem icon={<Settings />} onSelect={() => (close(), navigate('/settings'))}>
               Réglages
             </MenuItem>

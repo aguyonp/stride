@@ -9,12 +9,13 @@ ENV_FILE_ARG := $(if $(wildcard .env),ENV_FILE=../.env,)
 
 COMPOSE_DEV := docker compose -f compose.yml -f compose.dev.yml
 
-.PHONY: help dev dev-frontend frontend-build build test up docker-up docker-down logs keygen changelog release clean
+.PHONY: help dev dev-frontend frontend-build openapi build test up docker-up docker-down logs keygen changelog release clean
 
 help:
 	@echo "make keygen        how to generate STRIDE_MASTER_KEY"
 	@echo "make dev           Go API on :8080 (in-memory cache, ./data, root .env)"
 	@echo "make dev-frontend  Vite on :5173 (proxy /api -> :8080)"
+	@echo "make openapi       regenerate docs/openapi.{json,yaml} + frontend/src/api/schema.d.ts"
 	@echo "make build         $(BIN) with the embedded SPA"
 	@echo "make test          go vet + go test + vitest"
 	@echo "make up            pull and start the published image (STRIDE_TAG=latest|prerelease|dev|X.Y.Z)"
@@ -36,6 +37,10 @@ dev-frontend:
 
 frontend-build:
 	cd frontend && npm ci --no-audit --no-fund && npm run build
+
+openapi:
+	cd backend && go run ./cmd/stride openapi ../docs
+	cd frontend && npm run generate:api
 
 # Builds from a temporary copy so the committed SPA placeholder stays untouched.
 build: frontend-build

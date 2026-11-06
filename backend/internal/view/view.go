@@ -172,6 +172,8 @@ type ActivityView struct {
 	Efficiency    *analysis.Efficiency      `json:"efficiency"`
 	Impact        *analysis.Impact          `json:"impact"`
 	Readiness     analysis.ReadinessBanner  `json:"readiness"`
+	// BodyStress carries active anatomical pain entries for prompt injection.
+	BodyStress []analysis.BodyStressEntry `json:"bodyStress,omitempty"`
 	// PlannedToday is the planned session matched to (or scheduled on the day of) this activity.
 	PlannedToday *athlete.PlannedSession `json:"-"`
 	// Records feed the CONTEXTE & OBJECTIFS section of the prompts.
@@ -193,6 +195,8 @@ type DayView struct {
 	Alerts      []analysis.Alert          `json:"alerts"`
 	Warnings    []string                  `json:"warnings"`
 	Readiness   analysis.ReadinessBanner  `json:"readiness"`
+	// BodyStress carries active anatomical pain entries for prompt injection.
+	BodyStress []analysis.BodyStressEntry `json:"bodyStress,omitempty"`
 	// History feeds the HISTORIQUE 14 JOURS table of the day report.
 	History []HistoryRow             `json:"-"`
 	Records []athlete.PersonalRecord `json:"-"`
@@ -238,6 +242,7 @@ type ProviderSync struct {
 
 type SyncStatus struct {
 	Running       bool    `json:"running"`
+	JobID         *string `json:"jobId,omitempty"`
 	LastSyncAt    *string `json:"lastSyncAt"`
 	LastLiveAt    *string `json:"lastLiveAt"`
 	CooldownUntil *string `json:"cooldownUntil"`
@@ -338,6 +343,7 @@ type MultiExport struct {
 	Upcoming   []athlete.PlannedSession
 	Unanalyzed int
 	Records    []athlete.PersonalRecord
+	BodyStress []analysis.BodyStressEntry
 }
 
 type EfficiencyPoint struct {

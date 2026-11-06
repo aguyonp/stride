@@ -1,4 +1,4 @@
-import { Bell, Bot, CircleUser, DatabaseBackup, FileUp, Footprints, KeyRound, Monitor, Moon, Palette, Plug, Sun, UserRound, type LucideIcon } from 'lucide-react'
+import { Bell, Bot, CircleUser, DatabaseBackup, FileUp, Footprints, KeyRound, Monitor, Moon, Palette, Plug, Share2, Sun, UserRound, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Me } from '../../api/types'
 import { consumeStravaResult } from '../../components/profile/StravaConnect'
@@ -17,6 +17,7 @@ import { NotificationsSection } from './NotificationsSection'
 import { PasskeysSection } from './PasskeysSection'
 import { ProfileSection } from './ProfileSection'
 import { Section } from './Section'
+import { ShareSection } from './ShareSection'
 import { ShoesSection } from './ShoesSection'
 import { VersionFooter } from './VersionFooter'
 
@@ -27,6 +28,7 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'ia', label: 'IA', icon: Bot },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'chaussures', label: 'Chaussures', icon: Footprints },
+  { id: 'partage', label: 'Partage Kiné & Coach', icon: Share2 },
   { id: 'passkeys', label: 'Passkeys', icon: KeyRound },
   { id: 'sauvegarde', label: 'Sauvegarde', icon: DatabaseBackup },
   { id: 'import', label: 'Import de secours', icon: FileUp },
@@ -134,6 +136,7 @@ export default function SettingsView({ me }: { me: Me }) {
           <LlmSection />
           <NotificationsSection />
           <ShoesSection />
+          <ShareSection />
           <PasskeysSection />
           <BackupSection />
           <ImportSection />

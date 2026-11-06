@@ -58,6 +58,7 @@ export interface UserData {
   integrations: Integrations
   v3?: V3Data
   v31?: V31Data
+  v4?: unknown
 }
 
 export interface V3Data {

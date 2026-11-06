@@ -18,6 +18,7 @@ func NewValkey(url string) (*Valkey, error) {
 		return nil, err
 	}
 	opt.DisableCache = true
+	opt.AlwaysRESP2 = true
 	c, err := valkey.NewClient(opt)
 	if err != nil {
 		return nil, err
@@ -76,3 +77,6 @@ func (v *Valkey) Ping(ctx context.Context) error {
 }
 
 func (v *Valkey) Close() { v.c.Close() }
+
+// Client exposes the underlying Valkey client for Pub/Sub fanout.
+func (v *Valkey) Client() valkey.Client { return v.c }

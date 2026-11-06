@@ -1,0 +1,1757 @@
+{
+  "components": {
+    "schemas": {
+      "BodyMapOverview": {
+        "properties": {
+          "correlations": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/BodyStressEntry"
+            },
+            "type": "array"
+          },
+          "windowDays": {
+            "type": "integer"
+          },
+          "zones": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "zones",
+          "entries",
+          "correlations",
+          "windowDays"
+        ],
+        "type": "object"
+      },
+      "BodyStressEntry": {
+        "properties": {
+          "activityId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "activityName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "coldNextDayScore": {
+            "nullable": true,
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "painScore": {
+            "type": "number"
+          },
+          "side": {
+            "enum": [
+              "left",
+              "right",
+              "both"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "zone": {
+            "enum": [
+              "knee_pfps",
+              "achilles",
+              "plantar_fascia",
+              "shin_splints",
+              "iliotibial_band",
+              "hamstrings_calves"
+            ],
+            "type": "string"
+          },
+          "zoneLabel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "zone",
+          "zoneLabel",
+          "side",
+          "painScore",
+          "note",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "BodyStressInput": {
+        "properties": {
+          "activityId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "coldNextDayScore": {
+            "nullable": true,
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "painScore": {
+            "type": "number"
+          },
+          "side": {
+            "enum": [
+              "left",
+              "right",
+              "both"
+            ],
+            "type": "string"
+          },
+          "zone": {
+            "enum": [
+              "knee_pfps",
+              "achilles",
+              "plantar_fascia",
+              "shin_splints",
+              "iliotibial_band",
+              "hamstrings_calves"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "zone",
+          "painScore"
+        ],
+        "type": "object"
+      },
+      "BuildInfo": {
+        "properties": {
+          "builtAt": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "go": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "commit",
+          "builtAt",
+          "go",
+          "label"
+        ],
+        "type": "object"
+      },
+      "ImportResult": {
+        "properties": {
+          "activityId": {
+            "type": "integer"
+          },
+          "merged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "activityId",
+          "merged"
+        ],
+        "type": "object"
+      },
+      "JobListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobStatus"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "JobStatus": {
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "sync.provider",
+              "sync.strava_webhook",
+              "sync.resync",
+              "import.activity",
+              "llm.analyze",
+              "llm.plan_generate",
+              "llm.plan_adapt",
+              "webhook.deliver"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "maxAttempts": {
+            "type": "integer"
+          },
+          "processed": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "progressPct": {
+            "nullable": true,
+            "type": "number"
+          },
+          "queue": {
+            "enum": [
+              "critical",
+              "default",
+              "low"
+            ],
+            "type": "string"
+          },
+          "result": {
+            "nullable": true,
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "retrying",
+              "completed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "kind",
+          "queue",
+          "state",
+          "label",
+          "attempts",
+          "maxAttempts",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "LLMAnalysis": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "promptTokensEstimate": {
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "ref",
+          "provider",
+          "model",
+          "markdown",
+          "promptTokensEstimate",
+          "durationMs",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "LLMAnalyzeRequest": {
+        "properties": {
+          "activityId": {
+            "type": "integer"
+          },
+          "date": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "PlanAdaptPreview": {
+        "properties": {
+          "removeIds": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "removeIds",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "PlanAdaptRequest": {
+        "properties": {
+          "eventId": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "PlanDraftsResponse": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "PlanGenerateRequest": {
+        "properties": {
+          "endDate": {
+            "type": "string"
+          },
+          "goalId": {
+            "type": "integer"
+          },
+          "horizon": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "withPhases": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "horizon",
+          "startDate",
+          "endDate"
+        ],
+        "type": "object"
+      },
+      "PlanPromptResponse": {
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "tokensEstimate": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt",
+          "tokensEstimate"
+        ],
+        "type": "object"
+      },
+      "PublicShareView": {
+        "properties": {
+          "athlete": {
+            "type": "object"
+          },
+          "bodyMap": {
+            "$ref": "#/components/schemas/BodyMapOverview"
+          },
+          "cycles": {
+            "$ref": "#/components/schemas/TrainingCycleOverview"
+          },
+          "expiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "loadSeries": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "loadSummary": {
+            "type": "object"
+          },
+          "readiness": {
+            "type": "object"
+          },
+          "recentSessions": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "shareLabel": {
+            "type": "string"
+          },
+          "shoes": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "generatedAt",
+          "shareLabel",
+          "athlete",
+          "readiness",
+          "loadSummary",
+          "loadSeries",
+          "cycles",
+          "recentSessions",
+          "bodyMap",
+          "shoes"
+        ],
+        "type": "object"
+      },
+      "ShareLink": {
+        "properties": {
+          "accessCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lastAccessedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          },
+          "revokedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tokenPrefix": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "tokenPrefix",
+          "url",
+          "revoked",
+          "accessCount",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ShareLinkInput": {
+        "properties": {
+          "expiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresInDays": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
+      "SyncStatus": {
+        "properties": {
+          "cooldownUntil": {
+            "nullable": true,
+            "type": "string"
+          },
+          "jobId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastLiveAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastSyncAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "running": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running"
+        ],
+        "type": "object"
+      },
+      "TrainingCycleOverview": {
+        "properties": {
+          "activePlan": {
+            "$ref": "#/components/schemas/TrainingPlan",
+            "nullable": true
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingPhase"
+            },
+            "type": "array"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingPlan"
+            },
+            "type": "array"
+          },
+          "standaloneWeeks": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingWeek"
+            },
+            "type": "array"
+          },
+          "totals": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "plans",
+          "phases",
+          "standaloneWeeks",
+          "totals"
+        ],
+        "type": "object"
+      },
+      "TrainingPhase": {
+        "properties": {
+          "actuals": {
+            "type": "object"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "focus": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "orderIndex": {
+            "type": "integer"
+          },
+          "phaseType": {
+            "enum": [
+              "foundation",
+              "build",
+              "threshold",
+              "specific",
+              "assimilation",
+              "taper",
+              "recovery"
+            ],
+            "type": "string"
+          },
+          "planId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "targetWeeklyDurationS": {
+            "nullable": true,
+            "type": "number"
+          },
+          "targetWeeklyLoad": {
+            "nullable": true,
+            "type": "number"
+          },
+          "weeklyVolumeKm": {
+            "nullable": true,
+            "type": "number"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingWeek"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "phaseType",
+          "orderIndex",
+          "startDate",
+          "endDate",
+          "focus",
+          "note",
+          "actuals",
+          "weeks"
+        ],
+        "type": "object"
+      },
+      "TrainingPhaseInput": {
+        "properties": {
+          "endDate": {
+            "type": "string"
+          },
+          "focus": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "orderIndex": {
+            "type": "integer"
+          },
+          "phaseType": {
+            "enum": [
+              "foundation",
+              "build",
+              "threshold",
+              "specific",
+              "assimilation",
+              "taper",
+              "recovery"
+            ],
+            "type": "string"
+          },
+          "planId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "targetWeeklyDurationS": {
+            "nullable": true,
+            "type": "number"
+          },
+          "targetWeeklyLoad": {
+            "nullable": true,
+            "type": "number"
+          },
+          "weeklyVolumeKm": {
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "startDate",
+          "endDate"
+        ],
+        "type": "object"
+      },
+      "TrainingPlan": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "goalId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "sport": {
+            "enum": [
+              "run",
+              "bike",
+              "other"
+            ],
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "completed",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "targetEventLabel": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sport",
+          "startDate",
+          "endDate",
+          "targetEventLabel",
+          "status",
+          "note",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "TrainingPlanInput": {
+        "properties": {
+          "autoScaffold": {
+            "type": "boolean"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "goalId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "peakWeeklyLoad": {
+            "nullable": true,
+            "type": "number"
+          },
+          "peakWeeklyVolumeKm": {
+            "nullable": true,
+            "type": "number"
+          },
+          "sport": {
+            "enum": [
+              "run",
+              "bike",
+              "other"
+            ],
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "completed",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "targetEventLabel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "startDate",
+          "endDate"
+        ],
+        "type": "object"
+      },
+      "TrainingWeek": {
+        "properties": {
+          "actuals": {
+            "type": "object"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "isAssimilation": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "phaseId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "planId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "targetDurationS": {
+            "nullable": true,
+            "type": "number"
+          },
+          "targetLoad": {
+            "nullable": true,
+            "type": "number"
+          },
+          "targetVolumeKm": {
+            "nullable": true,
+            "type": "number"
+          },
+          "weekEnd": {
+            "type": "string"
+          },
+          "weekNumber": {
+            "type": "integer"
+          },
+          "weekStart": {
+            "type": "string"
+          },
+          "workouts": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "weekStart",
+          "weekEnd",
+          "weekNumber",
+          "isAssimilation",
+          "note",
+          "actuals",
+          "workouts"
+        ],
+        "type": "object"
+      },
+      "TrainingWeekInput": {
+        "properties": {
+          "isAssimilation": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "phaseId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "planId": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "targetDurationS": {
+            "nullable": true,
+            "type": "number"
+          },
+          "targetLoad": {
+            "nullable": true,
+            "type": "number"
+          },
+          "targetVolumeKm": {
+            "nullable": true,
+            "type": "number"
+          },
+          "weekStart": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "weekStart"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Stride 4.0.0 athletic analytics, cycle-based planning, anatomical body stress map, and physio share API.",
+    "title": "Stride API",
+    "version": "4.0.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/bodymap": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Time window in days (default: 90)",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional zone filter",
+            "in": "query",
+            "name": "zone",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BodyMapOverview"
+                }
+              }
+            },
+            "description": "Body stress map overview"
+          }
+        },
+        "summary": "Retrieve body stress map overview, zones, and correlations"
+      }
+    },
+    "/api/bodymap/entries": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BodyStressInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BodyStressEntry"
+                }
+              }
+            },
+            "description": "Created body stress entry"
+          }
+        },
+        "summary": "Record a new anatomical pain or tension score"
+      }
+    },
+    "/api/bodymap/entries/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Entry deleted"
+          }
+        },
+        "summary": "Delete a body stress entry"
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BodyStressInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BodyStressEntry"
+                }
+              }
+            },
+            "description": "Updated body stress entry"
+          }
+        },
+        "summary": "Update an existing body stress entry"
+      }
+    },
+    "/api/cycles": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Specific plan ID to retrieve, defaults to active plan",
+            "in": "query",
+            "name": "planId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingCycleOverview"
+                }
+              }
+            },
+            "description": "Training cycle overview"
+          }
+        },
+        "summary": "Retrieve macrocycle, mesocycles, and microcycles overview"
+      }
+    },
+    "/api/cycles/phases": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingPhaseInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingPhase"
+                }
+              }
+            },
+            "description": "Created training phase"
+          }
+        },
+        "summary": "Create a mesocycle training phase"
+      }
+    },
+    "/api/cycles/phases/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Phase deleted"
+          }
+        },
+        "summary": "Delete a mesocycle phase"
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingPhaseInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingPhase"
+                }
+              }
+            },
+            "description": "Updated phase"
+          }
+        },
+        "summary": "Modify an existing mesocycle phase"
+      }
+    },
+    "/api/cycles/plans": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingPlanInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingCycleOverview"
+                }
+              }
+            },
+            "description": "Created cycle overview"
+          }
+        },
+        "summary": "Create a macrocycle plan with optional auto-scaffolding"
+      }
+    },
+    "/api/cycles/plans/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Plan deleted"
+          }
+        },
+        "summary": "Delete a macrocycle plan and all subordinate phases and weeks"
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingPlanInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingPlan"
+                }
+              }
+            },
+            "description": "Updated training plan"
+          }
+        },
+        "summary": "Modify an existing macrocycle plan"
+      }
+    },
+    "/api/cycles/weeks": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingWeekInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingWeek"
+                }
+              }
+            },
+            "description": "Upserted training week"
+          }
+        },
+        "summary": "Upsert a microcycle weekly target or assimilation flag"
+      }
+    },
+    "/api/imports": {
+      "post": {
+        "parameters": [
+          {
+            "description": "1 to enqueue processing via worker queue",
+            "in": "query",
+            "name": "async",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            },
+            "description": "Synchronous import result"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            },
+            "description": "Synchronous import created"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatus"
+                }
+              }
+            },
+            "description": "Job enqueued asynchronously"
+          }
+        },
+        "summary": "Upload and parse an activity file (FIT, GPX, TCX)"
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Maximum number of jobs to return",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobListResponse"
+                }
+              }
+            },
+            "description": "List of jobs"
+          }
+        },
+        "summary": "List recent async worker jobs"
+      }
+    },
+    "/api/jobs/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Unique job ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatus"
+                }
+              }
+            },
+            "description": "Job status"
+          },
+          "404": {
+            "description": "Job not found or owned by another user"
+          }
+        },
+        "summary": "Retrieve async job status"
+      }
+    },
+    "/api/llm/analyze": {
+      "post": {
+        "parameters": [
+          {
+            "description": "1 to stream tokens over SSE",
+            "in": "query",
+            "name": "async",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LLMAnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMAnalysis"
+                }
+              }
+            },
+            "description": "Full analysis generated"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatus"
+                }
+              }
+            },
+            "description": "Job enqueued asynchronously"
+          }
+        },
+        "summary": "Execute or stream LLM Coach analysis"
+      }
+    },
+    "/api/plan/adapt": {
+      "post": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "async",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanAdaptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanAdaptPreview"
+                }
+              }
+            },
+            "description": "Plan adapt preview"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatus"
+                }
+              }
+            },
+            "description": "Job enqueued"
+          }
+        },
+        "summary": "Adapt remaining planned sessions following events"
+      }
+    },
+    "/api/plan/generate": {
+      "post": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "async",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PlanPromptResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PlanDraftsResponse"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Plan prompt or structured drafts"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatus"
+                }
+              }
+            },
+            "description": "Generation enqueued"
+          }
+        },
+        "summary": "Generate training plan draft sessions"
+      }
+    },
+    "/api/public/share/{token}": {
+      "get": {
+        "description": "Exposes sanitized clinical load, cycles, and body map without credentials or raw GPS tracks.",
+        "parameters": [
+          {
+            "description": "Cryptographically secure share token",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicShareView"
+                }
+              }
+            },
+            "description": "Sanitized public share view",
+            "headers": {
+              "Cache-Control": {
+                "description": "private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Link not found or revoked"
+          },
+          "410": {
+            "description": "Link expired"
+          }
+        },
+        "summary": "Public clinical share view (read-only, no auth required)"
+      }
+    },
+    "/api/share": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShareLink"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "List of share links"
+          }
+        },
+        "summary": "List all read-only physio and coach share links"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareLinkInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLink"
+                }
+              }
+            },
+            "description": "Generated share link"
+          }
+        },
+        "summary": "Generate an encrypted read-only share link"
+      }
+    },
+    "/api/share/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Link revoked"
+          }
+        },
+        "summary": "Instantly revoke a share link"
+      }
+    },
+    "/api/sync": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncStatus"
+                }
+              }
+            },
+            "description": "Provider synchronization status"
+          }
+        },
+        "summary": "Trigger asynchronous or synchronous provider synchronization"
+      }
+    },
+    "/api/version": {
+      "get": {
+        "description": "Returns version metadata for authenticated users.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildInfo"
+                }
+              }
+            },
+            "description": "Build information"
+          }
+        },
+        "summary": "Authenticated version identity"
+      }
+    },
+    "/version": {
+      "get": {
+        "description": "Returns version metadata without requiring authentication.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildInfo"
+                }
+              }
+            },
+            "description": "Build information"
+          }
+        },
+        "summary": "Public build and runtime version identity"
+      }
+    }
+  }
+}

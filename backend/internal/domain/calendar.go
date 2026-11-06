@@ -11,6 +11,7 @@ import (
 	"stride/internal/analysis"
 	"stride/internal/athlete"
 	"stride/internal/frfmt"
+	"stride/internal/queue"
 	"stride/internal/report"
 	"stride/internal/workout"
 )
@@ -124,39 +125,47 @@ type AdaptResult struct {
 	Summary   string                   `json:"summary"`
 }
 
-// AdaptPlan previews the plan adapted to the calendar events (rules or LLM); nothing is saved.
-func (s *Services) AdaptPlan(ctx context.Context, uid int64, in AdaptInput) (*AdaptResult, error) {
+func (s *Services) prepareAdaptPlan(ctx context.Context, uid int64, in *AdaptInput) (*AdaptResult, *llmPlanAdaptJobPayload, error) {
 	if in.Mode != "rules" && in.Mode != "llm" {
-		return nil, badRequest("mode invalide (rules, llm).")
+		return nil, nil, badRequest("mode invalide (rules, llm).")
+	}
+	if in.Mode == "llm" {
+		c, err := s.llmConfig(ctx, uid)
+		if err != nil {
+			return nil, nil, err
+		}
+		if c == nil {
+			return nil, nil, ErrLLMNotConfigured
+		}
 	}
 	p, err := s.profile(ctx, uid)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	today := s.today(p)
 	if in.From == "" {
 		in.From = today
 	}
 	if !athlete.ValidDate(in.From) {
-		return nil, badRequest("from attendue au format AAAA-MM-JJ.")
+		return nil, nil, badRequest("from attendue au format AAAA-MM-JJ.")
 	}
 	r := s.repo()
 	var events []athlete.CalendarEvent
 	if in.EventID != nil {
 		ev, err := r.Event(ctx, uid, *in.EventID)
 		if err != nil {
-			return nil, repoErr(err)
+			return nil, nil, repoErr(err)
 		}
 		events = []athlete.CalendarEvent{ev}
 	} else if events, err = r.Events(ctx, uid, in.From, ""); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if in.Mode == "rules" {
 		plan, err := r.Plan(ctx, uid, weekStart(in.From), "")
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return adaptRules(plan, events, in.From), nil
+		return adaptRules(plan, events, in.From), nil, nil
 	}
 	to := analysis.DateAdd(in.From, adaptLLMMin)
 	for _, ev := range events {
@@ -169,44 +178,79 @@ func (s *Services) AdaptPlan(ctx context.Context, uid int64, in AdaptInput) (*Ad
 	}
 	req := report.AdaptRequest{From: in.From, To: to, Events: events}
 	if req.Remaining, err = r.Plan(ctx, uid, in.From, to); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if req.LoadRatio, err = s.loadRatio(ctx, uid, p, today); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dv, err := s.DayView(ctx, uid, today)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if dv.Records, err = s.records(ctx, uid); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	text, err := s.askLLM(ctx, uid, report.Adapt(dv, p, req))
+	remIDs := make([]int64, 0, len(req.Remaining))
+	for _, ps := range req.Remaining {
+		remIDs = append(remIDs, ps.ID)
+	}
+	return nil, &llmPlanAdaptJobPayload{
+		From:         in.From,
+		To:           to,
+		Prompt:       report.Adapt(dv, p, req),
+		RemainingIDs: remIDs,
+	}, nil
+}
+
+// AdaptPlanAsync enqueues llm.plan_adapt onto the critical worker queue when mode == "llm".
+func (s *Services) AdaptPlanAsync(ctx context.Context, uid int64, in AdaptInput) (any, bool, error) {
+	rulesRes, payload, err := s.prepareAdaptPlan(ctx, uid, &in)
+	if err != nil {
+		return nil, false, err
+	}
+	if rulesRes != nil {
+		return rulesRes, false, nil
+	}
+	payload.Async = true
+	job, err := s.queue.Enqueue(ctx, queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindLLMPlanAdapt,
+		Queue:       queue.QueueCritical,
+		Label:       "Adaptation du plan IA",
+		MaxAttempts: 1,
+		Payload:     *payload,
+	})
+	return job, true, err
+}
+
+// AdaptPlan previews the plan adapted to the calendar events (rules or LLM via critical worker queue); nothing is saved.
+func (s *Services) AdaptPlan(ctx context.Context, uid int64, in AdaptInput) (*AdaptResult, error) {
+	rulesRes, payload, err := s.prepareAdaptPlan(ctx, uid, &in)
 	if err != nil {
 		return nil, err
 	}
-	drafts, _, errs := athlete.ParsePlan(text, "llm")
-	out := &AdaptResult{Sessions: []athlete.PlannedSession{}, RemoveIDs: []int64{}}
-	for _, d := range drafts {
-		if d.Date >= in.From && d.Date <= to {
-			out.Sessions = append(out.Sessions, d)
-		} else {
-			errs = append(errs, fmt.Sprintf("Séance du %s hors période ignorée", frfmt.Date(d.Date)))
-		}
+	if rulesRes != nil {
+		return rulesRes, nil
 	}
-	if len(out.Sessions) == 0 {
-		out.Summary = "L'IA n'a proposé aucune séance exploitable : plan inchangé."
-	} else {
-		for _, ps := range req.Remaining {
-			out.RemoveIDs = append(out.RemoveIDs, ps.ID)
-		}
-		out.Summary = fmt.Sprintf("Proposition de l'IA : %s du %s au %s, en remplacement des %s.",
-			plural(len(out.Sessions), "séance"), frfmt.Date(in.From), frfmt.Date(to), plural(len(req.Remaining), "séance prévue"))
+	payload.Async = false
+	_, res, err := s.queue.EnqueueAndWait(ctx, queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindLLMPlanAdapt,
+		Queue:       queue.QueueCritical,
+		Label:       "Adaptation du plan IA",
+		MaxAttempts: 1,
+		Payload:     *payload,
+	})
+	if err != nil {
+		return nil, err
 	}
-	if len(errs) > 0 {
-		out.Summary += " Avertissements : " + strings.Join(errs, " ; ") + "."
+	if out, ok := res.(*AdaptResult); ok {
+		return out, nil
 	}
-	return out, nil
+	var out AdaptResult
+	raw, _ := json.Marshal(res)
+	_ = json.Unmarshal(raw, &out)
+	return &out, nil
 }
 
 func plural(n int, word string) string {

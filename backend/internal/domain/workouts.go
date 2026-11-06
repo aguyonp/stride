@@ -14,6 +14,7 @@ import (
 	"stride/internal/apimeter"
 	"stride/internal/athlete"
 	"stride/internal/garmin"
+	"stride/internal/queue"
 	"stride/internal/report"
 	"stride/internal/view"
 	"stride/internal/workout"
@@ -137,62 +138,110 @@ func (s *Services) planWindow(ctx context.Context, uid int64, in *PlanGenerateIn
 	return req, nil
 }
 
-// GeneratePlan builds the plan prompt (prompt mode) or asks the athlete's LLM for drafts (llm mode, not saved).
-func (s *Services) GeneratePlan(ctx context.Context, uid int64, in PlanGenerateInput) (any, error) {
+func (s *Services) preparePlanGenerate(ctx context.Context, uid int64, in *PlanGenerateInput) (string, string, error) {
 	if in.Mode != "prompt" && in.Mode != "llm" {
-		return nil, badRequest("mode invalide (prompt, llm).")
+		return "", "", badRequest("mode invalide (prompt, llm).")
 	}
 	if in.Horizon == "" {
 		in.Horizon = "week"
 	}
 	if len([]rune(in.Note)) > 1000 {
-		return nil, badRequest("Précision trop longue (1000 caractères max).")
+		return "", "", badRequest("Précision trop longue (1000 caractères max).")
+	}
+	if in.Mode == "llm" {
+		c, err := s.llmConfig(ctx, uid)
+		if err != nil {
+			return "", "", err
+		}
+		if c == nil {
+			return "", "", ErrLLMNotConfigured
+		}
 	}
 	p, err := s.profile(ctx, uid)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 	today := s.today(p)
 	if in.StartDate == "" {
 		in.StartDate = today
 	}
 	if !athlete.ValidDate(in.StartDate) {
-		return nil, badRequest("startDate attendue au format AAAA-MM-JJ.")
+		return "", "", badRequest("startDate attendue au format AAAA-MM-JJ.")
 	}
-	req, err := s.planWindow(ctx, uid, &in)
+	req, err := s.planWindow(ctx, uid, in)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 	dv, err := s.DayView(ctx, uid, today)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if dv.Records, err = s.records(ctx, uid); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	r := s.repo()
 	if req.Existing, err = r.Plan(ctx, uid, req.StartDate, req.EndDate); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if req.Events, err = r.Events(ctx, uid, req.StartDate, req.EndDate); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if req.Phases, err = r.Phases(ctx, uid, req.StartDate, req.EndDate); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if req.LoadRatio, err = s.loadRatio(ctx, uid, p, today); err != nil {
-		return nil, err
+		return "", "", err
 	}
-	prompt := report.Plan(dv, p, req)
+	return report.Plan(dv, p, req), req.StartDate + ".." + req.EndDate, nil
+}
+
+// GeneratePlanAsync enqueues llm.plan_generate onto the critical worker queue when mode == "llm".
+func (s *Services) GeneratePlanAsync(ctx context.Context, uid int64, in PlanGenerateInput) (any, bool, error) {
+	prompt, ref, err := s.preparePlanGenerate(ctx, uid, &in)
+	if err != nil {
+		return nil, false, err
+	}
 	if in.Mode == "prompt" {
-		return &PlanPromptResult{Prompt: prompt, TokensEstimate: report.EstimateTokens(prompt)}, nil
+		return &PlanPromptResult{Prompt: prompt, TokensEstimate: report.EstimateTokens(prompt)}, false, nil
 	}
-	text, err := s.askLLM(ctx, uid, prompt)
+	job, err := s.queue.Enqueue(ctx, queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindLLMPlanGenerate,
+		Queue:       queue.QueueCritical,
+		Label:       "Génération du plan IA",
+		MaxAttempts: 1,
+		Payload:     llmPlanGenerateJobPayload{Ref: ref, Prompt: prompt, Async: true},
+	})
+	return job, true, err
+}
+
+// GeneratePlan builds the plan prompt (prompt mode) or asks the athlete's LLM for drafts via the critical worker queue.
+func (s *Services) GeneratePlan(ctx context.Context, uid int64, in PlanGenerateInput) (any, error) {
+	prompt, ref, err := s.preparePlanGenerate(ctx, uid, &in)
 	if err != nil {
 		return nil, err
 	}
-	drafts, phases, errs := athlete.ParsePlan(text, "llm")
-	return &PlanDraftsResult{Drafts: drafts, Phases: phases, Errors: errs, Raw: text}, nil
+	if in.Mode == "prompt" {
+		return &PlanPromptResult{Prompt: prompt, TokensEstimate: report.EstimateTokens(prompt)}, nil
+	}
+	_, res, err := s.queue.EnqueueAndWait(ctx, queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindLLMPlanGenerate,
+		Queue:       queue.QueueCritical,
+		Label:       "Génération du plan IA",
+		MaxAttempts: 1,
+		Payload:     llmPlanGenerateJobPayload{Ref: ref, Prompt: prompt, Async: false},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if d, ok := res.(*PlanDraftsResult); ok {
+		return d, nil
+	}
+	var out PlanDraftsResult
+	raw, _ := json.Marshal(res)
+	_ = json.Unmarshal(raw, &out)
+	return &out, nil
 }
 
 func (s *Services) loadRatio(ctx context.Context, uid int64, p athlete.Profile, today string) (*analysis.LoadRatio, error) {

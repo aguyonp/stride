@@ -545,3 +545,33 @@ func sortedAlertCounts(in []view.AlertCount) []view.AlertCount {
 	})
 	return out
 }
+
+func writeBodyStress(b *builder, entries []analysis.BodyStressEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	b.section("CARTOGRAPHIE CORPORELLE & CORRÉLATIONS")
+	for _, e := range entries {
+		coldStr := ""
+		if e.ColdNextDayScore != nil {
+			coldStr = fmt.Sprintf(" (à froid J+1 : %s/10)", f.Num(*e.ColdNextDayScore, 1))
+		}
+		sideStr := ""
+		if e.Side != "" {
+			switch e.Side {
+			case analysis.SideLeft:
+				sideStr = " [Gauche]"
+			case analysis.SideRight:
+				sideStr = " [Droite]"
+			case analysis.SideBoth:
+				sideStr = " [Bilatéral]"
+			}
+		}
+		noteStr := ""
+		if strings.TrimSpace(e.Note) != "" {
+			noteStr = " — " + strings.TrimSpace(e.Note)
+		}
+		label := analysis.BodyZoneReportLabel(e.Zone)
+		b.line("- **%s%s :** Douleur %s/10%s le %s%s", label, sideStr, f.Num(e.PainScore, 1), coldStr, f.Date(e.Date), noteStr)
+	}
+}

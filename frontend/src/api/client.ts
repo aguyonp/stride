@@ -57,10 +57,26 @@ import type {
   PlannedSession,
   PlannedSessionInput,
   RestoreResult,
+  ShareLink,
+  ShareLinkInput,
+  PublicShareView,
   Shoe,
   ShoeInput,
   SyncStatus,
+  TrainingCycleOverview,
+  TrainingPhase,
+  TrainingPhaseInput,
+  TrainingPlan,
+  TrainingPlanInput,
+  TrainingWeek,
+  TrainingWeekInput,
   WeekPlan,
+  BodyMapOverview,
+  BodyStressEntry,
+  BodyStressInput,
+  BodyZone,
+  JobListResponse,
+  JobStatus,
 } from './types'
 
 export const IS_MOCK = import.meta.env.VITE_MOCK === '1'
@@ -126,6 +142,10 @@ async function send(path: string, opts: { method?: string; body?: Body; accept?:
     throw new ApiError(fallback, res.status, res.status === 401 ? 'UNAUTHORIZED' : res.status === 403 ? 'FORBIDDEN' : null)
   }
   return res
+}
+
+export async function rawJson<T>(path: string, opts: { method?: string; body?: Body } = {}): Promise<T> {
+  return json<T>(path, opts)
 }
 
 async function json<T>(path: string, opts: { method?: string; body?: Body } = {}): Promise<T> {
@@ -311,6 +331,42 @@ export const api = {
   planAdapt: (body: PlanAdaptRequest) => json<PlanAdaptPreview>('/api/plan/adapt', { method: 'POST', body }),
   planReplace: (body: { removeIds: number[]; sessions: PlannedSessionInput[] }) => json<PlannedSession[]>('/api/plan/replace', { method: 'POST', body }),
   planPhases: () => json<PlanPhase[]>('/api/plan/phases'),
+
+  /* 4.0.0 endpoints */
+  publicVersion: () => json<BuildInfo>('/version'),
+  jobs: (limit = 20) => json<JobListResponse>(`/api/jobs${qs({ limit })}`),
+  job: (id: string) => json<JobStatus>(`/api/jobs/${encodeURIComponent(id)}`),
+  importFileAsync: async (file: File, asyncMode = true) => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await send(`/api/imports${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', form })
+    return (await res.json()) as ImportResult | JobStatus
+  },
+  analyzeStream: (body: LLMAnalyzeRequest, asyncMode = true) =>
+    json<LLMAnalysis | JobStatus>(`/api/llm/analyze${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', body }),
+  planGenerateStream: (body: PlanGenerateRequest, asyncMode = body.mode === 'llm') =>
+    json<PlanPromptResponse | PlanDraftsResponse | JobStatus>(`/api/plan/generate${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', body }),
+  planAdaptStream: (body: PlanAdaptRequest, asyncMode = body.mode === 'llm') =>
+    json<PlanAdaptPreview | JobStatus>(`/api/plan/adapt${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', body }),
+
+  cycles: (planId?: number | null) => json<TrainingCycleOverview>(`/api/cycles${qs({ planId })}`),
+  createCyclePlan: (body: TrainingPlanInput) => json<TrainingCycleOverview>('/api/cycles/plans', { method: 'POST', body }),
+  updateCyclePlan: (id: number, body: Partial<TrainingPlanInput>) => json<TrainingPlan>(`/api/cycles/plans/${id}`, { method: 'PATCH', body }),
+  deleteCyclePlan: (id: number) => json<void>(`/api/cycles/plans/${id}`, { method: 'DELETE' }),
+  createCyclePhase: (body: TrainingPhaseInput) => json<TrainingPhase>('/api/cycles/phases', { method: 'POST', body }),
+  updateCyclePhase: (id: number, body: Partial<TrainingPhaseInput>) => json<TrainingPhase>(`/api/cycles/phases/${id}`, { method: 'PATCH', body }),
+  deleteCyclePhase: (id: number) => json<void>(`/api/cycles/phases/${id}`, { method: 'DELETE' }),
+  upsertCycleWeek: (body: TrainingWeekInput) => json<TrainingWeek>('/api/cycles/weeks', { method: 'PUT', body }),
+
+  bodyMap: (days = 90, zone?: BodyZone | null) => json<BodyMapOverview>(`/api/bodymap${qs({ days, zone })}`),
+  createBodyEntry: (body: BodyStressInput) => json<BodyStressEntry>('/api/bodymap/entries', { method: 'POST', body }),
+  updateBodyEntry: (id: number, body: Partial<BodyStressInput>) => json<BodyStressEntry>(`/api/bodymap/entries/${id}`, { method: 'PATCH', body }),
+  deleteBodyEntry: (id: number) => json<void>(`/api/bodymap/entries/${id}`, { method: 'DELETE' }),
+
+  shareLinks: () => json<ShareLink[]>('/api/share'),
+  createShareLink: (body: ShareLinkInput) => json<ShareLink>('/api/share', { method: 'POST', body }),
+  revokeShareLink: (id: number) => json<void>(`/api/share/${id}`, { method: 'DELETE' }),
+  publicShare: (token: string) => json<PublicShareView>(`/api/public/share/${encodeURIComponent(token)}`),
 }
 
 /** Full-page navigation to the Strava OAuth flow (the mock resolves the redirect locally). */

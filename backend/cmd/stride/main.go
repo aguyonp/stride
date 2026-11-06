@@ -3,6 +3,7 @@
 //	stride [serve]      start the HTTP server (default)
 //	stride healthcheck  GET /health/ready on the local port, exit 0/1 (container healthcheck)
 //	stride version      print the version
+//	stride openapi [dir] write OpenAPI specifications to dir (default: ../docs)
 package main
 
 import (
@@ -20,6 +21,8 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/valkey-io/valkey-go"
+
 	"stride/internal/admin"
 	"stride/internal/apimeter"
 	"stride/internal/applog"
@@ -30,10 +33,13 @@ import (
 	"stride/internal/env"
 	"stride/internal/httpapi"
 	"stride/internal/logx"
+	"stride/internal/observability"
+	"stride/internal/openapi"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
 	"stride/internal/scheduler"
 	"stride/internal/secret"
+	"stride/internal/sse"
 	"stride/internal/store"
 	"stride/internal/web"
 )
@@ -53,8 +59,18 @@ func main() {
 		os.Exit(healthcheck())
 	case "version", "--version", "-v":
 		fmt.Println(buildinfo.Get().Label)
+	case "openapi":
+		dir := "../docs"
+		if len(os.Args) > 2 {
+			dir = os.Args[2]
+		}
+		if err := openapi.WriteFiles(dir); err != nil {
+			fmt.Fprintln(os.Stderr, "❌", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ Spécifications OpenAPI écrites dans %s\n", dir)
 	default:
-		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version)\n", cmd)
+		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version | openapi)\n", cmd)
 		os.Exit(2)
 	}
 }
@@ -135,7 +151,30 @@ func run() error {
 		wx = weather.NewOpenMeteo(weather.OpenMeteoOptions{Meter: meter})
 	}
 
-	dom, err := domain.New(domain.Deps{Env: cfg, Store: st, Cache: kv, Sealer: sealer, Meter: meter, Strava: stravaAPI, Weather: wx, Log: log})
+	var valkeyClient valkey.Client
+	if vk, ok := kv.(*cache.Valkey); ok {
+		valkeyClient = vk.Client()
+	}
+	metrics := observability.New()
+	sseHub := sse.NewHub(sse.Options{
+		Metrics: metrics,
+		Valkey:  valkeyClient,
+		Log:     log,
+	})
+	defer sseHub.Close()
+
+	dom, err := domain.New(domain.Deps{
+		Env:     cfg,
+		Store:   st,
+		Cache:   kv,
+		Sealer:  sealer,
+		Meter:   meter,
+		Strava:  stravaAPI,
+		Weather: wx,
+		SSE:     sseHub,
+		Metrics: metrics,
+		Log:     log,
+	})
 	if err != nil {
 		return err
 	}
@@ -149,8 +188,17 @@ func run() error {
 		return err
 	}
 	handler := httpapi.New(httpapi.Deps{
-		Store: st, Cache: kv, Auth: authSvc, Domain: dom, Log: log, Logs: logs, HTTPS: cfg.CookieSecure, Static: web.New(),
-		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log}),
+		Store:   st,
+		Cache:   kv,
+		Auth:    authSvc,
+		Domain:  dom,
+		Log:     log,
+		Logs:    logs,
+		HTTPS:   cfg.CookieSecure,
+		Static:  web.New(),
+		Admin:   admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log}),
+		SSE:     sseHub,
+		Metrics: metrics,
 	})
 
 	sched := scheduler.New(scheduler.Options{

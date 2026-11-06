@@ -1,11 +1,14 @@
+import { useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Bandage, BatteryLow, BedDouble, Bot, CalendarClock, Loader2, Plane, Sparkles, Thermometer, Trash2, Wand2 } from 'lucide-react'
-import { useState, type ComponentType } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
+import { api } from '../../api/client'
 import { useLlmConfig } from '../../api/queriesV3'
 import { useEventMutations, usePlanRange, usePlanV31 } from '../../api/queriesV31'
-import type { CalendarEvent, EventKind, EventSeverity, PlanAdaptPreview, PlannedSession } from '../../api/types'
+import type { CalendarEvent, EventKind, EventSeverity, PlanAdaptPreview, PlanAdaptRequest, PlannedSession } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { addDays, capitalize, fmtDateLong, fmtDateShort } from '../../lib/format'
 import { EVENT_KIND, PLAN_SPORT_LABEL, SEVERITY_LABEL } from '../../lib/labels'
+import { clearLlmStream, isJobStatus, startLlmStream, useLlmStream } from '../../state/events'
 import { Dialog } from '../ui/Dialog'
 import { Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
@@ -114,11 +117,35 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
   const [mode, setMode] = useState<'rules' | 'llm'>('rules')
   const [preview, setPreview] = useState<PlanAdaptPreview | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [streamJobId, setStreamJobId] = useState<string | null>(null)
 
   const from = saved ? (saved.startDate < today ? today : saved.startDate) : date < today ? today : date
+  const liveStream = useLlmStream(streamJobId, 'plan_adapt', from)
   const range = usePlanRange(from, addDays(from, 120), open && step !== 'form')
   const current = range.data ?? []
   const affected = current.filter((p) => p.sport !== 'rest' && p.date >= from && p.date <= (saved?.endDate ?? from) && (!p.match || p.match.status === 'upcoming'))
+
+  const adaptMut = useMutation({
+    mutationFn: (b: PlanAdaptRequest) => api.planAdaptStream(b, b.mode === 'llm'),
+    onSuccess: (r) => {
+      if (isJobStatus(r)) {
+        setStreamJobId(r.id)
+        startLlmStream(r.id, 'plan_adapt', from)
+        return
+      }
+      setStreamJobId(null)
+      setPreview(r)
+      setStep('preview')
+    },
+  })
+
+  useEffect(() => {
+    if (liveStream?.done && liveStream.adaptPreview) {
+      setStreamJobId(null)
+      setPreview(liveStream.adaptPreview)
+      setStep('preview')
+    }
+  }, [liveStream?.done, liveStream?.adaptPreview])
 
   const endBefore = end < start
   const save = () => {
@@ -139,7 +166,11 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
         onClose()
       },
     })
-  const runAdapt = () => plan.adapt.mutate({ from, mode, eventId: saved?.id }, { onSuccess: (r) => (setPreview(r), setStep('preview')) })
+  const runAdapt = () => {
+    clearLlmStream(streamJobId, 'plan_adapt', from)
+    setStreamJobId(null)
+    adaptMut.mutate({ from, mode, eventId: saved?.id })
+  }
   const apply = () =>
     preview &&
     plan.replace.mutate(
@@ -157,7 +188,10 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
       { onSuccess: (p) => toast({ title: 'Séance décalée', description: `${p.title} · ${capitalize(fmtDateLong(p.date))}` }) },
     )
 
-  const error = mut.create.error ?? mut.update.error ?? mut.remove.error ?? plan.adapt.error ?? plan.replace.error ?? plan.shift.error
+  const isStreaming = Boolean(streamJobId && (!liveStream || !liveStream.done))
+  const adaptBusy = adaptMut.isPending || isStreaming
+  const streamErr = liveStream?.done && liveStream.error ? new Error(liveStream.error) : null
+  const error = streamErr ?? mut.create.error ?? mut.update.error ?? mut.remove.error ?? adaptMut.error ?? plan.replace.error ?? plan.shift.error
   const changesCount = preview ? adaptDiff(current, preview).length : 0
 
   const footer =
@@ -226,7 +260,7 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
       }
       footer={footer}
     >
-      <div className="space-y-5" aria-busy={plan.adapt.isPending}>
+      <div className="space-y-5" aria-busy={adaptBusy}>
         {step === 'form' && (
           <>
             <fieldset>
@@ -326,13 +360,23 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
                     { value: 'llm', label: 'Mon IA', icon: <Bot /> },
                   ]}
                 />
-                <button type="button" className="btn btn-primary max-sm:w-full" onClick={runAdapt} disabled={plan.adapt.isPending || (mode === 'llm' && !llmOn)}>
-                  {plan.adapt.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
+                <button type="button" className="btn btn-primary max-sm:w-full" onClick={runAdapt} disabled={adaptBusy || (mode === 'llm' && !llmOn)}>
+                  {adaptBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
                   Prévisualiser
                 </button>
               </div>
               {mode === 'llm' && !llmOn && llm.isSuccess && <p className="text-xs text-ink-3">Aucune IA connectée : branche-la dans Réglages › IA ou utilise les règles automatiques.</p>}
-              {plan.adapt.isPending && mode === 'llm' && <p className="text-sm text-ink-3">Ton IA prépare la proposition… (jusqu’à 2 minutes)</p>}
+              {adaptBusy && mode === 'llm' && (
+                <div className="space-y-2 rounded-2xl border border-accent/25 bg-track/35 p-3">
+                  <p className="text-sm text-ink-2">{liveStream?.text ? 'Adaptation IA en direct…' : 'Ton IA prépare la proposition…'}</p>
+                  {liveStream?.text && (
+                    <pre className="scroll-thin max-h-36 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-ink-3">
+                      {liveStream.text}
+                      <span className="inline-block h-3.5 w-1.5 animate-pulse bg-accent align-middle" aria-hidden="true" />
+                    </pre>
+                  )}
+                </div>
+              )}
             </section>
           </>
         )}

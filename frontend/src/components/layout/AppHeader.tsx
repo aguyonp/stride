@@ -1,9 +1,10 @@
-import { Moon, Sun } from 'lucide-react'
+import { Moon, Search, Sun } from 'lucide-react'
 import { Link, useLocation } from 'wouter'
 import { IS_MOCK } from '../../api/client'
 import type { Me } from '../../api/types'
 import { useTheme } from '../../hooks/useTheme'
 import { cn } from '../../lib/cn'
+import { ui } from '../../state/ui'
 import { StrideMark } from '../ui/icons'
 import { isActive, NAV } from './nav'
 import { SyncIndicator } from './SyncIndicator'
@@ -56,6 +57,20 @@ export function AppHeader({ me }: { me: Me | null }) {
         )}
 
         <div className="col-start-2 flex min-w-0 items-center justify-end gap-1.5 justify-self-end sm:gap-2 lg:col-start-3">
+          {me && (
+            <button
+              type="button"
+              onClick={ui.openCommand}
+              aria-label="Ouvrir la palette de commandes (Ctrl+K)"
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-line bg-track/55 px-2.5 text-xs text-ink-2 transition-colors hover:bg-track hover:text-ink"
+            >
+              <Search className="size-3.5 flex-none text-ink-3" aria-hidden="true" />
+              <span className="hidden md:inline">Rechercher…</span>
+              <kbd className="hidden rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-ink-3 sm:inline">
+                ⌘K
+              </kbd>
+            </button>
+          )}
           {me && <SyncIndicator />}
           <button type="button" className="icon-btn" onClick={toggle} aria-label={theme === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'}>
             {theme === 'dark' ? <Sun className="size-[1.125rem]" /> : <Moon className="size-[1.125rem]" />}

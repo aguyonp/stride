@@ -19,9 +19,12 @@ import (
 	"stride/internal/egress"
 	"stride/internal/env"
 	"stride/internal/garmin"
+	"stride/internal/observability"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
+	"stride/internal/queue"
 	"stride/internal/secret"
+	"stride/internal/sse"
 	"stride/internal/store"
 )
 
@@ -33,6 +36,9 @@ type Deps struct {
 	Meter   apimeter.Meter
 	Strava  strava.API       // nil when Strava is not configured
 	Weather weather.Provider // nil when weather is disabled
+	SSE     *sse.Hub
+	Metrics *observability.Metrics
+	Queue   *queue.Manager
 	Log     *slog.Logger
 	// BaseURLs overrides fixed external endpoints in tests (keys: gemini, anthropic, openai, telegram).
 	BaseURLs map[string]string
@@ -44,14 +50,17 @@ type Services struct {
 	// Now is overridable in tests.
 	Now func() time.Time
 
-	mu       sync.Mutex
-	clients  map[int64]*garmin.Client
-	running  map[int64]bool
-	subsOnce sync.Once
-	sf       singleflight.Group
-	bg       sync.WaitGroup
-	egress   *http.Client
-	llmHTTP  *http.Client
+	mu        sync.Mutex
+	clients   map[int64]*garmin.Client
+	running   map[int64]bool
+	syncJobs  map[int64]string
+	subsOnce  sync.Once
+	sf        singleflight.Group
+	bg        sync.WaitGroup
+	queue     *queue.Manager
+	ownsQueue bool
+	egress    *http.Client
+	llmHTTP   *http.Client
 }
 
 func New(d Deps) (*Services, error) {
@@ -64,8 +73,37 @@ func New(d Deps) (*Services, error) {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	s := &Services{deps: d, log: d.Log, Now: time.Now, clients: map[int64]*garmin.Client{}, running: map[int64]bool{},
-		egress: egress.Client(d.Env.AllowPrivateEgress, llmTimeout), llmHTTP: &http.Client{Timeout: llmTimeout}}
+	s := &Services{
+		deps:     d,
+		log:      d.Log,
+		Now:      time.Now,
+		clients:  map[int64]*garmin.Client{},
+		running:  map[int64]bool{},
+		syncJobs: map[int64]string{},
+		queue:    d.Queue,
+		egress:   egress.Client(d.Env.AllowPrivateEgress, llmTimeout),
+		llmHTTP:  &http.Client{Timeout: llmTimeout},
+	}
+	if s.queue == nil {
+		qm, err := queue.NewManager(queue.Options{
+			DB:          d.Store.DB,
+			SSE:         d.SSE,
+			Metrics:     d.Metrics,
+			Log:         d.Log,
+			Concurrency: 4,
+			BaseBackoff: 40 * time.Millisecond,
+			Now:         func() time.Time { return s.now() },
+		})
+		if err != nil {
+			return nil, err
+		}
+		s.queue = qm
+		s.ownsQueue = true
+	}
+	s.registerJobs()
+	if err := s.queue.Start(); err != nil {
+		return nil, err
+	}
 	s.ensureStravaSubscription()
 	return s, nil
 }
@@ -93,8 +131,25 @@ func (s *Services) db() *sql.DB { return s.deps.Store.DB }
 
 func (s *Services) repo() athlete.Repo { return athlete.Repo{DB: s.db(), Now: s.Now} }
 
-// Wait blocks until background work (lazy syncs, webhook processing) is done; for tests and shutdown.
-func (s *Services) Wait() { s.bg.Wait() }
+// Wait blocks until background work and worker queue jobs (including chained jobs) are drained.
+func (s *Services) Wait() {
+	for range 3 {
+		s.bg.Wait()
+		if s.queue != nil {
+			s.queue.Wait()
+		}
+	}
+}
+
+// Close releases internal worker resources when owned by Services.
+func (s *Services) Close() {
+	if s.ownsQueue && s.queue != nil {
+		s.queue.Close()
+	}
+}
+
+// Queue exposes the worker queue manager.
+func (s *Services) Queue() *queue.Manager { return s.queue }
 
 func (s *Services) goBackground(name string, timeout time.Duration, fn func(ctx context.Context)) {
 	s.bg.Add(1)

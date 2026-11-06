@@ -43,6 +43,7 @@ import { activityReport, dayReport, multiReport, parseIncludeParam } from './rep
 import { buildActivityView, buildDayView } from './view'
 import { enrichActivityView, enrichDayView, llmConfigured, registerV3 } from './v3'
 import { registerV31 } from './v31'
+import { registerV4, tryAsyncMockV4 } from './v4'
 
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -459,7 +460,7 @@ route('GET', /^\/api\/admin\/logs$/, ({ url }) => {
   const page = rows.slice(0, 100)
   return json({ items: page, nextBefore: rows.length > 100 ? page[page.length - 1].id : null, dropped: 0 })
 })
-route('GET', /^\/api\/version$/, () => json({ version: '3.1.0', commit: 'demo123', builtAt: '2026-11-05T20:00:00Z', go: 'go1.27.1', label: '3.1.0 · demo123 · 2026-11-05T20:00:00Z' }))
+route('GET', /^\/api\/version$/, () => json({ version: '4.0.0', commit: 'v4mock01', builtAt: '2026-11-06T20:00:00Z', go: 'go1.27.1', label: '4.0.0 · v4mock01 · 2026-11-06T20:00:00Z' }))
 route('POST', /^\/api\/actions$/, () => new Response(null, { status: 204 }))
 route('POST', /^\/api\/admin\/cache\/flush$/, () => json({ removed: 37 + Math.floor(Math.random() * 120) }))
 route('GET', /^\/api\/admin\/connections$/, () => {
@@ -778,6 +779,7 @@ registerV3(route, (data, id) => {
   return it ? { it, v: enrichActivityView(buildActivityView(it, data), it, data) } : null
 })
 registerV31(route, llmConfigured)
+registerV4(route, pub)
 
 /* ---------------------------------- Entry point ---------------------------------- */
 
@@ -793,6 +795,15 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
   tickSync()
   if (!SAFE.has(method) && !url.pathname.startsWith('/api/webhooks/') && new Headers(init?.headers).get('X-Stride-CSRF') !== '1') {
     return err(403, 'FORBIDDEN', 'Requête refusée : en-tête anti-CSRF manquant.')
+  }
+  if (method === 'POST' && url.searchParams.get('async') === '1') {
+    const me = currentUser()
+    if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée : reconnecte-toi.')
+    const asyncRes = tryAsyncMockV4({ url, params: [], init, me, data: userData(me.id) })
+    if (asyncRes) {
+      save()
+      return asyncRes
+    }
   }
   for (const r of routes) {
     if (r.method !== method) continue

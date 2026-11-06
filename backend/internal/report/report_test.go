@@ -384,3 +384,29 @@ func TestPlanAndAdaptPrompts(t *testing.T) {
 		}
 	}
 }
+
+func TestBodyStressPromptInjection(t *testing.T) {
+	v := fullActivity()
+	cold := 3.0
+	v.BodyStress = []analysis.BodyStressEntry{
+		{
+			ID:               1,
+			Date:             "2026-11-02",
+			Zone:             analysis.ZoneKneePFPS,
+			Side:             analysis.SideLeft,
+			PainScore:        4.0,
+			ColdNextDayScore: &cold,
+			Note:             "Gêne en fin de descente",
+		},
+	}
+	got := Activity(v, kneeProfile(), nil)
+	if !strings.Contains(got, "### CARTOGRAPHIE CORPORELLE & CORRÉLATIONS") {
+		t.Fatal("prompt must contain cartographie section when BodyStress entries are present")
+	}
+	if !strings.Contains(got, "Rotule / Genou (fémoro-patellaire) [Gauche] :** Douleur 4/10 (à froid J+1 : 3/10) le 02/11/2026 — Gêne en fin de descente") {
+		t.Fatalf("unexpected entry line:\n%s", got)
+	}
+	if strings.Contains(got, "SFP") {
+		t.Fatal("prompt must NOT contain SFP")
+	}
+}

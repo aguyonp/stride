@@ -50,6 +50,7 @@ func (s *Services) ActivityReport(ctx context.Context, uid, id int64, include st
 	if v.Records, err = s.records(ctx, uid); err != nil {
 		return "", err
 	}
+	v.BodyStress, _ = s.recentBodyStress(ctx, uid, 30)
 	return report.Activity(v, p, inc), nil
 }
 
@@ -70,6 +71,7 @@ func (s *Services) DayReport(ctx context.Context, uid int64, date, include strin
 	if v.Records, err = s.records(ctx, uid); err != nil {
 		return "", err
 	}
+	v.BodyStress, _ = s.recentBodyStress(ctx, uid, 30)
 	return report.Day(v, p, inc), nil
 }
 
@@ -335,6 +337,7 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 	if m.Records, err = s.records(ctx, uid); err != nil {
 		return nil, err
 	}
+	m.BodyStress, _ = s.recentBodyStress(ctx, uid, 30)
 	md := report.Multi(m, p, inc)
 	return &view.MultiExportResult{Markdown: md, TokensEstimate: report.EstimateTokens(md), Sessions: len(m.Sessions)}, nil
 }

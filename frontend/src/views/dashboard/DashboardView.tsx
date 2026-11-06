@@ -1,6 +1,6 @@
 import { Activity, BarChart3, CalendarCheck, CloudSun, Flame, Gauge, History, Link2, Map as MapIcon, Moon, PenLine, Plus, Sun, Target, Timer, Trophy } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'wouter'
+import { Link, useLocation, useSearchParams } from 'wouter'
 import { useActivities, useActivityView, useDayView, useProfile } from '../../api/queries'
 import { useLlmConfig } from '../../api/queriesV3'
 import { useRecords, useStandalone } from '../../api/queriesV31'
@@ -192,15 +192,16 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
 }
 
 /** Light dashboard: readiness, compact session hero, top alerts, ressenti, AI actions; details folded. */
-export function DashboardView({ me }: { me: Me }) {
+export function DashboardView({ me, routeActivityId = null }: { me: Me; routeActivityId?: number | null }) {
   const profile = useProfile()
   const today = todayISO(profile.data?.timezone)
+  const [, navigate] = useLocation()
   const [params, setParams] = useSearchParams()
   const sParam = Number(params.get('s')) || null
   const list = useActivities()
   const items = useMemo(() => list.data?.pages.flatMap((p) => p.items) ?? [], [list.data])
   const auto = (items.find((a) => a.isRunning) ?? items[0])?.id ?? null
-  const selectedId = sParam ?? auto
+  const selectedId = sParam ?? routeActivityId ?? auto
   const [picked, setPicked] = useState<ActivitySummary | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const day = useDayView(today)
@@ -232,11 +233,15 @@ export function DashboardView({ me }: { me: Me }) {
       : ({ kind: 'day', date: today, label: 'Bilan du jour' } as const)
 
   const select = (id: number) => {
-    setParams((p) => {
-      const next = new URLSearchParams(p)
-      next.set('s', String(id))
-      return next
-    })
+    if (routeActivityId !== null) {
+      navigate(`/activities/${id}`)
+    } else {
+      setParams((p) => {
+        const next = new URLSearchParams(p)
+        next.set('s', String(id))
+        return next
+      })
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const afterCreate = (a: ActivitySummary) => {
@@ -244,17 +249,22 @@ export function DashboardView({ me }: { me: Me }) {
     ui.selectActivity(a.id)
     ui.openFeeling()
   }
-  const afterDelete = () =>
+  const afterDelete = () => {
+    if (routeActivityId !== null) {
+      navigate('/')
+      return
+    }
     setParams((p) => {
       const next = new URLSearchParams(p)
       next.delete('s')
       return next
     })
+  }
   const idx = selectedId === null ? -1 : items.findIndex((a) => a.id === selectedId)
   const older = idx >= 0 && idx < items.length - 1 ? items[idx + 1] : null
   const newer = idx > 0 ? items[idx - 1] : null
 
-  const noActivities = list.isSuccess && items.length === 0 && sParam === null
+  const noActivities = list.isSuccess && items.length === 0 && sParam === null && routeActivityId === null
   const th = profile.data?.thresholds ?? null
   const ready = v && !stale
 
