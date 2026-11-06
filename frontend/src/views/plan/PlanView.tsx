@@ -57,7 +57,7 @@ function Progress({ label, done, planned, format }: { label: string; done: numbe
         aria-valuemax={100}
         aria-valuenow={Math.round(width)}
       >
-        <div className={cn('h-full rounded-full transition-[width] duration-700', over ? 'bg-warn' : 'bg-gradient-to-r from-accent to-accent-2')} style={{ width: `${width}%` }} />
+        <div className={cn('h-full rounded-full transition-[width] duration-700', over ? 'bg-warn' : 'bg-accent')} style={{ width: `${width}%` }} />
       </div>
     </div>
   )

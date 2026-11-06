@@ -13,7 +13,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
     <div className="mx-auto grid max-w-5xl items-center gap-8 py-4 sm:py-8 lg:min-h-[calc(100dvh-10rem)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
       <div className="min-w-0">
         <div className="flex items-center gap-3">
-          <span className="grid size-14 flex-none place-items-center rounded-2xl bg-gradient-to-br from-accent/20 to-accent-2/5 text-ink ring-1 ring-accent/25 ring-inset">
+          <span className="grid size-14 flex-none place-items-center rounded-2xl bg-accent/15 text-accent ring-1 ring-accent/20 ring-inset">
             <StrideMark className="w-9" />
           </span>
           <div>

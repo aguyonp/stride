@@ -18,7 +18,7 @@ export function BottomNav() {
         <Link
           href={n.href}
           aria-current={active ? 'page' : undefined}
-          className={cn('flex h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-[11px] font-semibold transition-colors', active ? 'text-accent' : 'text-ink-3 hover:text-ink-2')}
+          className={cn('flex h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-[11px] font-medium transition-colors', active ? 'text-accent' : 'text-ink-3 hover:text-ink-2')}
         >
           <Icon className="size-[1.3rem]" aria-hidden="true" />
           <span className="max-w-full truncate px-1">{n.short}</span>
@@ -34,7 +34,7 @@ export function BottomNav() {
           <button
             type="button"
             onClick={ui.openFeeling}
-            className="btn btn-primary -mt-5 size-14 flex-col gap-0 rounded-[20px] p-0 text-[10px] shadow-[0_10px_24px_-8px_var(--accent)]"
+            className="btn btn-primary -mt-5 size-14 flex-col gap-0 rounded-[20px] p-0 text-[10px] shadow-[0_10px_24px_-8px_var(--shadow-1)]"
             aria-label="Saisir mon ressenti sur la dernière séance"
           >
             <HeartPulse className="size-6" aria-hidden="true" />

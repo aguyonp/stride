@@ -602,4 +602,4 @@ Responses gain `phases: PlanPhase[]` (drafts with `id: 0`); `POST /api/plan/bulk
 - `bulk`: ≤ 120 sessions and ≤ 12 phases, `sessions` may be empty when `phases` are given; one transaction. `GET /api/plan` without dates now covers up to today + 366 days.
 
 ### 12.7 Version
-`VERSION` = `3.1.0` (no `v`, see release cycle).
+`VERSION` = `3.1.1` (no `v`, see release cycle).

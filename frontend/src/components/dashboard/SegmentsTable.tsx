@@ -54,7 +54,7 @@ export function SegmentsTable({ segments, className }: { segments: Segments; cla
           {tab === 'blocks' && (
             <div className="mb-3 flex h-2.5 w-full gap-[2px] overflow-hidden rounded-full" aria-hidden="true">
               {rows.map((r) => (
-                <div key={r.index} className={cn('h-full rounded-[3px]', isPause(r) ? 'bg-ink-3/35' : 'bg-gradient-to-r from-accent to-accent-2')} style={{ width: `${(r.durationS / total) * 100}%` }} title={r.label} />
+                <div key={r.index} className={cn('h-full rounded-[3px]', isPause(r) ? 'bg-ink-3/35' : 'bg-accent')} style={{ width: `${(r.durationS / total) * 100}%` }} title={r.label} />
               ))}
             </div>
           )}
