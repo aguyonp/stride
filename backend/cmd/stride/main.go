@@ -3,7 +3,6 @@
 //	stride [serve]      start the HTTP server (default)
 //	stride healthcheck  GET /health/ready on the local port, exit 0/1 (container healthcheck)
 //	stride version      print the version
-//	stride openapi [dir] write OpenAPI specifications to dir (default: ../docs)
 package main
 
 import (
@@ -34,7 +33,6 @@ import (
 	"stride/internal/httpapi"
 	"stride/internal/logx"
 	"stride/internal/observability"
-	"stride/internal/openapi"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
 	"stride/internal/scheduler"
@@ -59,18 +57,8 @@ func main() {
 		os.Exit(healthcheck())
 	case "version", "--version", "-v":
 		fmt.Println(buildinfo.Get().Label)
-	case "openapi":
-		dir := "../docs"
-		if len(os.Args) > 2 {
-			dir = os.Args[2]
-		}
-		if err := openapi.WriteFiles(dir); err != nil {
-			fmt.Fprintln(os.Stderr, "❌", err)
-			os.Exit(1)
-		}
-		fmt.Printf("✅ Spécifications OpenAPI écrites dans %s\n", dir)
 	default:
-		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version | openapi)\n", cmd)
+		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version)\n", cmd)
 		os.Exit(2)
 	}
 }

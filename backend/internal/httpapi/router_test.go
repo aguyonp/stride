@@ -175,21 +175,9 @@ func TestPlatformEndpoints(t *testing.T) {
 		t.Fatalf("metrics body: %s", rec.Body.String())
 	}
 
-	// GET /openapi.json
-	rec = call(h, "GET", "/openapi.json", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("openapi.json code: %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), `"openapi": "3.0.3"`) {
-		t.Fatalf("openapi.json body: %s", rec.Body.String())
-	}
-
-	// GET /openapi.yaml
-	rec = call(h, "GET", "/openapi.yaml", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("openapi.yaml code: %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "openapi: 3.0.3") {
-		t.Fatalf("openapi.yaml body: %s", rec.Body.String())
+	for _, path := range []string{"/openapi.json", "/openapi.yaml"} {
+		if rec = call(h, "GET", path, nil); rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), "openapi") {
+			t.Fatalf("%s must not be served", path)
+		}
 	}
 }

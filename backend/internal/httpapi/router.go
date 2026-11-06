@@ -18,7 +18,6 @@ import (
 	"stride/internal/domainapi"
 	"stride/internal/httpx"
 	"stride/internal/observability"
-	"stride/internal/openapi"
 	"stride/internal/sse"
 	"stride/internal/store"
 )
@@ -51,14 +50,6 @@ func New(d Deps) http.Handler {
 	if d.Metrics != nil {
 		mux.Handle("GET /metrics", d.Metrics.Handler())
 	}
-	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write(openapi.SpecJSON())
-	})
-	mux.HandleFunc("GET /openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
-		_, _ = w.Write(openapi.SpecYAML())
-	})
 
 	d.Auth.Register(mux)
 	mux.Handle("GET /api/version", d.Auth.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
