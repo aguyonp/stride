@@ -155,9 +155,9 @@ export default function OnboardingView({ me }: { me: Me }) {
             <p className="text-xs font-medium text-ink-3">
               Étape {step + 1} sur {STEPS.length}
             </p>
-            <h1 id="onboarding-step-title" tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none sm:text-2xl">
+            <h2 id="onboarding-step-title" tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none sm:text-2xl">
               {meta.title}
-            </h1>
+            </h2>
           </div>
         </div>
 

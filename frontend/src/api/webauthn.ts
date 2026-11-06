@@ -30,6 +30,11 @@ function isCancel(err: unknown): boolean {
   return err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')
 }
 
+const NO_AUTHENTICATOR_REGISTER =
+  'Aucun authentificateur de passkey disponible. Active Windows Hello / Touch ID, utilise un gestionnaire de mots de passe (Bitwarden, 1Password, Proton Pass) ou branche une clé FIDO2.'
+const NO_AUTHENTICATOR_LOGIN =
+  'Aucun authentificateur de passkey disponible sur cet appareil ou navigateur. Active ton gestionnaire de passkeys ou branche ta clé de sécurité.'
+
 export function passkeyErrorMessage(err: unknown, flow: 'login' | 'register' | 'add'): string {
   if (err instanceof ApiError) {
     if (err.code === 'INVITE_REQUIRED') return 'Une invitation valide est nécessaire pour créer un compte. Utilise le lien reçu de l’administrateur ou saisis ton code.'
@@ -41,8 +46,19 @@ export function passkeyErrorMessage(err: unknown, flow: 'login' | 'register' | '
     if (err.code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED') return 'Cet appareil possède déjà une passkey pour ce compte.'
     if (err.code === 'ERROR_INVALID_DOMAIN' || err.code === 'ERROR_INVALID_RP_ID') return 'Ce domaine n’est pas autorisé pour les passkeys (HTTPS et domaine configuré requis).'
     if (err.code === 'ERROR_AUTHENTICATOR_MISSING_DISCOVERABLE_CREDENTIAL_SUPPORT') return 'Cet authentificateur ne sait pas stocker de passkey (clé résidente requise).'
+    if (err.code === 'ERROR_AUTHENTICATOR_MISSING_USER_VERIFICATION_SUPPORT' || err.code === 'ERROR_AUTO_REGISTER_USER_VERIFICATION_FAILURE') {
+      return 'Cet authentificateur ne permet pas la vérification d’identité requise (code PIN ou biométrie).'
+    }
+    if (err.code === 'ERROR_AUTHENTICATOR_GENERAL_ERROR' || err.code === 'ERROR_AUTHENTICATOR_NO_SUPPORTED_PUBKEYCREDPARAMS_ALG') {
+      return flow === 'login' ? NO_AUTHENTICATOR_LOGIN : NO_AUTHENTICATOR_REGISTER
+    }
   }
-  if (err instanceof Error && err.name === 'SecurityError') return ISSUE_MESSAGE.insecure
+  if (err instanceof Error) {
+    if (err.name === 'SecurityError') return ISSUE_MESSAGE.insecure
+    if (err.name === 'UnknownError' || err.name === 'NotSupportedError') {
+      return flow === 'login' ? NO_AUTHENTICATOR_LOGIN : NO_AUTHENTICATOR_REGISTER
+    }
+  }
   return flow === 'login' ? 'Impossible d’utiliser la passkey. Vérifie que tu en as une pour ce site.' : 'La passkey n’a pas pu être créée.'
 }
 

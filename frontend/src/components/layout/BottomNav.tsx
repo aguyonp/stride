@@ -34,7 +34,7 @@ export function BottomNav() {
           <button
             type="button"
             onClick={ui.openFeeling}
-            className="btn btn-primary -mt-5 size-14 flex-col gap-0 rounded-[20px] p-0 text-[10px] shadow-lg shadow-black/25"
+            className="btn btn-primary -mt-5 size-14 flex-col gap-0 rounded-[20px] p-0 text-[10px] shadow-[0_10px_24px_-8px_var(--shadow-1)]"
             aria-label="Saisir mon ressenti sur la dernière séance"
           >
             <HeartPulse className="size-6" aria-hidden="true" />
