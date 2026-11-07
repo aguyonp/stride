@@ -170,8 +170,14 @@ func (s *Store) UpdateUserProfile(ctx context.Context, id int64, displayName *st
 }
 
 // UpdateUserAccess changes role and/or status; disabling revokes every session of the user.
+// Demoting or disabling the last active administrator fails with ErrLastAdmin.
 func (s *Store) UpdateUserAccess(ctx context.Context, id int64, role, status *string) error {
 	return s.Tx(ctx, func(tx *sql.Tx) error {
+		if (role != nil && *role != RoleAdmin) || (status != nil && *status != StatusActive) {
+			if err := ensureOtherAdmin(ctx, tx, id); err != nil {
+				return err
+			}
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE users SET role = COALESCE(?, role), status = COALESCE(?, status) WHERE id = ?`,
 			pfNullString(role), pfNullString(status), id)
 		if err := pfAffected(res, err, ErrUnknownUser); err != nil {

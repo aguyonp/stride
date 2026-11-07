@@ -72,7 +72,7 @@ func Plan(v *view.DayView, prof athlete.Profile, req PlanRequest) string {
 
 func writePlanState(b *builder, v *view.DayView, prof athlete.Profile, lr *analysis.LoadRatio) {
 	writeReadinessPriority(b, v.Readiness)
-	writeContext(b, prof, v.Goals, plannedList(v.Planned), v.Upcoming, v.Records)
+	writeContext(b, prof, v.Health, v.Goals, plannedList(v.Planned), v.Upcoming, v.Records)
 	b.section("ÉTAT DE PRÉPARATION & CHARGE")
 	rb := v.Readiness
 	b.line("- **Préparation :** %s %s", analysis.ReadinessEmoji(rb.Level), rb.Title)

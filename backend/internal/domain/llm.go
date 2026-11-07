@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
@@ -18,6 +19,7 @@ import (
 
 	"stride/internal/apimeter"
 	"stride/internal/egress"
+	"stride/internal/queue"
 	"stride/internal/report"
 	"stride/internal/view"
 )
@@ -170,10 +172,14 @@ func (e *llmError) Error() string {
 
 func (e *llmError) Unwrap() error { return e.err }
 
-func (s *Services) llmEndpoint(c *llmConfig) (string, *http.Client) {
+func (s *Services) llmEndpoint(c *llmConfig, stream bool) (string, *http.Client) {
 	switch c.Provider {
 	case "gemini":
-		return s.baseURL("gemini", "https://generativelanguage.googleapis.com") + "/v1beta/models/" + url.PathEscape(c.Model) + ":generateContent", s.llmHTTP
+		base := s.baseURL("gemini", "https://generativelanguage.googleapis.com") + "/v1beta/models/" + url.PathEscape(c.Model)
+		if stream {
+			return base + ":streamGenerateContent?alt=sse", s.llmHTTP
+		}
+		return base + ":generateContent", s.llmHTTP
 	case "anthropic":
 		return s.baseURL("anthropic", "https://api.anthropic.com") + "/v1/messages", s.llmHTTP
 	case "openai":
@@ -182,7 +188,7 @@ func (s *Services) llmEndpoint(c *llmConfig) (string, *http.Client) {
 	return strings.TrimSuffix(c.BaseURL.String, "/v1") + "/v1/chat/completions", s.egress
 }
 
-func llmBody(c *llmConfig, r llmRequest) any {
+func llmBody(c *llmConfig, r llmRequest, stream bool) map[string]any {
 	switch c.Provider {
 	case "gemini":
 		return map[string]any{
@@ -191,8 +197,12 @@ func llmBody(c *llmConfig, r llmRequest) any {
 			"generationConfig":  map[string]any{"maxOutputTokens": r.maxTokens, "temperature": 0.4},
 		}
 	case "anthropic":
-		return map[string]any{"model": c.Model, "max_tokens": r.maxTokens, "system": r.system,
+		b := map[string]any{"model": c.Model, "max_tokens": r.maxTokens, "system": r.system,
 			"messages": []any{map[string]string{"role": "user", "content": r.prompt}}}
+		if stream {
+			b["stream"] = true
+		}
+		return b
 	}
 	body := map[string]any{"model": c.Model, "messages": []any{
 		map[string]string{"role": "system", "content": r.system}, map[string]string{"role": "user", "content": r.prompt}}}
@@ -200,6 +210,9 @@ func llmBody(c *llmConfig, r llmRequest) any {
 		body["max_completion_tokens"] = r.maxTokens
 	} else {
 		body["max_tokens"] = r.maxTokens
+	}
+	if stream {
+		body["stream"] = true
 	}
 	return body
 }
@@ -261,14 +274,63 @@ func errDetail(raw []byte) string {
 	return msg
 }
 
+type llmStreamChunk struct {
+	Type  string `json:"type"`
+	Delta *struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"delta"`
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+}
+
+func (ch *llmStreamChunk) deltaText() string {
+	var b strings.Builder
+	if ch.Delta != nil && ch.Delta.Text != "" {
+		b.WriteString(ch.Delta.Text)
+	}
+	if len(ch.Choices) > 0 {
+		if ch.Choices[0].Delta.Content != "" {
+			b.WriteString(ch.Choices[0].Delta.Content)
+		} else if ch.Choices[0].Message.Content != "" {
+			b.WriteString(ch.Choices[0].Message.Content)
+		}
+	}
+	if len(ch.Candidates) > 0 {
+		for _, p := range ch.Candidates[0].Content.Parts {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
+}
+
 // callLLM runs one completion through the meter (provider llm).
 func (s *Services) callLLM(ctx context.Context, uid int64, c *llmConfig, r llmRequest) (string, error) {
+	return s.callLLMStream(ctx, uid, c, r, false, nil)
+}
+
+// callLLMStream runs a completion with SSE chunk streaming across OpenAI, OpenAI-compat, Anthropic, and Gemini,
+// seamlessly falling back to full-body JSON decoding when the upstream returns application/json.
+func (s *Services) callLLMStream(ctx context.Context, uid int64, c *llmConfig, r llmRequest, stream bool, onDelta func(string)) (string, error) {
 	key, err := s.open("llm", uid, "key", c.KeyEnc)
 	if err != nil {
 		return "", fmt.Errorf("clé IA illisible : %w", err)
 	}
-	endpoint, hc := s.llmEndpoint(c)
-	raw, _ := json.Marshal(llmBody(c, r))
+	endpoint, hc := s.llmEndpoint(c, stream)
+	raw, _ := json.Marshal(llmBody(c, r, stream))
 	release, err := s.deps.Meter.Acquire(ctx, apimeter.LLM, uid)
 	if err != nil {
 		return "", providerErr(apimeter.LLM, err)
@@ -279,6 +341,9 @@ func (s *Services) callLLM(ctx context.Context, uid int64, c *llmConfig, r llmRe
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if stream {
+		req.Header.Set("Accept", "text/event-stream, application/json")
+	}
 	switch c.Provider {
 	case "gemini":
 		req.Header.Set("x-goog-api-key", key)
@@ -307,7 +372,6 @@ func (s *Services) callLLM(ctx context.Context, uid int64, c *llmConfig, r llmRe
 		return "", pe
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	call.Status = resp.StatusCode
 	if resp.StatusCode == http.StatusTooManyRequests {
 		if sec, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
@@ -315,11 +379,55 @@ func (s *Services) callLLM(ctx context.Context, uid int64, c *llmConfig, r llmRe
 		}
 	}
 	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		call.Duration = time.Since(t0)
 		call.Err = fmt.Errorf("HTTP %d", resp.StatusCode)
 		s.deps.Meter.Observe(call)
 		return "", &ProviderError{Provider: apimeter.LLM, Status: resp.StatusCode, Unauthorized: resp.StatusCode == 401 || resp.StatusCode == 403,
 			RateLimited: resp.StatusCode == 429, Detail: errDetail(body), Err: &llmError{status: resp.StatusCode, detail: errDetail(body)}}
 	}
+
+	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		sc := bufio.NewScanner(io.LimitReader(resp.Body, 8<<20))
+		sc.Buffer(make([]byte, 0, 64<<10), 2<<20)
+		var full strings.Builder
+		for sc.Scan() {
+			line := sc.Text()
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if payload == "" || payload == "[DONE]" {
+				continue
+			}
+			var chunk llmStreamChunk
+			if json.Unmarshal([]byte(payload), &chunk) != nil {
+				continue
+			}
+			delta := chunk.deltaText()
+			if delta != "" {
+				full.WriteString(delta)
+				if onDelta != nil {
+					onDelta(delta)
+				}
+			}
+		}
+		call.Duration = time.Since(t0)
+		if scErr := sc.Err(); scErr != nil {
+			call.Err = scErr
+			s.deps.Meter.Observe(call)
+			return "", &ProviderError{Provider: apimeter.LLM, Status: resp.StatusCode, Detail: "flux interrompu", Err: scErr}
+		}
+		s.deps.Meter.Observe(call)
+		text := strings.TrimSpace(full.String())
+		if text == "" {
+			return "", &ProviderError{Provider: apimeter.LLM, Status: resp.StatusCode, Detail: "réponse vide", Err: errors.New("empty answer")}
+		}
+		return text, nil
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	call.Duration = time.Since(t0)
 	s.deps.Meter.Observe(call)
 	var ans llmAnswer
 	if err := json.Unmarshal(body, &ans); err != nil {
@@ -328,6 +436,9 @@ func (s *Services) callLLM(ctx context.Context, uid int64, c *llmConfig, r llmRe
 	text := ans.text()
 	if text == "" {
 		return "", &ProviderError{Provider: apimeter.LLM, Status: resp.StatusCode, Detail: "réponse vide", Err: errors.New("empty answer")}
+	}
+	if onDelta != nil {
+		onDelta(text)
 	}
 	return text, nil
 }
@@ -393,24 +504,23 @@ func includeOf(raw json.RawMessage) ([]string, string) {
 	return strings.Split(csv, ","), csv
 }
 
-// Analyze builds the requested prompt, sends it to the athlete's LLM and stores the answer.
-func (s *Services) Analyze(ctx context.Context, uid int64, in AnalyzeInput) (*view.LLMAnalysis, error) {
+func (s *Services) prepareAnalyze(ctx context.Context, uid int64, in AnalyzeInput) (string, string, error) {
 	c, err := s.llmConfig(ctx, uid)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if c == nil {
-		return nil, ErrLLMNotConfigured
+		return "", "", ErrLLMNotConfigured
 	}
 	if r := []rune(strings.TrimSpace(in.Question)); len(r) > 2000 {
-		return nil, badRequest("Question trop longue (2000 caractères max).")
+		return "", "", badRequest("Question trop longue (2000 caractères max).")
 	}
 	list, csv := includeOf(in.Include)
 	var prompt, ref string
 	switch in.Kind {
 	case "activity":
 		if in.ActivityID <= 0 {
-			return nil, badRequest("activityId requis.")
+			return "", "", badRequest("activityId requis.")
 		}
 		ref = strconv.FormatInt(in.ActivityID, 10)
 		prompt, err = s.ActivityReport(ctx, uid, in.ActivityID, csv)
@@ -433,35 +543,31 @@ func (s *Services) Analyze(ctx context.Context, uid int64, in AnalyzeInput) (*vi
 			ref = fmt.Sprintf("weeks:%d", in.Weeks)
 		}
 	default:
-		return nil, badRequest("kind invalide (activity, day, multi).")
+		return "", "", badRequest("kind invalide (activity, day, multi).")
 	}
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if q := strings.TrimSpace(in.Question); q != "" {
 		prompt = strings.TrimRight(prompt, "\n") + "\n\n### QUESTION DE L'ATHLÈTE\n" + q + "\n"
 	}
-	ctx, cancel := context.WithTimeout(ctx, llmTimeout)
-	defer cancel()
-	t0 := time.Now()
-	text, err := s.callLLM(ctx, uid, c, llmRequest{system: systemDirective(), prompt: prompt, maxTokens: llmMaxTokens})
+	return ref, prompt, nil
+}
+
+// Analyze builds the requested prompt and runs it on the LLM worker pool (tokens streamed over SSE).
+// It returns the stored *view.LLMAnalysis, or the *queue.JobStatus when async or still running.
+func (s *Services) Analyze(ctx context.Context, uid int64, in AnalyzeInput, async bool) (any, error) {
+	ref, prompt, err := s.prepareAnalyze(ctx, uid, in)
 	if err != nil {
 		return nil, err
 	}
-	a := view.LLMAnalysis{Kind: in.Kind, Ref: ref, Provider: c.Provider, Model: c.Model, Markdown: text,
-		PromptTokensEstimate: report.EstimateTokens(prompt), DurationMs: time.Since(t0).Milliseconds()}
-	now := s.now().Unix()
-	res, err := s.db().ExecContext(context.WithoutCancel(ctx), `INSERT INTO llm_analyses (user_id, kind, ref, provider, model, markdown, prompt_tokens, duration_ms, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, a.Kind, a.Ref, a.Provider, a.Model, a.Markdown, a.PromptTokensEstimate, a.DurationMs, now)
-	if err != nil {
-		return nil, err
-	}
-	a.ID, _ = res.LastInsertId()
-	a.CreatedAt = *rfc3339(now)
-	_, _ = s.db().ExecContext(context.WithoutCancel(ctx), `DELETE FROM llm_analyses WHERE user_id = ? AND id NOT IN
-		(SELECT id FROM llm_analyses WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 200)`, uid, uid)
-	s.log.Info("🤖 Analyse IA générée", "user", uid, "kind", a.Kind, "provider", a.Provider, "ms", a.DurationMs)
-	return &a, nil
+	return awaitJob[view.LLMAnalysis](ctx, s, queue.EnqueueRequest{
+		UserID:  uid,
+		Kind:    queue.KindLLMAnalyze,
+		Queue:   queue.QueueCritical,
+		Label:   "Analyse coach IA (" + in.Kind + ")",
+		Payload: llmAnalyzeJobPayload{Kind: in.Kind, Ref: ref, Prompt: prompt, Async: async},
+	}, async)
 }
 
 // Analyses lists the latest 20 stored analyses, optionally filtered by kind and ref.

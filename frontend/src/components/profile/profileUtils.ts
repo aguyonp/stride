@@ -1,23 +1,6 @@
-import type { AthleteProfile, FocusArea, FocusPreset, InjuredSide, PaceTarget, Thresholds } from '../../api/types'
+import type { FocusArea, FocusPreset, PaceTarget, Thresholds } from '../../api/types'
 import { fmtPaceValue, parsePace } from '../../lib/format'
 import { FOCUS_FALLBACK } from '../../lib/labels'
-
-export const FOCUS_ORDER: FocusArea[] = ['none', 'knee_pfps', 'achilles', 'shin_splints', 'other']
-
-export const FOCUS_HINT: Record<FocusArea, string> = {
-  none: 'Formulaire de douleur facultatif, alertes blessure désactivées (sauf charge).',
-  knee_pfps: 'Cadence, descentes, oscillation verticale, étages et dénivelé négatif surveillés.',
-  achilles: 'Cadence, dérive du temps de contact, montées / D+ et charge du mollet surveillés.',
-  shin_splints: 'Cadence, impact, sauts de volume et surfaces dures surveillés.',
-  other: 'Zone personnalisée : donne-lui un nom, il apparaîtra dans les prompts.',
-}
-
-export const SIDE_OPTIONS: { value: InjuredSide | 'none'; label: string }[] = [
-  { value: 'left', label: 'Gauche' },
-  { value: 'right', label: 'Droite' },
-  { value: 'both', label: 'Les deux' },
-  { value: 'none', label: 'Aucun' },
-]
 
 export interface ThresholdField {
   key: keyof Thresholds
@@ -87,13 +70,6 @@ export const presetFor = (presets: FocusPreset[] | undefined, area: FocusArea) =
 
 export const focusTitle = (presets: FocusPreset[] | undefined, area: FocusArea) => presetFor(presets, area)?.label ?? FOCUS_FALLBACK[area]
 
-function browserTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris'
-  } catch {
-    return 'Europe/Paris'
-  }
-}
 
 export function isValidTimezone(tz: string): boolean {
   try {
@@ -120,18 +96,3 @@ export const TIMEZONES = [
   'Pacific/Noumea',
   'UTC',
 ]
-
-/** Builds a full profile for a focus area, keeping other user settings. */
-export function profileForFocus(base: AthleteProfile | undefined, presets: FocusPreset[] | undefined, area: FocusArea, customLabel: string, side: InjuredSide | null): AthleteProfile | null {
-  const preset = presetFor(presets, area)
-  const thresholds = preset?.thresholds ?? base?.thresholds
-  if (!thresholds) return null
-  return {
-    focusArea: area,
-    focusLabel: area === 'other' ? customLabel.trim() || FOCUS_FALLBACK.other : (preset?.label ?? FOCUS_FALLBACK[area]),
-    injuredSide: area === 'none' ? null : side,
-    timezone: base?.timezone ?? browserTimezone(),
-    thresholds: { ...thresholds },
-    paceTargets: base?.paceTargets ?? [],
-  }
-}

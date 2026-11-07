@@ -7,7 +7,7 @@ import { isActive, NAV } from './nav'
 /** Mobile dock: four destinations + a central quick « Ressenti » action for one-thumb use after a run. */
 export function BottomNav() {
   const [path] = useLocation()
-  const items = NAV.filter((n) => !n.admin)
+  const items = NAV.filter((n) => n.dock)
   const left = items.slice(0, 2)
   const right = items.slice(2)
   const link = (n: (typeof items)[number]) => {

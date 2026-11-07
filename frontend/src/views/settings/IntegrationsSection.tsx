@@ -1,3 +1,4 @@
+import { HistoryImport } from '../../components/sync/HistoryImport'
 import { Bike, CloudSun, KeyRound, Loader2, Plug, RefreshCw, ShieldAlert, Unplug, Watch } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useIntegrationMutations, useIntegrations } from '../../api/queries'
@@ -57,6 +58,7 @@ export function IntegrationsSection() {
             <GarminCard g={integ.data.garmin} />
             <StravaCard s={integ.data.strava} />
           </div>
+          {(integ.data.garmin.connected || integ.data.strava.connected) && <HistoryImport />}
           <p className="flex items-center gap-2 text-sm text-ink-3">
             <KeyRound className="size-4 flex-none" aria-hidden="true" />
             Connexions propres à ton compte : ta clé Garmin, tes jetons Strava, ta clé IA et tes chaussures ne sont visibles que par toi (chiffrés côté serveur).

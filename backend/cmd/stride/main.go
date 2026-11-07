@@ -3,6 +3,7 @@
 //	stride [serve]      start the HTTP server (default)
 //	stride healthcheck  GET /health/ready on the local port, exit 0/1 (container healthcheck)
 //	stride version      print the version
+//	stride doctor       full SQLite integrity and foreign-key check, exit 0/1
 package main
 
 import (
@@ -20,20 +21,26 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/valkey-io/valkey-go"
+
 	"stride/internal/admin"
 	"stride/internal/apimeter"
 	"stride/internal/applog"
 	"stride/internal/auth"
 	"stride/internal/buildinfo"
 	"stride/internal/cache"
+	"stride/internal/database"
 	"stride/internal/domain"
 	"stride/internal/env"
+	"stride/internal/feedback"
 	"stride/internal/httpapi"
 	"stride/internal/logx"
+	"stride/internal/observability"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
 	"stride/internal/scheduler"
 	"stride/internal/secret"
+	"stride/internal/sse"
 	"stride/internal/store"
 	"stride/internal/web"
 )
@@ -53,8 +60,10 @@ func main() {
 		os.Exit(healthcheck())
 	case "version", "--version", "-v":
 		fmt.Println(buildinfo.Get().Label)
+	case "doctor":
+		os.Exit(doctor())
 	default:
-		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version)\n", cmd)
+		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version | doctor)\n", cmd)
 		os.Exit(2)
 	}
 }
@@ -80,7 +89,52 @@ func healthcheck() int {
 	return 0
 }
 
+// doctor runs the full integrity and foreign-key checks that boot skips.
+func doctor() int {
+	cfg, err := env.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌", err)
+		return 1
+	}
+	ctx := context.Background()
+	st, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌", err)
+		return 1
+	}
+	defer st.Close()
+	problems, err := database.CheckIntegrity(ctx, st.DB)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌", err)
+		return 1
+	}
+	for _, p := range problems {
+		fmt.Println("⚠️", p)
+	}
+	if len(problems) > 0 {
+		fmt.Printf("❌ %d problème(s) détecté(s) dans %s\n", len(problems), cfg.DBPath)
+		return 1
+	}
+	fmt.Println("✅ Base SQLite intègre :", cfg.DBPath)
+	return 0
+}
+
+// warnForeignKeys logs orphan rows in the background: they never block the boot.
+func warnForeignKeys(ctx context.Context, st *store.Store, log *slog.Logger) {
+	go func() {
+		v, err := database.ForeignKeyViolations(ctx, st.DB)
+		if err != nil {
+			log.Warn("⚠️ Contrôle des clés étrangères impossible", "err", err.Error())
+			return
+		}
+		if len(v) > 0 {
+			log.Warn("⚠️ Lignes orphelines détectées, lancez « stride doctor »", "nombre", len(v), "exemple", v[0])
+		}
+	}()
+}
+
 func run() error {
+	startedAt := time.Now()
 	cfg, err := env.Load()
 	if err != nil {
 		return err
@@ -103,14 +157,21 @@ func run() error {
 		return fmt.Errorf("base SQLite %s : %w", cfg.DBPath, err)
 	}
 	defer st.Close()
+	warnForeignKeys(ctx, st, log)
 	if err := st.EnsureSetting(ctx, store.SettingRegistrationMode, cfg.RegistrationMode, time.Now()); err != nil {
 		return err
 	}
 
+	metrics := observability.New()
 	kv, cacheBackend, err := openCache(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
+	var valkeyClient valkey.Client
+	if vk, ok := kv.(*cache.Valkey); ok {
+		valkeyClient = vk.Client()
+	}
+	kv = cache.NewInstrumented(kv, cacheBackend, metrics)
 	defer kv.Close()
 
 	sealer, err := secret.New(cfg.MasterKey, cfg.MasterKeyPrevious)
@@ -120,7 +181,8 @@ func run() error {
 
 	logs := applog.New(st.DB, log)
 	defer logs.Close()
-	meter := apimeter.NewLocal(apimeter.Options{Log: log, Recent: recentErrors(ctx, st, log), Sink: persistErrors(st), OnCall: auditCall(logs)})
+	meter := apimeter.NewLocal(apimeter.Options{Log: log, Recent: recentErrors(ctx, st, log), Sink: persistErrors(st), OnCall: auditCall(logs),
+		Metrics: metrics})
 	defer meter.Close()
 
 	var stravaAPI strava.API
@@ -135,7 +197,25 @@ func run() error {
 		wx = weather.NewOpenMeteo(weather.OpenMeteoOptions{Meter: meter})
 	}
 
-	dom, err := domain.New(domain.Deps{Env: cfg, Store: st, Cache: kv, Sealer: sealer, Meter: meter, Strava: stravaAPI, Weather: wx, Log: log})
+	sseHub := sse.NewHub(sse.Options{
+		Metrics: metrics,
+		Valkey:  valkeyClient,
+		Log:     log,
+	})
+	defer sseHub.Close()
+
+	dom, err := domain.New(domain.Deps{
+		Env:     cfg,
+		Store:   st,
+		Cache:   kv,
+		Sealer:  sealer,
+		Meter:   meter,
+		Strava:  stravaAPI,
+		Weather: wx,
+		SSE:     sseHub,
+		Metrics: metrics,
+		Log:     log,
+	})
 	if err != nil {
 		return err
 	}
@@ -149,8 +229,20 @@ func run() error {
 		return err
 	}
 	handler := httpapi.New(httpapi.Deps{
-		Store: st, Cache: kv, Auth: authSvc, Domain: dom, Log: log, Logs: logs, HTTPS: cfg.CookieSecure, Static: web.New(),
-		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log}),
+		Store:  st,
+		Cache:  kv,
+		Auth:   authSvc,
+		Domain: dom,
+		Log:    log,
+		Logs:   logs,
+		HTTPS:  cfg.CookieSecure,
+		Static: web.New(),
+		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log,
+			Domain: dom, SSE: sseHub, Logs: logs, DBPath: cfg.DBPath, Runtime: admin.RuntimeFromEnv(cfg, cacheBackend),
+			StartedAt: startedAt, Maintenance: purgeExpired(st, dom, logs)}),
+		SSE:      sseHub,
+		Metrics:  metrics,
+		Feedback: feedback.New(feedback.Deps{DB: st.DB, Auth: authSvc, Log: log}),
 	})
 
 	sched := scheduler.New(scheduler.Options{
@@ -158,7 +250,7 @@ func run() error {
 		Users:    dom.ConnectedUserIDs,
 		LastSync: dom.LastSyncAt,
 		Sync:     dom.MorningSync,
-		Purge:    maintenance(st, logs, log),
+		Purge:    maintenance(st, dom, logs, log),
 	})
 
 	srv := &http.Server{
@@ -174,13 +266,20 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("écoute sur %s impossible : %w", cfg.ListenAddr, err)
 	}
+	var metricsLn net.Listener
+	if cfg.MetricsAddr != "" {
+		if metricsLn, err = net.Listen("tcp", cfg.MetricsAddr); err != nil {
+			return fmt.Errorf("écoute des métriques sur %s impossible : %w", cfg.MetricsAddr, err)
+		}
+	}
 
 	mode, _ := st.RegistrationMode(ctx)
 	absDB, _ := filepath.Abs(cfg.DBPath)
 	log.Info(fmt.Sprintf("🚀 Stride %s démarré", buildinfo.Get().Label),
 		"écoute", cfg.ListenAddr, "urlPublique", cfg.PublicURL, "db", absDB, "cache", cacheBackend,
 		"inscription", mode, "strava", onOff(stravaAPI != nil), "météo", onOff(wx != nil),
-		"tz", cfg.Timezone, "syncMatinale", fmt.Sprintf("%02d:00", cfg.SyncHour), "frontend", web.HasFrontend())
+		"tz", cfg.Timezone, "syncMatinale", fmt.Sprintf("%02d:00", cfg.SyncHour), "frontend", web.HasFrontend(),
+		"métriques", onOff(cfg.MetricsAddr != ""))
 
 	var wg sync.WaitGroup
 	schedCtx, stopSched := context.WithCancel(context.Background())
@@ -189,13 +288,14 @@ func run() error {
 		defer wg.Done()
 		sched.Run(schedCtx)
 	}()
-	errCh := make(chan error, 1)
-	go func() {
-		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	errCh := make(chan error, 2)
+	serve := func(s *http.Server, l net.Listener) {
+		if err := s.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
-		close(errCh)
-	}()
+	}
+	go serve(srv, ln)
+	metricsSrv := serveMetrics(metricsLn, metrics, serve)
 
 	var serveErr error
 	select {
@@ -211,11 +311,26 @@ func run() error {
 	if err := srv.Shutdown(shCtx); err != nil {
 		log.Warn("⚠️ Arrêt forcé", "err", err.Error())
 	}
+	if metricsSrv != nil {
+		_ = metricsSrv.Shutdown(shCtx)
+	}
 	stopSched()
 	wg.Wait()
-	dom.Wait()
+	dom.Close(shCtx)
 	log.Info("🛑 Serveur arrêté")
 	return serveErr
+}
+
+// serveMetrics exposes GET /metrics on its own listener (STRIDE_METRICS_ADDR, never the public one).
+func serveMetrics(ln net.Listener, m *observability.Metrics, serve func(*http.Server, net.Listener)) *http.Server {
+	if ln == nil {
+		return nil
+	}
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", m.Handler())
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 30 * time.Second}
+	go serve(srv, ln)
+	return srv
 }
 
 func onOff(b bool) string {
@@ -241,7 +356,7 @@ func ensureWritable(dir string) error {
 // openCache connects to Valkey with backoff (it may still be starting) or falls back to memory when not configured.
 func openCache(ctx context.Context, cfg env.Config, log *slog.Logger) (cache.Cache, string, error) {
 	if cfg.ValkeyURL == "" {
-		return cache.NewMemory(), "mémoire", nil
+		return cache.NewMemory(), "memory", nil
 	}
 	delay := 500 * time.Millisecond
 	deadline := time.Now().Add(60 * time.Second)
@@ -292,18 +407,31 @@ func persistErrors(st *store.Store) func(context.Context, []apimeter.ErrorEvent)
 	}
 }
 
-func maintenance(st *store.Store, logs *applog.Log, log *slog.Logger) func(context.Context) error {
+// purgeExpired removes expired sessions, old invitations and API events, purged logs, finished jobs and
+// dead share links; it backs the hourly maintenance and the admin « Purger » action.
+func purgeExpired(st *store.Store, dom *domain.Services, logs *applog.Log) func(context.Context) (map[string]int64, error) {
 	const keep = 7 * 24 * time.Hour
-	return func(ctx context.Context) error {
+	return func(ctx context.Context) (map[string]int64, error) {
 		now := time.Now()
 		sessions, err1 := st.PurgeExpiredSessions(ctx, now)
 		invitations, err2 := st.PurgeInvitations(ctx, now, keep)
 		events, err3 := st.PurgeAPIEvents(ctx, now.Add(-keep))
 		auditRows, err4 := logs.Purge(ctx, now)
-		if sessions+invitations+events+auditRows > 0 {
-			log.Info("🧹 Maintenance", "sessionsExpirées", sessions, "invitations", invitations, "événementsAPI", events, "journaux", auditRows)
+		jobs, links, err5 := dom.PurgeStale(ctx)
+		return map[string]int64{"sessions": sessions, "invitations": invitations, "apiEvents": events, "logs": auditRows,
+			"jobs": jobs, "shareLinks": links}, errors.Join(err1, err2, err3, err4, err5)
+	}
+}
+
+func maintenance(st *store.Store, dom *domain.Services, logs *applog.Log, log *slog.Logger) func(context.Context) error {
+	purge := purgeExpired(st, dom, logs)
+	return func(ctx context.Context) error {
+		n, err := purge(ctx)
+		if n["sessions"]+n["invitations"]+n["apiEvents"]+n["logs"]+n["jobs"]+n["shareLinks"] > 0 {
+			log.Info("🧹 Maintenance", "sessionsExpirées", n["sessions"], "invitations", n["invitations"], "événementsAPI", n["apiEvents"],
+				"journaux", n["logs"], "tâches", n["jobs"], "liensPartage", n["shareLinks"])
 		}
-		return errors.Join(err1, err2, err3, err4)
+		return err
 	}
 }
 

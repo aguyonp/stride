@@ -16,10 +16,12 @@ interface AiProps {
   className?: string
   llmConfigured?: boolean
   onAnalyze?: () => void
+  /** Dashboard variant: the two actions only, options live in Coach IA. */
+  compact?: boolean
 }
 
 /** Light AI panel: copy the prompt (always) and analyse with the user's LLM (when configured); prompt options folded. */
-export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptGenerator({ p, className, llmConfigured, onAnalyze }, ref) {
+export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptGenerator({ p, className, llmConfigured, onAnalyze, compact }, ref) {
   const busy = p.stale || p.report.isPending
   const [options, setOptions] = useState(false)
   return (
@@ -28,11 +30,18 @@ export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptG
         title="Coach IA"
         icon={<Sparkles className="size-4" />}
         action={
-          <span className="num text-xs text-ink-3" aria-live="polite">
-            {busy ? <Loader2 className="mr-1 inline size-3.5 animate-spin" aria-hidden="true" /> : null}≈ {fmtNumber(p.tokens)} tokens
-          </span>
+          compact ? (
+            <Link href="/coach" className="text-xs font-semibold text-ink-3 hover:text-accent">
+              Options
+            </Link>
+          ) : (
+            <span className="num text-xs text-ink-3" aria-live="polite">
+              {busy ? <Loader2 className="mr-1 inline size-3.5 animate-spin" aria-hidden="true" /> : null}≈ {fmtNumber(p.tokens)} tokens
+            </span>
+          )
         }
       >
+        {!compact && (
         <SegmentedControl
           ariaLabel="Sujet"
           size="sm"
@@ -44,7 +53,8 @@ export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptG
             { value: 'day', label: 'Bilan du jour', icon: <CalendarDays /> },
           ]}
         />
-        {!p.canSession && <p className="-mt-1 mb-3 text-xs text-ink-3">Aucune séance disponible : le prompt porte sur le bilan du jour.</p>}
+        )}
+        {!compact && !p.canSession && <p className="-mt-1 mb-3 text-xs text-ink-3">Aucune séance disponible : le prompt porte sur le bilan du jour.</p>}
         {p.report.isError && <InlineError className="mb-3">{p.report.error.message}</InlineError>}
 
         <div className="grid gap-2">
@@ -57,7 +67,7 @@ export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptG
               <Bot className="size-[1.125rem] text-accent" aria-hidden="true" />
               Analyser avec mon IA
             </button>
-          ) : (
+          ) : compact ? null : (
             <p className="text-center text-xs text-ink-3">
               <Link href="/settings#ia" className="underline underline-offset-2 hover:text-ink-2">
                 Brancher mon IA
@@ -67,6 +77,8 @@ export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptG
           )}
         </div>
 
+        {!compact && (
+        <>
         <button type="button" className="mt-3 flex w-full items-center justify-between gap-2 py-1 text-xs font-medium text-ink-3 hover:text-ink-2" aria-expanded={options} aria-controls="prompt-options" onClick={() => setOptions((o) => !o)}>
           Contenu du prompt ({p.include.length} sections)
           <ChevronDown className={cn('size-4 transition-transform', options && 'rotate-180')} aria-hidden="true" />
@@ -100,6 +112,8 @@ export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptG
             )}
           </div>
         </div>
+        </>
+        )}
       </Card>
       <ReportPreview
         open={p.previewOpen}
@@ -114,33 +128,3 @@ export const PromptGenerator = forwardRef<HTMLElement, AiProps>(function PromptG
     </section>
   )
 })
-
-/** Mobile shortcut docked above the bottom nav while the generator card is off-screen. */
-export function MobilePromptBar({ p, hidden, onAnalyze }: { p: PromptState; hidden: boolean; onAnalyze?: () => void }) {
-  return (
-    <div
-      className={cn(
-        'fixed inset-x-0 bottom-[calc(4.6rem+env(safe-area-inset-bottom))] z-30 px-3 transition-[opacity,transform] duration-200 lg:hidden',
-        hidden ? 'pointer-events-none translate-y-3 opacity-0' : 'opacity-100',
-      )}
-      aria-hidden={hidden}
-    >
-      <div className="glass-bar mx-auto flex max-w-lg items-center gap-2 rounded-2xl p-1.5">
-        <button type="button" className="btn btn-primary h-11 min-w-0 flex-1" onClick={() => void p.exporter.copy()} disabled={!p.payload} tabIndex={hidden ? -1 : 0}>
-          <Copy className="size-4 flex-none" aria-hidden="true" />
-          <span className="truncate">Copier le prompt</span>
-          <span className="num flex-none text-xs font-medium opacity-80">≈ {fmtNumber(p.tokens)}</span>
-        </button>
-        {onAnalyze ? (
-          <button type="button" className="icon-btn size-11 rounded-xl text-accent" onClick={onAnalyze} aria-label="Analyser avec mon IA" tabIndex={hidden ? -1 : 0}>
-            <Bot className="size-5" />
-          </button>
-        ) : (
-          <button type="button" className="icon-btn size-11 rounded-xl" onClick={() => p.setPreviewOpen(true)} disabled={!p.text} aria-label="Aperçu du prompt" tabIndex={hidden ? -1 : 0}>
-            <Eye className="size-5" />
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}

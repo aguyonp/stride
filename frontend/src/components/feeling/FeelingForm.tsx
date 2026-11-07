@@ -1,80 +1,131 @@
-import { Footprints, Loader2, Save } from 'lucide-react'
+import { Footprints, Loader2, Plus, Save, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { usePresets, useProfile, useSaveNotes, useShoes } from '../../api/queries'
-import type { ActivityNotes, ActivityNotesInput, FocusPreset } from '../../api/types'
+import { useBodyMapMutations, useProfile, useSaveNotes, useShoes } from '../../api/queries'
+import { useActivitySymptoms, useHealthStatus } from '../../api/queriesV41'
+import type { ActivityNotes, ActivityNotesInput, BodySide, BodyZone } from '../../api/types'
 import { cn } from '../../lib/cn'
-import { fmtNumber } from '../../lib/format'
+import { fmtNumber, todayISO } from '../../lib/format'
 import { CONTEXT_TAGS, SHOE_TYPE_LABEL } from '../../lib/labels'
+import { ALL_BODY_ZONES, BODY_SIDE_LABEL, BODY_ZONE_META } from '../bodymap/bodyMapMeta'
 import { Checkbox, Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
+import { SegmentedControl } from '../ui/SegmentedControl'
 import { useToast } from '../ui/Toast'
 import { PainScale } from './PainScale'
+import { diffSymptoms, hasChanges, initialSymptoms, newSymptom, type SymptomDraft } from './symptoms'
 
-const DEFAULT_LABELS = { during: 'Gêne pendant l’effort', cold: 'Gêne à froid (+2 h)', nextMorning: 'Gêne le lendemain matin' }
+type NotesForm = Required<Pick<ActivityNotesInput, 'rpe' | 'shoeId' | 'tags' | 'note'>>
 
-export function usePainPreset(): { preset: FocusPreset | null; labels: FocusPreset['painLabels']; painEnabled: boolean } {
-  const profile = useProfile()
-  const presets = usePresets()
-  const preset = presets.data?.find((p) => p.focusArea === profile.data?.focusArea) ?? null
-  return { preset, labels: preset?.painLabels ?? DEFAULT_LABELS, painEnabled: preset?.painEnabled ?? true }
-}
-
-function toInput(n: ActivityNotes): Required<ActivityNotesInput> {
-  return { painDuring: n.painDuring, painCold: n.painCold, painNextMorning: n.painNextMorning, rpe: n.rpe, shoeId: n.shoeId, tags: n.tags, note: n.note }
-}
+const toInput = (n: ActivityNotes): NotesForm => ({ rpe: n.rpe, shoeId: n.shoeId, tags: n.tags, note: n.note })
+const SIDES: BodySide[] = ['left', 'right', 'both']
 
 interface FeelingFormProps {
   activityId: number
+  date: string
   notes: ActivityNotes
   onSaved?: () => void
   stickyActions?: boolean
 }
 
-/** Quick « Ressenti » entry: pains (0–10, step 0.5), shoe, context tags, RPE, note. */
-export function FeelingForm({ activityId, notes, onSaved, stickyActions }: FeelingFormProps) {
-  const { labels, painEnabled } = usePainPreset()
+function SymptomRow({ row, taken, onChange, onRemove }: { row: SymptomDraft; taken: BodyZone[]; onChange: (r: SymptomDraft) => void; onRemove: () => void }) {
+  return (
+    <li className="glass-inset space-y-2.5 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="field h-9 min-h-9 w-auto flex-1 py-1 text-sm" aria-label="Zone" value={row.zone} onChange={(e) => onChange({ ...row, zone: e.target.value as BodyZone })}>
+          {ALL_BODY_ZONES.map((z) => (
+            <option key={z} value={z} disabled={z !== row.zone && taken.includes(z)}>
+              {BODY_ZONE_META[z].short}
+            </option>
+          ))}
+        </select>
+        <SegmentedControl<BodySide> ariaLabel="Côté" size="sm" value={row.side} onChange={(side) => onChange({ ...row, side })} options={SIDES.map((v) => ({ value: v, label: BODY_SIDE_LABEL[v] }))} />
+        <button type="button" className="icon-btn size-9" onClick={onRemove} aria-label={`Retirer ${BODY_ZONE_META[row.zone].short}`}>
+          <X className="size-4" />
+        </button>
+      </div>
+      <PainScale label="Pendant l’effort" value={row.during} onChange={(during) => onChange({ ...row, during })} />
+      <PainScale label="Le lendemain matin (J+1)" value={row.nextMorning} onChange={(nextMorning) => onChange({ ...row, nextMorning })} hint="À compléter le lendemain" />
+    </li>
+  )
+}
+
+/** Quick « Ressenti »: symptoms per zone (saved as body entries linked to the session), RPE, shoe, context, note. */
+export function FeelingForm({ activityId, date, notes, onSaved, stickyActions }: FeelingFormProps) {
+  const profile = useProfile()
+  const today = todayISO(profile.data?.timezone)
+  const health = useHealthStatus()
+  const symptoms = useActivitySymptoms(activityId, date, today)
+  const bodyMut = useBodyMapMutations()
   const shoes = useShoes()
   const save = useSaveNotes(activityId)
   const { toast } = useToast()
   const initial = useMemo(() => toInput(notes), [notes])
+  const baseRows = useMemo(() => initialSymptoms(symptoms.entries, health.data), [symptoms.entries, health.data])
   const [form, setForm] = useState(initial)
-  const [showPain, setShowPain] = useState(painEnabled || notes.painDuring !== null)
-  const [prevInitial, setPrevInitial] = useState(initial)
-  if (prevInitial !== initial) {
-    setPrevInitial(initial)
-    setForm(initial)
+  const [rows, setRows] = useState(baseRows)
+  const [prev, setPrev] = useState({ initial, baseRows })
+  if (prev.initial !== initial || prev.baseRows !== baseRows) {
+    setPrev({ initial, baseRows })
+    if (prev.initial !== initial) setForm(initial)
+    if (prev.baseRows !== baseRows) setRows(baseRows)
   }
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial)
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const changes = diffSymptoms(baseRows, rows, activityId, date)
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial) || hasChanges(changes)
+  const set = <K extends keyof NotesForm>(k: K, v: NotesForm[K]) => setForm((f) => ({ ...f, [k]: v }))
   const activeShoes = (shoes.data ?? []).filter((s) => !s.retired || s.id === form.shoeId)
+  const addRow = () => {
+    const r = newSymptom(rows, health.data)
+    if (r) setRows([...rows, r])
+  }
 
-  const submit = () =>
-    save.mutate(form, {
-      onSuccess: () => {
-        toast({ title: 'Ressenti enregistré', description: 'Les prompts et l’historique sont mis à jour.' })
-        onSaved?.()
-      },
-    })
+  const submit = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      for (const id of changes.remove) await bodyMut.removeEntry.mutateAsync(id)
+      for (const u of changes.update) await bodyMut.updateEntry.mutateAsync(u)
+      for (const c of changes.create) await bodyMut.createEntry.mutateAsync(c)
+      if (JSON.stringify(form) !== JSON.stringify(initial)) await save.mutateAsync(form)
+      toast({ title: 'Ressenti enregistré' })
+      onSaved?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Enregistrement impossible.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <form
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault()
-        submit()
+        void submit()
       }}
     >
-      {showPain ? (
-        <div className="space-y-2.5">
-          <PainScale label={labels.during} value={form.painDuring} onChange={(v) => set('painDuring', v)} />
-          <PainScale label={labels.cold} value={form.painCold} onChange={(v) => set('painCold', v)} />
-          <PainScale label={labels.nextMorning} value={form.painNextMorning} onChange={(v) => set('painNextMorning', v)} hint="À compléter le lendemain matin" />
-        </div>
-      ) : (
-        <button type="button" className="btn btn-ghost w-full" onClick={() => setShowPain(true)}>
-          Ajouter une gêne / douleur (optionnel)
-        </button>
-      )}
+      <fieldset>
+        <legend className="mb-1.5 text-sm font-medium text-ink-2">Gênes & douleurs</legend>
+        {rows.length > 0 && (
+          <ul className="mb-2 space-y-2">
+            {rows.map((r, i) => (
+              <SymptomRow
+                key={`${r.id ?? 'new'}-${i}`}
+                row={r}
+                taken={rows.map((x) => x.zone)}
+                onChange={(next) => setRows(rows.map((x, j) => (j === i ? next : x)))}
+                onRemove={() => setRows(rows.filter((_, j) => j !== i))}
+              />
+            ))}
+          </ul>
+        )}
+        {rows.length < ALL_BODY_ZONES.length && (
+          <button type="button" className="btn btn-ghost w-full" onClick={addRow} disabled={!symptoms.ready}>
+            <Plus className="size-4" aria-hidden="true" /> Signaler une gêne
+          </button>
+        )}
+      </fieldset>
 
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium text-ink-2">Effort perçu (RPE)</legend>
@@ -134,16 +185,16 @@ export function FeelingForm({ activityId, notes, onSaved, stickyActions }: Feeli
         {(p) => <textarea {...p} className="field min-h-20 resize-y" value={form.note} maxLength={2000} placeholder="Sensations, terrain, chaleur…" onChange={(e) => set('note', e.target.value)} />}
       </Field>
 
-      {save.isError && <InlineError>{save.error.message}</InlineError>}
+      {error && <InlineError>{error}</InlineError>}
 
       <div className={cn('flex items-center gap-2', stickyActions && 'sticky -bottom-4 z-10 -mx-5 -mb-4 border-t border-line bg-surface px-5 pt-3 pb-4')}>
         {dirty && (
-          <button type="button" className="btn btn-ghost" onClick={() => setForm(initial)}>
+          <button type="button" className="btn btn-ghost" onClick={() => (setForm(initial), setRows(baseRows))}>
             Annuler
           </button>
         )}
-        <button type="submit" className="btn btn-primary h-12 flex-1" disabled={!dirty || save.isPending}>
-          {save.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
+        <button type="submit" className="btn btn-primary h-12 flex-1" disabled={!dirty || busy}>
+          {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
           Enregistrer mon ressenti
         </button>
       </div>

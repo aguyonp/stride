@@ -1,19 +1,18 @@
 import { CalendarRange, Copy, Download, Eye, FileText, ListChecks, Loader2, Minus, Plus, RefreshCw, Share2, Sparkles, TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useActivities, useMultiExport, useProfile } from '../../api/queries'
+import { useActivities, useMultiExport } from '../../api/queries'
 import type { ActivitySummary, IncludeKey, MultiExportRequest, MultiExportResponse } from '../../api/types'
 import { ReportPreview } from '../../components/export/ReportPreview'
 import { useReportExport, type ReportPayload } from '../../components/export/useReportExport'
 import { Card } from '../../components/ui/Card'
 import { ChipToggle } from '../../components/ui/Field'
 import { ActivityIcon } from '../../components/ui/icons'
-import { EmptyState, InlineError, PageHeader } from '../../components/ui/Misc'
+import { EmptyState, InlineError } from '../../components/ui/Misc'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { useStoredState } from '../../hooks/useStoredState'
 import { cn } from '../../lib/cn'
-import { capitalize, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtRelative, todayISO } from '../../lib/format'
+import { capitalize, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtRelative } from '../../lib/format'
 import { ALL_INCLUDE, effectiveInclude, INCLUDE_CHIPS, parseInclude, serializeInclude } from '../../lib/include'
 import { STORAGE_KEYS } from '../../lib/storage'
 
@@ -164,10 +163,8 @@ interface Generated {
   res: MultiExportResponse
 }
 
-export default function ExportView() {
-  useDocumentTitle('Export IA')
-  const profile = useProfile()
-  const today = todayISO(profile.data?.timezone)
+/** Multi-session prompt export: weeks or hand-picked sessions assembled into one prompt. */
+export function MultiExportSection({ today }: { today: string }) {
   const [mode, setMode] = useState<Mode>('weeks')
   const [weeks, setWeeks] = useState(4)
   const [selected, setSelected] = useState<Set<number>>(() => new Set())
@@ -198,8 +195,8 @@ export default function ExportView() {
   const toggleChip = (k: IncludeKey, on: boolean) => setInclude(on ? [...include, k] : include.filter((x) => x !== k))
 
   return (
-    <div className="animate-in">
-      <PageHeader title="Export multi-séances" subtitle="Assemble plusieurs séances en un seul prompt pour que l’IA analyse ta progression et (ré)adapte ton plan." />
+    <section aria-labelledby="multi-export-title">
+      <h2 id="multi-export-title" className="mb-3 text-base font-semibold tracking-tight text-ink">Export multi-séances</h2>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-6">
         <div className="min-w-0 space-y-4">
@@ -311,6 +308,6 @@ export default function ExportView() {
         onShare={() => void actions.share()}
         canShare={actions.canShare}
       />
-    </div>
+    </section>
   )
 }

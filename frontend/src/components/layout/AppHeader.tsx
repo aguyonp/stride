@@ -1,22 +1,22 @@
-import { Moon, Sun } from 'lucide-react'
+import { Moon, Search, Sun } from 'lucide-react'
 import { Link, useLocation } from 'wouter'
 import { IS_MOCK } from '../../api/client'
 import type { Me } from '../../api/types'
 import { useTheme } from '../../hooks/useTheme'
 import { cn } from '../../lib/cn'
+import { ui } from '../../state/ui'
 import { StrideMark } from '../ui/icons'
 import { isActive, NAV } from './nav'
 import { SyncIndicator } from './SyncIndicator'
 import { UserMenu } from './UserMenu'
 
 /**
- * Full-bleed sticky bar (top: 0, opaque glass, hairline border) so nothing scrolls visibly above or beside it.
- * Three-column grid (1fr auto 1fr) keeps the nav optically centred whatever the brand/actions widths.
+ * Full-bleed sticky bar. Brand and actions keep their natural width and the nav is centred in the
+ * remaining track, so the menu never overlaps the actions at any width.
  */
 export function AppHeader({ me }: { me: Me | null }) {
   const [path] = useLocation()
   const { theme, toggle } = useTheme()
-  const items = NAV.filter((n) => !n.admin || me?.role === 'admin')
   return (
     <header className="app-header">
       <div className="app-header-grid mx-auto h-14 max-w-[1440px] px-4 sm:px-6 lg:h-16 lg:px-8">
@@ -31,7 +31,7 @@ export function AppHeader({ me }: { me: Me | null }) {
         {me && (
           <nav aria-label="Navigation principale" className="hidden justify-self-center lg:block">
             <ul className="flex items-center gap-1 rounded-2xl border border-line bg-track/50 p-1">
-              {items.map((n) => {
+              {NAV.map((n) => {
                 const active = isActive(n.href, path)
                 const Icon = n.icon
                 return (
@@ -56,6 +56,11 @@ export function AppHeader({ me }: { me: Me | null }) {
         )}
 
         <div className="col-start-2 flex min-w-0 items-center justify-end gap-1.5 justify-self-end sm:gap-2 lg:col-start-3">
+          {me && (
+            <button type="button" className="icon-btn" onClick={ui.openCommand} aria-label="Rechercher (Ctrl+K)" title="Rechercher · Ctrl+K">
+              <Search className="size-[1.125rem]" />
+            </button>
+          )}
           {me && <SyncIndicator />}
           <button type="button" className="icon-btn" onClick={toggle} aria-label={theme === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'}>
             {theme === 'dark' ? <Sun className="size-[1.125rem]" /> : <Moon className="size-[1.125rem]" />}

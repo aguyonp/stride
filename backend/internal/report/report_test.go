@@ -384,3 +384,44 @@ func TestPlanAndAdaptPrompts(t *testing.T) {
 		}
 	}
 }
+
+func TestBodyStressPromptInjection(t *testing.T) {
+	v := fullActivity()
+	cold := 3.0
+	v.BodyStress = []analysis.BodyStressEntry{
+		{
+			ID:               1,
+			Date:             "2026-11-02",
+			Zone:             analysis.ZoneKneePFPS,
+			Side:             analysis.SideLeft,
+			PainScore:        4.0,
+			ColdNextDayScore: &cold,
+			Note:             "Gêne en fin de descente",
+		},
+	}
+	got := Activity(v, kneeProfile(), nil)
+	if !strings.Contains(got, "### CARTOGRAPHIE CORPORELLE\n") || strings.Contains(got, "CORRÉLATIONS") {
+		t.Fatalf("without conclusive correlation the section must not announce any:\n%s", got)
+	}
+	if !strings.Contains(got, "Rotule / Genou (fémoro-patellaire) [Gauche] :** Douleur 4/10 (à froid J+1 : 3/10) le 02/11/2026 — Gêne en fin de descente") {
+		t.Fatalf("unexpected entry line:\n%s", got)
+	}
+	if strings.Contains(got, "SFP") {
+		t.Fatal("prompt must NOT contain SFP")
+	}
+	summary := "Dénivelé négatif (D−) : 250 m en moyenne sur les 2 sorties liées à la gêne, contre 50 m sur les 3 autres sorties (+400 %)."
+	v.BodyCorrelations = []analysis.BodyCorrelationFactor{
+		{Zone: analysis.ZoneKneePFPS, FactorLabel: "Dénivelé négatif (D−)", Summary: &summary, Confidence: "low", SymptomaticRuns: 2, BaselineRuns: 3},
+		{Zone: analysis.ZoneKneePFPS, FactorLabel: "Usure chaussure", InsufficientData: true, Confidence: "insufficient"},
+	}
+	got = Activity(v, kneeProfile(), nil)
+	if !strings.Contains(got, "### CARTOGRAPHIE CORPORELLE & CORRÉLATIONS") ||
+		!strings.Contains(got, "- **Corrélation Rotule / Genou (fémoro-patellaire) — Dénivelé négatif (D−) :** "+summary+" (confiance faible, 2 sorties liées / 3 autres)") ||
+		strings.Contains(got, "Usure chaussure") {
+		t.Fatalf("correlation lines:\n%s", got)
+	}
+	inc, _ := ParseInclude("plan")
+	if strings.Contains(Activity(v, kneeProfile(), inc), "CARTOGRAPHIE") {
+		t.Fatal("the body map follows the pain chip")
+	}
+}

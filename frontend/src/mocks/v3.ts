@@ -79,7 +79,7 @@ function v3(d: UserData): V3Data {
       pushSupported: has('pushok') ? true : null,
     }
     const dup = d.shoes.find((s) => s.stravaGearId)
-    if (dup) d.shoes.push({ ...dup, id: nextId(), name: `${dup.brand} ${dup.model} (Strava)`.trim(), stravaGearId: null, distanceKm: 12.4, note: 'Doublon importé' })
+    if (dup) d.shoes.push({ ...dup, id: nextId(), name: `${dup.brand} ${dup.model} (Strava)`.trim(), stravaGearId: null, distanceKm: 12.4, analyzedKm: 12.4, distanceSource: 'stride', stravaDistanceKm: null, stravaPrimary: false, stravaState: null, stravaSyncedAt: null, note: 'Doublon importé' })
   }
   return d.v3
 }
@@ -663,8 +663,12 @@ export function registerV3(route: RouteFn, view: (d: UserData, id: number) => { 
     if (!src || !dst) return err(404, 'NOT_FOUND', 'Chaussure introuvable.')
     if (src.id === dst.id) return err(400, 'BAD_REQUEST', 'Choisis une autre chaussure.')
     for (const n of Object.values(data.notes)) if (n.shoeId === src.id) n.shoeId = dst.id
-    dst.distanceKm = Math.round((dst.distanceKm + src.distanceKm) * 10) / 10
-    dst.stravaGearId = dst.stravaGearId ?? src.stravaGearId
+    dst.analyzedKm = Math.round((dst.analyzedKm + src.analyzedKm) * 10) / 10
+    if (!dst.stravaGearId && src.stravaGearId)
+      Object.assign(dst, { stravaGearId: src.stravaGearId, stravaDistanceKm: src.stravaDistanceKm, stravaPrimary: src.stravaPrimary, stravaState: src.stravaState, stravaSyncedAt: src.stravaSyncedAt })
+    // the real total stays Strava's when the merged pair is linked (§14.5), else the summed local figure
+    dst.distanceSource = dst.stravaGearId && dst.stravaDistanceKm !== null ? 'strava' : 'stride'
+    dst.distanceKm = dst.distanceSource === 'strava' ? (dst.stravaDistanceKm ?? 0) : dst.analyzedKm
     data.shoes = data.shoes.filter((s) => s.id !== src.id)
     return json(dst)
   })

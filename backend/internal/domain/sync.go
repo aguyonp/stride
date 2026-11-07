@@ -13,20 +13,20 @@ import (
 	"stride/internal/apimeter"
 	"stride/internal/garmin"
 	"stride/internal/provider/strava"
+	"stride/internal/queue"
 	"stride/internal/view"
 )
 
 const (
-	lazyCooldown    = 5 * time.Minute
-	initialHistory  = 56 // days listed on the first sync (load ratio + weekly trends)
-	listTTL         = 2 * time.Minute
-	prefetchDays    = 7
-	prefetchMax     = 6
-	syncTimeout     = 5 * time.Minute
-	firstSyncBudget = 40 * time.Second
+	lazyCooldown   = 5 * time.Minute
+	initialHistory = 56 // days listed on the first sync (load ratio + weekly trends)
+	listTTL        = 2 * time.Minute
+	prefetchDays   = 7
+	prefetchMax    = 6
+	syncTimeout    = 5 * time.Minute
 )
 
-func (s *Services) setRunning(uid int64, v bool) bool {
+func (s *Services) setRunning(uid int64, v bool, jobID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if v && s.running[uid] {
@@ -34,8 +34,12 @@ func (s *Services) setRunning(uid int64, v bool) bool {
 	}
 	if v {
 		s.running[uid] = true
+		if jobID != "" {
+			s.syncJobs[uid] = jobID
+		}
 	} else {
 		delete(s.running, uid)
+		delete(s.syncJobs, uid)
 	}
 	return true
 }
@@ -46,13 +50,36 @@ func (s *Services) isRunning(uid int64) bool {
 	return s.running[uid]
 }
 
-// startSync launches a background sync for uid (no-op when one is running).
-func (s *Services) startSync(uid int64) {
-	s.goBackground("sync", syncTimeout, func(ctx context.Context) {
-		if err := s.runSync(apimeter.WithUser(ctx, uid), uid, false); err != nil && !errors.Is(err, errSyncRunning) {
-			s.log.Warn("🔄 Synchronisation en échec", "user", uid, "err", errText(err))
+func (s *Services) currentSyncJob(uid int64) *string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if jid := s.syncJobs[uid]; jid != "" {
+		return &jid
+	}
+	return nil
+}
+
+// startSync enqueues a non-blocking sync.provider job on the worker queue (no-op when one is running).
+func (s *Services) startSync(uid int64) string {
+	if s.isRunning(uid) {
+		if cur := s.currentSyncJob(uid); cur != nil {
+			return *cur
 		}
+		return ""
+	}
+	job, err := s.queue.Enqueue(context.Background(), queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindSyncProvider,
+		Queue:       queue.QueueDefault,
+		Label:       "Synchronisation des activités",
+		MaxAttempts: 1,
+		Payload:     syncProviderPayload{Morning: false},
 	})
+	if err != nil {
+		s.log.Warn("🔄 Mise en file de la synchronisation impossible", "user", uid, "err", errText(err))
+		return ""
+	}
+	return job.ID
 }
 
 var errSyncRunning = errors.New("sync already running")
@@ -74,13 +101,16 @@ func (s *Services) Sync(ctx context.Context, uid int64) (*view.SyncStatus, error
 	if st.Providers.Garmin == nil && st.Providers.Strava == nil {
 		return st, nil
 	}
-	s.startSync(uid)
+	jid := s.startSync(uid)
 	st.Running = true
+	if jid != "" {
+		st.JobID = &jid
+	}
 	return st, nil
 }
 
 func (s *Services) SyncStatus(ctx context.Context, uid int64) (*view.SyncStatus, error) {
-	st := &view.SyncStatus{Running: s.isRunning(uid)}
+	st := &view.SyncStatus{Running: s.isRunning(uid), JobID: s.currentSyncJob(uid)}
 	var lastSync, lastLive int64
 	for _, p := range []string{pGarmin, pStrava} {
 		cn, err := s.getConn(ctx, uid, p)
@@ -120,10 +150,22 @@ func (s *Services) SyncStatus(ctx context.Context, uid int64) (*view.SyncStatus,
 // runSync lists new activities (Garmin then Strava, which fuses into Garmin activities), prefetches
 // the bundles of recent new activities and the recent wellness days.
 func (s *Services) runSync(ctx context.Context, uid int64, morning bool) error {
-	if !s.setRunning(uid, true) {
+	return s.runSyncWithProgress(ctx, uid, morning, nil)
+}
+
+func (s *Services) runSyncWithProgress(ctx context.Context, uid int64, morning bool, jc *queue.JobContext) error {
+	jobID := ""
+	if jc != nil {
+		jobID = jc.ID
+	}
+	if !s.setRunning(uid, true, jobID) {
 		return errSyncRunning
 	}
-	defer s.setRunning(uid, false)
+	s.emitSyncStatus(ctx, uid)
+	defer func() {
+		s.setRunning(uid, false, "")
+		s.emitSyncStatus(context.Background(), uid)
+	}()
 	t0 := time.Now()
 	p, err := s.profile(ctx, uid)
 	if err != nil {
@@ -132,15 +174,21 @@ func (s *Services) runSync(ctx context.Context, uid int64, morning bool) error {
 	today := s.today(p)
 	var errs []error
 	newG, newS := 0, 0
+	var newGarminIDs []int64
 	if cn, err := s.getConn(ctx, uid, pGarmin); err == nil && cn.connected() {
+		if jc != nil {
+			pct := 15.0
+			jc.UpdateProgress("Synchro Garmin : recherche des nouvelles séances…", nil, nil, &pct)
+		}
 		from := initialFrom(cn, today)
 		n, ids, err := s.syncGarminList(ctx, uid, from, today)
 		newG = n
+		newGarminIDs = ids
 		s.finishProviderSync(ctx, uid, pGarmin, n, err, cn.HistoryFrom.String == "", analysis.DateAdd(today, -initialHistory))
 		if err != nil {
 			errs = append(errs, err)
 		} else {
-			s.prefetchBundles(ctx, uid, ids)
+			s.prefetchBundles(ctx, uid, ids, jc)
 			wellFrom := analysis.DateAdd(today, -1)
 			if morning {
 				wellFrom = analysis.DateAdd(today, -6)
@@ -153,6 +201,10 @@ func (s *Services) runSync(ctx context.Context, uid int64, morning bool) error {
 	}
 	if cn, err := s.getConn(ctx, uid, pStrava); err == nil && cn.connected() && s.stravaAvailable() == nil &&
 		(!cn.Scope.Valid || hasScope(cn.Scope.String, "activity:read")) {
+		if jc != nil {
+			pct := 70.0
+			jc.UpdateProgress("Synchro Strava : fusion des activités et chaussures…", nil, nil, &pct)
+		}
 		n, err := s.syncStravaList(ctx, uid, cn, today)
 		newS = n
 		s.finishProviderSync(ctx, uid, pStrava, n, err, cn.HistoryFrom.String == "", analysis.DateAdd(today, -initialHistory))
@@ -167,6 +219,7 @@ func (s *Services) runSync(ctx context.Context, uid int64, morning bool) error {
 		s.log.Warn("⚠️ Calcul des records personnels en échec", "user", uid, "err", errText(err))
 	}
 	_, _ = s.deps.Cache.DelPrefix(ctx, userKey(uid, "glist"))
+	s.emitPostSyncAlerts(ctx, uid, today, newGarminIDs)
 	s.log.Info(fmt.Sprintf("🔄 Synchro %s en %s", map[bool]string{true: "matinale", false: "à la demande"}[morning], time.Since(t0).Round(time.Millisecond)),
 		"user", uid, "nouvellesGarmin", newG, "nouvellesStrava", newS, "erreurs", len(errs))
 	return errors.Join(errs...)
@@ -242,15 +295,22 @@ func (s *Services) syncGarminList(ctx context.Context, uid int64, from, to strin
 }
 
 // prefetchBundles fetches the bundles of the newest activities of the last 7 days.
-func (s *Services) prefetchBundles(ctx context.Context, uid int64, ids []int64) {
+func (s *Services) prefetchBundles(ctx context.Context, uid int64, ids []int64, jc *queue.JobContext) {
 	limit := s.now().Add(-prefetchDays * 24 * time.Hour).Unix()
-	count := 0
-	for i := len(ids) - 1; i >= 0 && count < prefetchMax; i-- {
+	var targets []*activityRow
+	for i := len(ids) - 1; i >= 0 && len(targets) < prefetchMax; i-- {
 		a, err := s.activity(ctx, uid, ids[i])
 		if err != nil || a.StartUTC < limit || a.Final {
 			continue
 		}
-		count++
+		targets = append(targets, a)
+	}
+	tot := len(targets)
+	for idx, a := range targets {
+		if jc != nil && tot > 0 {
+			proc := idx + 1
+			jc.UpdateProgress(fmt.Sprintf("Synchro Garmin : %d/%d séances traitées", proc, tot), &proc, &tot, nil)
+		}
 		if err := s.ensureBundle(ctx, uid, a, &fresh{}); err != nil {
 			s.log.Warn("⚠️ Préchargement d'activité en échec", "user", uid, "err", errText(err))
 			if errors.Is(err, apimeter.ErrCooldown) {
@@ -274,8 +334,8 @@ func (s *Services) ensureListCoverage(ctx context.Context, uid int64, from strin
 	return err
 }
 
-// firstSyncIfNeeded runs a bounded synchronous sync for users connected but never synced.
-func (s *Services) firstSyncIfNeeded(ctx context.Context, uid int64, fr *fresh) error {
+// triggerFirstSyncIfNeeded enqueues a non-blocking background sync when a provider is connected but has never synced.
+func (s *Services) triggerFirstSyncIfNeeded(ctx context.Context, uid int64) {
 	need := false
 	for _, p := range []string{pGarmin, pStrava} {
 		if cn, err := s.getConn(ctx, uid, p); err == nil && cn.connected() && !cn.LastSyncAt.Valid {
@@ -283,16 +343,9 @@ func (s *Services) firstSyncIfNeeded(ctx context.Context, uid int64, fr *fresh) 
 		}
 	}
 	if !need || s.isRunning(uid) {
-		return nil
+		return
 	}
-	cctx, cancel := context.WithTimeout(ctx, firstSyncBudget)
-	defer cancel()
-	fr.mark(lvLive, s.now())
-	err := s.runSync(apimeter.WithUser(cctx, uid), uid, false)
-	if errors.Is(err, errSyncRunning) {
-		return nil
-	}
-	return err
+	s.startSync(uid)
 }
 
 // syncStravaList lists Strava activities since the last sync and fuses them with Garmin ones.
@@ -360,6 +413,12 @@ func (s *Services) Resync(ctx context.Context, uid int64) error {
 	if err := s.PurgeUserCache(ctx, uid); err != nil {
 		return err
 	}
-	s.startSync(uid)
+	_, _ = s.queue.Enqueue(context.Background(), queue.EnqueueRequest{
+		UserID:      uid,
+		Kind:        queue.KindSyncResync,
+		Queue:       queue.QueueLow,
+		Label:       "Resynchronisation complète",
+		MaxAttempts: 1,
+	})
 	return nil
 }

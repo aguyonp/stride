@@ -70,6 +70,19 @@ func redactedQuery(raw string) string {
 	return strings.Join(parts, "&")
 }
 
+// shareTokenPrefix is the part of a share token kept in logs (the prefix shown to its owner).
+const shareTokenPrefix = 8
+
+// redactPath keeps only the short prefix of share tokens (/share/{token}, /api/public/share/{token}).
+func redactPath(p string) string {
+	for _, prefix := range []string{"/api/public/share/", "/share/"} {
+		if tok, ok := strings.CutPrefix(p, prefix); ok && len(tok) > shareTokenPrefix {
+			return prefix + tok[:shareTokenPrefix] + "…"
+		}
+	}
+	return p
+}
+
 // withLogging logs "🌐 GET /api/activities 200 · 42ms" (health checks and static files at debug level).
 func withLogging(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +92,7 @@ func withLogging(log *slog.Logger, next http.Handler) http.Handler {
 		if sw.status == 0 {
 			sw.status = http.StatusOK
 		}
-		path := r.URL.Path
+		path := redactPath(r.URL.Path)
 		isAPI := strings.HasPrefix(path, "/api/")
 		if isAPI && r.URL.RawQuery != "" {
 			path += "?" + redactedQuery(r.URL.RawQuery)
@@ -107,7 +120,7 @@ func withRecover(log *slog.Logger, next http.Handler) http.Handler {
 				if v == http.ErrAbortHandler {
 					panic(v)
 				}
-				log.Error(fmt.Sprintf("❌ Panique sur %s %s : %v", r.Method, r.URL.Path, v), "stack", string(debug.Stack()))
+				log.Error(fmt.Sprintf("❌ Panique sur %s %s : %v", r.Method, redactPath(r.URL.Path), v), "stack", string(debug.Stack()))
 				httpx.Fail(w, http.StatusInternalServerError, httpx.CodeInternal, "Erreur interne du serveur.")
 			}
 		}()

@@ -1,5 +1,10 @@
 import type {
   ActivitySummary,
+  HealthConditionCatalog,
+  HealthStatus,
+  HealthStatusInput,
+  HistorySyncRequest,
+  SearchResponse,
   CalendarEvent,
   CalendarEventInput,
   ManualActivityInput,
@@ -32,8 +37,21 @@ import type {
   ActivityNotesInput,
   ActivityView,
   AdminConnection,
+  AdminJob,
+  AdminJobFilter,
+  AdminJobList,
+  AdminOverview,
   AdminSettings,
+  AdminShareLink,
   AdminUser,
+  FeedbackCategory,
+  FeedbackInput,
+  FeedbackItem,
+  FeedbackList,
+  FeedbackStatus,
+  IntegrityResult,
+  OptimizeResult,
+  PurgeResult,
   ApiErrorBody,
   AthleteProfile,
   AuthState,
@@ -57,10 +75,26 @@ import type {
   PlannedSession,
   PlannedSessionInput,
   RestoreResult,
+  ShareLink,
+  ShareLinkInput,
+  PublicShareView,
   Shoe,
   ShoeInput,
   SyncStatus,
+  TrainingCycleOverview,
+  TrainingPhase,
+  TrainingPhaseInput,
+  TrainingPlan,
+  TrainingPlanInput,
+  TrainingWeek,
+  TrainingWeekInput,
   WeekPlan,
+  BodyMapOverview,
+  BodyStressEntry,
+  BodyStressInput,
+  BodyZone,
+  JobListResponse,
+  JobStatus,
 } from './types'
 
 export const IS_MOCK = import.meta.env.VITE_MOCK === '1'
@@ -206,6 +240,21 @@ export const api = {
   },
   adminRestore: (id: number, mode: 'merge' | 'replace', backup: string) =>
     send(`/api/admin/users/${id}/restore${qs({ mode })}`, { method: 'POST', rawBody: backup, accept: 'application/json' }).then((r) => r.json() as Promise<RestoreResult>),
+  // 4.1 control center (§14.6)
+  adminOverview: () => json<AdminOverview>('/api/admin/overview'),
+  adminRevokeSessions: (id: number) => json<{ revoked: number }>(`/api/admin/users/${id}/sessions`, { method: 'DELETE' }),
+  adminSyncUser: (id: number) => json<AdminJob>(`/api/admin/users/${id}/sync`, { method: 'POST' }),
+  adminJobs: (state: AdminJobFilter) => json<AdminJobList>(`/api/admin/jobs${qs({ state, limit: 100 })}`),
+  adminRetryJob: (id: string) => json<AdminJob>(`/api/admin/jobs/${encodeURIComponent(id)}/retry`, { method: 'POST' }),
+  adminCancelJob: (id: string) => json<AdminJob>(`/api/admin/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+  adminShares: (state: 'active' | 'all') => json<AdminShareLink[]>(`/api/admin/shares${qs({ state })}`),
+  adminRevokeShare: (id: number) => json<void>(`/api/admin/shares/${id}`, { method: 'DELETE' }),
+  adminPurge: () => json<PurgeResult>('/api/admin/maintenance/purge', { method: 'POST' }),
+  adminOptimize: (vacuum: boolean) => json<OptimizeResult>('/api/admin/maintenance/optimize', { method: 'POST', body: { vacuum } }),
+  adminCheck: () => json<IntegrityResult>('/api/admin/maintenance/check', { method: 'POST' }),
+  sendFeedback: (body: FeedbackInput) => json<{ id: number; createdAt: string }>('/api/feedback', { method: 'POST', body }),
+  adminFeedback: (status: FeedbackStatus | 'all', category: FeedbackCategory | 'all') => json<FeedbackList>(`/api/admin/feedback${qs({ status, category })}`),
+  adminUpdateFeedback: (id: number, body: { status?: FeedbackStatus; adminNote?: string }) => json<FeedbackItem>(`/api/admin/feedback/${id}`, { method: 'PATCH', body }),
 
   integrations: () => json<Integrations>('/api/integrations'),
   connectGarmin: (apiKey: string) => json<Integrations>('/api/integrations/garmin', { method: 'PUT', body: { apiKey } }),
@@ -260,7 +309,6 @@ export const api = {
   saveLlm: (body: LLMConfigInput) => json<LLMConfig>('/api/llm', { method: 'PUT', body }),
   deleteLlm: () => json<void>('/api/llm', { method: 'DELETE' }),
   testLlm: () => json<LLMTestResult>('/api/llm/test', { method: 'POST' }),
-  analyze: (body: LLMAnalyzeRequest) => json<LLMAnalysis>('/api/llm/analyze', { method: 'POST', body }),
   analyses: (kind: string, ref: string) => json<LLMAnalysis[]>(`/api/llm/analyses${qs({ kind, ref })}`),
 
   planGenerate: <T extends PlanPromptResponse | PlanDraftsResponse>(body: PlanGenerateRequest) => json<T>('/api/plan/generate', { method: 'POST', body }),
@@ -283,12 +331,6 @@ export const api = {
   deleteNotification: (id: number) => json<void>(`/api/notifications/${id}`, { method: 'DELETE' }),
   testNotification: (id: number) => json<NotificationTestResult>(`/api/notifications/${id}/test`, { method: 'POST' }),
 
-  importFile: async (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    const res = await send('/api/imports', { method: 'POST', form })
-    return (await res.json()) as ImportResult
-  },
   mergeShoe: (id: number, intoId: number) => json<Shoe | void>(`/api/shoes/${id}/merge`, { method: 'POST', body: { intoId } }),
 
   records: () => json<{ records: PersonalRecord[] }>('/api/records'),
@@ -311,6 +353,49 @@ export const api = {
   planAdapt: (body: PlanAdaptRequest) => json<PlanAdaptPreview>('/api/plan/adapt', { method: 'POST', body }),
   planReplace: (body: { removeIds: number[]; sessions: PlannedSessionInput[] }) => json<PlannedSession[]>('/api/plan/replace', { method: 'POST', body }),
   planPhases: () => json<PlanPhase[]>('/api/plan/phases'),
+
+  /* 4.0.0 endpoints */
+  jobs: (limit = 20) => json<JobListResponse>(`/api/jobs${qs({ limit })}`),
+  job: (id: string) => json<JobStatus>(`/api/jobs/${encodeURIComponent(id)}`),
+  importFileAsync: async (file: File, asyncMode = true) => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await send(`/api/imports${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', form })
+    return (await res.json()) as ImportResult | JobStatus
+  },
+  analyzeStream: (body: LLMAnalyzeRequest, asyncMode = true) =>
+    json<LLMAnalysis | JobStatus>(`/api/llm/analyze${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', body }),
+  planGenerateStream: (body: PlanGenerateRequest, asyncMode = body.mode === 'llm') =>
+    json<PlanPromptResponse | PlanDraftsResponse | JobStatus>(`/api/plan/generate${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', body }),
+  planAdaptStream: (body: PlanAdaptRequest, asyncMode = body.mode === 'llm') =>
+    json<PlanAdaptPreview | JobStatus>(`/api/plan/adapt${qs({ async: asyncMode ? 1 : undefined })}`, { method: 'POST', body }),
+
+  cycles: (planId?: number | null) => json<TrainingCycleOverview>(`/api/cycles${qs({ planId })}`),
+  createCyclePlan: (body: TrainingPlanInput) => json<TrainingCycleOverview>('/api/cycles/plans', { method: 'POST', body }),
+  updateCyclePlan: (id: number, body: Partial<TrainingPlanInput>) => json<TrainingPlan>(`/api/cycles/plans/${id}`, { method: 'PATCH', body }),
+  deleteCyclePlan: (id: number) => json<void>(`/api/cycles/plans/${id}`, { method: 'DELETE' }),
+  createCyclePhase: (body: TrainingPhaseInput) => json<TrainingPhase>('/api/cycles/phases', { method: 'POST', body }),
+  updateCyclePhase: (id: number, body: Partial<TrainingPhaseInput>) => json<TrainingPhase>(`/api/cycles/phases/${id}`, { method: 'PATCH', body }),
+  deleteCyclePhase: (id: number) => json<void>(`/api/cycles/phases/${id}`, { method: 'DELETE' }),
+  upsertCycleWeek: (body: TrainingWeekInput) => json<TrainingWeek>('/api/cycles/weeks', { method: 'PUT', body }),
+
+  bodyMap: (days = 90, zone?: BodyZone | null) => json<BodyMapOverview>(`/api/bodymap${qs({ days, zone })}`),
+  createBodyEntry: (body: BodyStressInput) => json<BodyStressEntry>('/api/bodymap/entries', { method: 'POST', body }),
+  updateBodyEntry: (id: number, body: Partial<BodyStressInput>) => json<BodyStressEntry>(`/api/bodymap/entries/${id}`, { method: 'PATCH', body }),
+  deleteBodyEntry: (id: number) => json<void>(`/api/bodymap/entries/${id}`, { method: 'DELETE' }),
+
+  shareLinks: () => json<ShareLink[]>('/api/share'),
+  createShareLink: (body: ShareLinkInput) => json<ShareLink>('/api/share', { method: 'POST', body }),
+  revokeShareLink: (id: number) => json<void>(`/api/share/${id}`, { method: 'DELETE' }),
+  updateShareLink: (id: number, body: Partial<ShareLinkInput>) => json<ShareLink>(`/api/share/${id}`, { method: 'PATCH', body }),
+
+  /* 4.1.0 endpoints */
+  healthStatus: () => json<HealthStatus>('/api/health/status'),
+  saveHealthStatus: (body: HealthStatusInput) => json<HealthStatus>('/api/health/status', { method: 'PUT', body }),
+  healthConditions: () => json<HealthConditionCatalog>('/api/health/conditions'),
+  syncHistory: (body: HistorySyncRequest) => json<JobStatus>('/api/sync/history', { method: 'POST', body }),
+  search: (q: string, limit = 20) => json<SearchResponse>(`/api/search${qs({ q, limit })}`),
+  publicShare: (token: string) => json<PublicShareView>(`/api/public/share/${encodeURIComponent(token)}`),
 }
 
 /** Full-page navigation to the Strava OAuth flow (the mock resolves the redirect locally). */

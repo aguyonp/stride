@@ -503,13 +503,21 @@ func writeAlerts(b *builder, title string, alerts []analysis.Alert) {
 	}
 }
 
-func writeContext(b *builder, prof athlete.Profile, goals []athlete.Goal, today string, upcoming []athlete.PlannedSession, records []athlete.PersonalRecord) {
+func writeContext(b *builder, prof athlete.Profile, health []analysis.HealthZone, goals []athlete.Goal, today string, upcoming []athlete.PlannedSession, records []athlete.PersonalRecord) {
 	b.section("CONTEXTE & OBJECTIFS DE L'ATHLÈTE")
 	b.raw("- **Profil / Mode actif :** " + prof.ModeLabel())
+	writeHealthLine(b, health)
 	b.raw("- **Objectif Macro :** " + macroText(goals))
 	b.raw("- **Records personnels :** " + recordsText(records))
 	b.raw("- **Séance prévue aujourd'hui :** " + today)
 	b.raw("- **Prochaines séances prévues :** " + upcomingText(upcoming))
+}
+
+// writeHealthLine states the tracked zones with their condition, side and start date (§14.7).
+func writeHealthLine(b *builder, health []analysis.HealthZone) {
+	if len(health) > 0 {
+		b.raw("- **Suivi santé :** " + analysis.HealthZonesText(health))
+	}
 }
 
 // recordsText lists the known records: "5 km 22:41 (12/10/2026) · Plus longue sortie 21,4 km".
@@ -544,4 +552,48 @@ func sortedAlertCounts(in []view.AlertCount) []view.AlertCount {
 		return out[i].Count > out[j].Count
 	})
 	return out
+}
+
+var confidenceFR = map[string]string{"low": "faible", "moderate": "modérée", "high": "élevée"}
+
+// writeBodyStress lists the pain entries and, when some are conclusive, the measured correlations.
+func writeBodyStress(b *builder, entries []analysis.BodyStressEntry, corrs []analysis.BodyCorrelationFactor) {
+	if len(entries) == 0 && len(corrs) == 0 {
+		return
+	}
+	if len(corrs) == 0 {
+		b.section("CARTOGRAPHIE CORPORELLE")
+	} else {
+		b.section("CARTOGRAPHIE CORPORELLE & CORRÉLATIONS")
+	}
+	for _, e := range entries {
+		coldStr := ""
+		if e.ColdNextDayScore != nil {
+			coldStr = fmt.Sprintf(" (à froid J+1 : %s/10)", f.Num(*e.ColdNextDayScore, 1))
+		}
+		sideStr := ""
+		if e.Side != "" {
+			switch e.Side {
+			case analysis.SideLeft:
+				sideStr = " [Gauche]"
+			case analysis.SideRight:
+				sideStr = " [Droite]"
+			case analysis.SideBoth:
+				sideStr = " [Bilatéral]"
+			}
+		}
+		noteStr := ""
+		if strings.TrimSpace(e.Note) != "" {
+			noteStr = " — " + strings.TrimSpace(e.Note)
+		}
+		label := analysis.BodyZoneReportLabel(e.Zone)
+		b.line("- **%s%s :** Douleur %s/10%s le %s%s", label, sideStr, f.Num(e.PainScore, 1), coldStr, f.Date(e.Date), noteStr)
+	}
+	for _, c := range corrs {
+		if c.InsufficientData || c.Summary == nil {
+			continue
+		}
+		b.line("- **Corrélation %s — %s :** %s (confiance %s, %d sorties liées / %d autres)", analysis.BodyZoneReportLabel(c.Zone),
+			c.FactorLabel, *c.Summary, confidenceFR[c.Confidence], c.SymptomaticRuns, c.BaselineRuns)
+	}
 }

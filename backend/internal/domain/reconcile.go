@@ -192,17 +192,15 @@ func sameShoe(sh athlete.Shoe, name, brand, model string) bool {
 	return bm != "" && normShoe(brand) != "" && normShoe(model) != "" && (bm == normShoe(sh.Brand, sh.Model) || bm == normShoe(sh.Name))
 }
 
-// syncStravaGear imports the Strava shoes then assigns them to activities without a chosen shoe.
+// syncStravaGear refreshes the Strava shoes (real mileage, retired/deleted pairs, see shoegear.go)
+// then assigns them to activities without a chosen shoe. Without profile:read_all it stays silent:
+// the UI shows the reconnect hint from the integration's missingScopes.
 func (s *Services) syncStravaGear(ctx context.Context, uid int64) {
 	if cn, err := s.getConn(ctx, uid, pStrava); err != nil || (cn.Scope.Valid && !strings.Contains(cn.Scope.String, "profile:read_all")) {
-		return // gear needs the profile:read_all scope
-	}
-	if _, err := s.ImportStravaShoes(apimeter.WithUser(ctx, uid), uid); err != nil {
-		s.log.Warn("⚠️ Import des chaussures Strava en échec", "user", uid, "err", errText(err))
 		return
 	}
-	if err := s.autoAssignShoes(ctx, uid); err != nil {
-		s.log.Warn("⚠️ Association automatique des chaussures en échec", "user", uid, "err", errText(err))
+	if _, err := s.refreshStravaShoes(apimeter.WithUser(ctx, uid), uid, false); err != nil {
+		s.log.Warn("⚠️ Import des chaussures Strava en échec", "user", uid, "err", errText(err))
 	}
 }
 
@@ -236,13 +234,19 @@ func (s *Services) MergeShoe(ctx context.Context, uid, id, intoID int64) (athlet
 			return err
 		}
 		var dist sql.NullFloat64
-		_ = tx.QueryRowContext(ctx, `SELECT strava_distance_m FROM shoes WHERE id = ?`, id).Scan(&dist)
+		var primary int
+		var state sql.NullString
+		var synced sql.NullInt64
+		_ = tx.QueryRowContext(ctx, `SELECT strava_distance_m, strava_primary, strava_state, strava_synced_at FROM shoes WHERE id = ?`, id).Scan(&dist, &primary, &state, &synced)
 		if _, err := tx.ExecContext(ctx, `DELETE FROM shoes WHERE id = ? AND user_id = ?`, id, uid); err != nil {
 			return err
 		}
-		if src.StravaGearID != nil {
-			_, err := tx.ExecContext(ctx, `UPDATE shoes SET strava_gear_id = COALESCE(strava_gear_id, ?), strava_distance_m = COALESCE(strava_distance_m, ?),
-				updated_at = ? WHERE id = ? AND user_id = ?`, *src.StravaGearID, dist, s.now().Unix(), intoID, uid)
+		if src.StravaGearID != nil { // the target takes the Strava link (and its gear state) when it has none
+			_, err := tx.ExecContext(ctx, `UPDATE shoes SET strava_primary = CASE WHEN strava_gear_id IS NULL THEN ? ELSE strava_primary END,
+				strava_state = CASE WHEN strava_gear_id IS NULL THEN ? ELSE strava_state END,
+				strava_synced_at = CASE WHEN strava_gear_id IS NULL THEN ? ELSE strava_synced_at END,
+				strava_gear_id = COALESCE(strava_gear_id, ?), strava_distance_m = COALESCE(strava_distance_m, ?),
+				updated_at = ? WHERE id = ? AND user_id = ?`, primary, state, synced, *src.StravaGearID, dist, s.now().Unix(), intoID, uid)
 			return err
 		}
 		return nil

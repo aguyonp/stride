@@ -20,6 +20,8 @@ import (
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/env"
+	"stride/internal/observability"
+	"stride/internal/sse"
 	"stride/internal/store"
 	"stride/internal/web"
 )
@@ -29,6 +31,12 @@ type downCache struct{ *cache.Memory }
 func (downCache) Ping(context.Context) error { return errors.New("connection refused") }
 
 func newRouter(t *testing.T, c cache.Cache, logOut io.Writer) http.Handler {
+	t.Helper()
+	h, _ := newRouterWithMetrics(t, c, logOut)
+	return h
+}
+
+func newRouterWithMetrics(t *testing.T, c cache.Cache, logOut io.Writer) (http.Handler, *observability.Metrics) {
 	t.Helper()
 	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "http.db"))
 	if err != nil {
@@ -43,11 +51,16 @@ func newRouter(t *testing.T, c cache.Cache, logOut io.Writer) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dom, _ := domain.New(domain.Deps{Store: st, Cache: c, Log: log})
+	metrics := observability.New()
+	hub := sse.NewHub(sse.Options{Metrics: metrics, Log: log})
+	t.Cleanup(hub.Close)
+	dom, _ := domain.New(domain.Deps{Store: st, Cache: c, Log: log, SSE: hub, Metrics: metrics})
 	return New(Deps{
 		Store: st, Cache: c, Auth: a, Domain: dom, Log: log, Logs: applog.New(st.DB, log), HTTPS: true, Static: web.New(),
-		Admin: admin.New(admin.Deps{Store: st, Cache: c, Meter: apimeter.Nop(), Auth: a, Log: log}),
-	})
+		Admin:   admin.New(admin.Deps{Store: st, Cache: c, Meter: apimeter.Nop(), Auth: a, Log: log}),
+		Metrics: metrics,
+		SSE:     hub,
+	}), metrics
 }
 
 func call(h http.Handler, method, path string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -144,5 +157,41 @@ func TestRecoverAndBodyLimit(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("body limit: %d", rec.Code)
+	}
+}
+
+func TestPlatformEndpoints(t *testing.T) {
+	h, metrics := newRouterWithMetrics(t, cache.NewMemory(), nil)
+
+	// GET /version
+	rec := call(h, "GET", "/version", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("version code: %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"version":"dev"`) {
+		t.Fatalf("version body: %s", rec.Body.String())
+	}
+
+	// /metrics is served on its own listener only (STRIDE_METRICS_ADDR)
+	if rec = call(h, "GET", "/metrics", nil); strings.Contains(rec.Body.String(), "stride_http_requests_total") {
+		t.Fatal("metrics exposed on the public listener")
+	}
+	call(h, "GET", "/api/nope", nil)
+	scrape := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(scrape, httptest.NewRequest("GET", "/metrics", nil))
+	for _, series := range []string{
+		`stride_http_requests_total{method="GET",route="/version",status="200"} 1`,
+		`stride_http_requests_total{method="GET",route="unmatched",status="404"} 1`,
+		`stride_http_request_duration_seconds_count{method="GET",route="/version",status="200"} 1`,
+	} {
+		if !strings.Contains(scrape.Body.String(), series) {
+			t.Fatalf("missing %s in\n%s", series, scrape.Body.String())
+		}
+	}
+
+	for _, path := range []string{"/openapi.json", "/openapi.yaml"} {
+		if rec = call(h, "GET", path, nil); rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), "openapi") {
+			t.Fatalf("%s must not be served", path)
+		}
 	}
 }

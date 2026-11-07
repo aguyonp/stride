@@ -1,6 +1,6 @@
-import { Activity, BarChart3, CalendarCheck, CloudSun, Flame, Gauge, History, Link2, Map as MapIcon, Moon, PenLine, Plus, Sun, Target, Timer, Trophy } from 'lucide-react'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'wouter'
+import { Activity, BarChart3, CalendarCheck, ChevronDown, CloudSun, Flame, Gauge, History, Link2, Map as MapIcon, Moon, PenLine, Plus, Target, Timer } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useSearchParams } from 'wouter'
 import { useActivities, useActivityView, useDayView, useProfile } from '../../api/queries'
 import { useLlmConfig } from '../../api/queriesV3'
 import { useRecords, useStandalone } from '../../api/queriesV31'
@@ -23,7 +23,7 @@ import { SegmentsTable } from '../../components/dashboard/SegmentsTable'
 import { KpiGrid, StravaCard, WeatherCard } from '../../components/dashboard/SessionCards'
 import { SessionHeader } from '../../components/dashboard/SessionHeader'
 import { TodayCard } from '../../components/dashboard/TodayCard'
-import { MobilePromptBar, PromptGenerator } from '../../components/prompt/PromptGenerator'
+import { PromptGenerator } from '../../components/prompt/PromptGenerator'
 import { usePrompt } from '../../components/prompt/usePrompt'
 import { ManualActivityDialog } from '../../components/session/ManualActivityDialog'
 import { SessionPicker } from '../../components/session/SessionPicker'
@@ -38,19 +38,6 @@ const AnalysisDrawer = lazy(() => import('../../components/ai/AnalysisDrawer').t
 const GpsTrack = lazy(() => import('../../components/session/GpsTrack').then((m) => ({ default: m.GpsTrack })))
 const EfficiencyImpact = lazy(() => import('../../components/session/EfficiencyImpact').then((m) => ({ default: m.EfficiencyImpact })))
 const fallback = <Spinner label="Chargement…" />
-
-function useInView<T extends Element>() {
-  const ref = useRef<T | null>(null)
-  const [inView, setInView] = useState(false)
-  useEffect(() => {
-    const el = ref.current
-    if (!el || typeof IntersectionObserver === 'undefined') return
-    const io = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { threshold: 0.15 })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [])
-  return [ref, inView] as const
-}
 
 const ALERT_SECTION: Record<string, string> = {
   CADENCE_LOW: 'biomech',
@@ -107,7 +94,7 @@ function useOpenSections(v: ActivityView | null) {
       el?.querySelector<HTMLButtonElement>('button[aria-expanded]')?.focus({ preventScroll: true })
     })
   }
-  return { open, set, reveal }
+  return { open, set, reveal, auto }
 }
 
 function SessionSections({ v, profile, sections }: { v: ActivityView; profile: AthleteProfile | null; sections: ReturnType<typeof useOpenSections> }) {
@@ -134,12 +121,12 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
         </Disclosure>
       )}
       {v.series.tS.length > 1 && (
-        <Disclosure {...p('charts')} title="Courbes" icon={<BarChart3 />} summary="FC, allure, cadence, puissance, altitude" cardTitles="hide">
+        <Disclosure {...p('charts')} title="Courbes" icon={<BarChart3 />} cardTitles="hide">
           <SessionCharts view={v} profile={profile} />
         </Disclosure>
       )}
       {hasTrack && (
-        <Disclosure {...p('gps')} title="Tracé GPS" icon={<MapIcon />} summary="Coloré par cadence ou par pente">
+        <Disclosure {...p('gps')} title="Tracé GPS" icon={<MapIcon />}>
           <Suspense fallback={fallback}>
             <GpsTrack activityId={v.activity.id} thresholds={th} />
           </Suspense>
@@ -157,7 +144,7 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
           </Suspense>
         </Disclosure>
       )}
-      <Disclosure {...p('load')} title="Charge & charge croisée" icon={<Flame />} summary={join(v.load.loadRatio?.ratio != null && `ratio ${fmtNumber(v.load.loadRatio.ratio, 2)}`, n(v.load.trainingLoad, 0) && `TL ${fmtNumber(v.load.trainingLoad)}`, 'étages, pas, autres sports')}>
+      <Disclosure {...p('load')} title="Charge & charge croisée" icon={<Flame />} summary={join(v.load.loadRatio?.ratio != null && `ratio ${fmtNumber(v.load.loadRatio.ratio, 2)}`, n(v.load.trainingLoad, 0) && `TL ${fmtNumber(v.load.trainingLoad)}`)}>
         <div className="grid gap-5 xl:grid-cols-2">
           <LoadCard view={v} thresholds={th} />
           <CrossLoadCard cross={v.crossLoad} thresholds={th} />
@@ -184,7 +171,7 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
       <Disclosure {...p('plan')} title="Prévu vs réalisé" icon={<CalendarCheck />} summary={v.plan?.summary ?? 'Séance hors plan'} cardTitles="hide">
         <PlanMatchCard match={v.plan} upcoming={v.upcoming} />
       </Disclosure>
-      <Disclosure {...p('history')} title="Historique 14 jours" icon={<History />} summary={`${v.history.length} séances`} cardTitles="hide">
+      <Disclosure {...p('history')} title="Historique 14 jours" icon={<History />} cardTitles="hide">
         <HistoryTable rows={v.history} currentId={v.activity.id} />
       </Disclosure>
     </div>
@@ -192,15 +179,16 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
 }
 
 /** Light dashboard: readiness, compact session hero, top alerts, ressenti, AI actions; details folded. */
-export function DashboardView({ me }: { me: Me }) {
+export function DashboardView({ me, routeActivityId = null }: { me: Me; routeActivityId?: number | null }) {
   const profile = useProfile()
   const today = todayISO(profile.data?.timezone)
+  const [, navigate] = useLocation()
   const [params, setParams] = useSearchParams()
   const sParam = Number(params.get('s')) || null
   const list = useActivities()
   const items = useMemo(() => list.data?.pages.flatMap((p) => p.items) ?? [], [list.data])
   const auto = (items.find((a) => a.isRunning) ?? items[0])?.id ?? null
-  const selectedId = sParam ?? auto
+  const selectedId = sParam ?? routeActivityId ?? auto
   const [picked, setPicked] = useState<ActivitySummary | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const day = useDayView(today)
@@ -223,7 +211,12 @@ export function DashboardView({ me }: { me: Me }) {
   const sections = useOpenSections(v && !stale ? v : null)
 
   const prompt = usePrompt({ activity: v && !stale ? { id: v.activity.id, name: v.activity.name, date: v.activity.date } : summary ? { id: summary.id, name: summary.name, date: summary.date } : null, day: today })
-  const [promptRef, promptVisible] = useInView<HTMLElement>()
+  const [showDetails, setShowDetails] = useState<{ id: number | null; open: boolean }>({ id: null, open: false })
+  const detailsOpen = showDetails.id === (v?.activity.id ?? null) && showDetails.open
+  const revealSection = (key: string) => {
+    setShowDetails({ id: v?.activity.id ?? null, open: true })
+    sections.reveal(key)
+  }
   const llmOn = llm.data?.configured === true
   const analyze = () => setAi((s) => ({ open: true, run: s.run + 1 }))
   const aiSubject =
@@ -232,11 +225,15 @@ export function DashboardView({ me }: { me: Me }) {
       : ({ kind: 'day', date: today, label: 'Bilan du jour' } as const)
 
   const select = (id: number) => {
-    setParams((p) => {
-      const next = new URLSearchParams(p)
-      next.set('s', String(id))
-      return next
-    })
+    if (routeActivityId !== null) {
+      navigate(`/activities/${id}`)
+    } else {
+      setParams((p) => {
+        const next = new URLSearchParams(p)
+        next.set('s', String(id))
+        return next
+      })
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const afterCreate = (a: ActivitySummary) => {
@@ -244,17 +241,22 @@ export function DashboardView({ me }: { me: Me }) {
     ui.selectActivity(a.id)
     ui.openFeeling()
   }
-  const afterDelete = () =>
+  const afterDelete = () => {
+    if (routeActivityId !== null) {
+      navigate('/')
+      return
+    }
     setParams((p) => {
       const next = new URLSearchParams(p)
       next.delete('s')
       return next
     })
+  }
   const idx = selectedId === null ? -1 : items.findIndex((a) => a.id === selectedId)
   const older = idx >= 0 && idx < items.length - 1 ? items[idx + 1] : null
   const newer = idx > 0 ? items[idx - 1] : null
 
-  const noActivities = list.isSuccess && items.length === 0 && sParam === null
+  const noActivities = list.isSuccess && items.length === 0 && sParam === null && routeActivityId === null
   const th = profile.data?.thresholds ?? null
   const ready = v && !stale
 
@@ -293,18 +295,31 @@ export function DashboardView({ me }: { me: Me }) {
     )
   else if (view.isError && !v) main = <ErrorView error={view.error} onRetry={() => void view.refetch()} />
   else if (!v) main = <LoadingView label="Chargement de la séance…" />
-  else main = <TopAlerts alerts={v.alerts} sectionOf={(c) => sectionForAlert(c, v)} onOpen={sections.reveal} />
+  else main = <TopAlerts alerts={v.alerts} sectionOf={(c) => sectionForAlert(c, v)} onOpen={revealSection} />
   const details = v && !(view.isError && !v) && !noActivities && (
     <div className={cn('space-y-4 lg:space-y-5', stale && 'is-refetching')} aria-busy={view.isFetching}>
-      <SessionSections v={v} profile={profile.data ?? null} sections={sections} />
-      <Warnings warnings={v.warnings} sources={v.dataSources} />
+      <button
+        type="button"
+        className="flex w-full items-center justify-center gap-1.5 rounded-2xl py-2 text-sm font-medium text-ink-3 transition-colors hover:text-ink"
+        aria-expanded={detailsOpen}
+        onClick={() => setShowDetails({ id: v.activity.id, open: !detailsOpen })}
+      >
+        {detailsOpen ? 'Masquer le détail' : 'Détail de la séance'}
+        <ChevronDown className={cn('size-4 transition-transform', detailsOpen && 'rotate-180')} aria-hidden="true" />
+      </button>
+      {detailsOpen && (
+        <>
+          <SessionSections v={v} profile={profile.data ?? null} sections={sections} />
+          <Warnings warnings={v.warnings} sources={v.dataSources} />
+        </>
+      )}
     </div>
   )
 
   return (
     <div className="space-y-4 lg:space-y-6">
       <h1 className="sr-only">Tableau de bord de {me.displayName}</h1>
-      {day.data?.readiness && !(standalone && day.data.readiness.level === 'unknown') && <ReadinessBanner r={day.data.readiness} />}
+      {day.data?.readiness && !(standalone && day.data.readiness.level === 'unknown') && <ReadinessBanner r={day.data.readiness} brief />}
 
       <div className="grid gap-4 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-6 lg:gap-y-5">
         <div className="min-w-0 space-y-4 lg:col-span-8 lg:row-start-1 lg:space-y-5">
@@ -332,26 +347,24 @@ export function DashboardView({ me }: { me: Me }) {
         </div>
         <aside className="min-w-0 space-y-4 self-start lg:col-span-4 lg:col-start-9 lg:row-span-2 lg:row-start-1 lg:space-y-5" aria-label="Ressenti, coach IA et semaine">
           {ready && <FeelingCard key={v.activity.id} view={v} />}
-          <PromptGenerator ref={promptRef} p={prompt} llmConfigured={llmOn} onAnalyze={analyze} />
+          <PromptGenerator p={prompt} llmConfigured={llmOn} onAnalyze={analyze} compact />
           <div className="section-group">
-            <Disclosure title="Aujourd’hui" icon={<Sun />} summary={day.data ? `${day.data.planned.length} prévue(s) · ${day.data.activities.length} réalisée(s)` : undefined} cardTitles="hide">
-              <TodayCard date={today} showReadiness={false} />
+            <Disclosure title="Cette semaine" icon={<CalendarCheck />} summary={day.data ? `${day.data.planned.length} prévue(s) aujourd’hui` : undefined} cardTitles="hide">
+              <div className="space-y-5">
+                <TodayCard date={today} showReadiness={false} />
+                <WeekCard date={today} today={today} />
+              </div>
             </Disclosure>
-            <Disclosure title="Semaine" icon={<CalendarCheck />} summary="Prévu vs réalisé, 7 jours" cardTitles="hide">
-              <WeekCard date={today} today={today} />
-            </Disclosure>
-            <Disclosure title="Objectifs" icon={<Target />} summary={v?.goals?.length ? `${v.goals.length} actif(s)` : undefined} cardTitles="hide">
-              <GoalsCard today={today} goals={v?.goals} />
-            </Disclosure>
-            <Disclosure title="Records personnels" icon={<Trophy />} summary={recordsSummary(records.data)} cardTitles="hide">
-              <RecordsCard />
+            <Disclosure title="Objectifs & records" icon={<Target />} summary={recordsSummary(records.data)} cardTitles="hide">
+              <div className="space-y-5">
+                <GoalsCard today={today} goals={v?.goals} />
+                <RecordsCard />
+              </div>
             </Disclosure>
           </div>
         </aside>
         {details && <div className="min-w-0 lg:col-span-8 lg:col-start-1 lg:row-start-2">{details}</div>}
       </div>
-      <div className="h-14 lg:hidden" aria-hidden="true" />
-      <MobilePromptBar p={prompt} hidden={promptVisible} onAnalyze={llmOn ? analyze : undefined} />
       {ai.run > 0 && (
         <Suspense fallback={null}>
           <AnalysisDrawer open={ai.open} onClose={() => setAi((s) => ({ ...s, open: false }))} subject={aiSubject} include={prompt.include} runToken={ai.run} />

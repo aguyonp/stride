@@ -11,6 +11,7 @@ interface CardProps {
   children: ReactNode
   as?: 'section' | 'div' | 'article'
   'aria-label'?: string
+  id?: string
 }
 
 /** Inside a collapsible section cards lose their chrome: 'sub' keeps a small h3 label, 'hide' drops the title row. */

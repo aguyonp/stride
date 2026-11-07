@@ -3,10 +3,14 @@ package apimeter
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"stride/internal/observability"
 )
 
 type fakeClock struct {
@@ -204,5 +208,24 @@ func TestQuotaAndCooldownErrorWhileWaiting(t *testing.T) {
 	rel()
 	if err := <-done; !errors.Is(err, ErrCooldown) {
 		t.Fatalf("waiter must fail fast once cooling down: %v", err)
+	}
+}
+
+func TestObserveRecordsPrometheusSeries(t *testing.T) {
+	metrics := observability.New()
+	m := NewLocal(Options{Metrics: metrics})
+	defer m.Close()
+	m.Observe(Call{Provider: Strava, Endpoint: "activities", Status: 200, Duration: 20 * time.Millisecond})
+	m.Observe(Call{Provider: Strava, Endpoint: "activities", Status: 429, Duration: time.Millisecond})
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	for _, series := range []string{
+		`stride_external_api_requests_total{provider="strava",status_class="2xx"} 1`,
+		`stride_external_api_requests_total{provider="strava",status_class="429"} 1`,
+		`stride_external_api_duration_seconds_count{provider="strava"} 2`,
+	} {
+		if !strings.Contains(rec.Body.String(), series) {
+			t.Fatalf("missing %s", series)
+		}
 	}
 }

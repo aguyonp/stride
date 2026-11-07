@@ -306,7 +306,7 @@ func (s *Services) upsertGarmin(ctx context.Context, uid int64, raw json.RawMess
 		return 0, false, nil
 	}
 	var id int64
-	created := false
+	created, fused := false, false
 	err = s.deps.Store.Tx(ctx, func(tx *sql.Tx) error {
 		now := s.now().Unix()
 		err := tx.QueryRowContext(ctx, `SELECT id FROM activities WHERE user_id = ? AND garmin_id = ?`, uid, it.ActivityID).Scan(&id)
@@ -314,6 +314,9 @@ func (s *Services) upsertGarmin(ctx context.Context, uid int64, raw json.RawMess
 			id, err = s.matchCandidate(ctx, tx, uid, "garmin_id", c)
 			if err != nil {
 				return err
+			}
+			if id != 0 {
+				fused = true
 			}
 		} else if err != nil {
 			return err
@@ -339,6 +342,13 @@ func (s *Services) upsertGarmin(ctx context.Context, uid int64, raw json.RawMess
 		}
 		return s.putBlobTx(ctx, tx, uid, id, "garmin_list", raw)
 	})
+	if err == nil {
+		if created {
+			s.deps.Metrics.IncActivitySynced("garmin")
+		} else if fused {
+			s.deps.Metrics.IncActivitySynced("fusion")
+		}
+	}
 	return id, created, err
 }
 
@@ -386,7 +396,7 @@ func (s *Services) matchCandidate(ctx context.Context, tx querier, uid int64, id
 func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activity, raw []byte, insertAlone bool) (int64, bool, error) {
 	c := stravaCols(a)
 	var id int64
-	created := false
+	created, fused := false, false
 	var gear any
 	if a.GearID != "" {
 		gear = a.GearID
@@ -404,6 +414,7 @@ func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activi
 				return err
 			}
 			if id != 0 {
+				fused = true
 				// a manual activity takes the Strava summary; Garmin or imported ones keep theirs
 				var manual bool
 				if err := tx.QueryRowContext(ctx, `SELECT manual FROM activities WHERE id = ?`, id).Scan(&manual); err != nil {
@@ -445,6 +456,13 @@ func (s *Services) upsertStrava(ctx context.Context, uid int64, a *strava.Activi
 		}
 		return nil
 	})
+	if err == nil {
+		if created {
+			s.deps.Metrics.IncActivitySynced("strava")
+		} else if fused {
+			s.deps.Metrics.IncActivitySynced("fusion")
+		}
+	}
 	return id, created, err
 }
 
@@ -474,9 +492,7 @@ func (s *Services) ListActivities(ctx context.Context, uid int64, limit int, bef
 	q += ` ORDER BY start_local DESC, id DESC LIMIT ?`
 	args = append(args, limit+1)
 	fr := &fresh{}
-	if err := s.firstSyncIfNeeded(ctx, uid, fr); err != nil {
-		s.log.Warn("⚠️ Première synchronisation incomplète", "user", uid, "err", errText(err))
-	}
+	s.triggerFirstSyncIfNeeded(ctx, uid)
 	rows, err := s.queryActivities(ctx, q, args...)
 	if err != nil {
 		return nil, err

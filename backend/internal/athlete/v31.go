@@ -254,8 +254,9 @@ func (p *PlanPhase) Normalize() error {
 	return errors.Join(errs...)
 }
 
-// Phases returns the phases overlapping [from, to] (empty bounds are open), by start date.
-func (r Repo) Phases(ctx context.Context, uid int64, from, to string) ([]PlanPhase, error) {
+// Phases returns the phases of a plan (planID nil: phases attached to no plan) overlapping
+// [from, to] (empty bounds are open), by start date.
+func (r Repo) Phases(ctx context.Context, uid int64, planID *int64, from, to string) ([]PlanPhase, error) {
 	if from == "" {
 		from = "0000-00-00"
 	}
@@ -263,7 +264,7 @@ func (r Repo) Phases(ctx context.Context, uid int64, from, to string) ([]PlanPha
 		to = "9999-99-99"
 	}
 	rows, err := r.DB.QueryContext(ctx, `SELECT id, name, start_date, end_date, focus, weekly_volume_km, note FROM plan_phases
-		WHERE user_id = ? AND end_date >= ? AND start_date <= ? ORDER BY start_date, id`, uid, from, to)
+		WHERE user_id = ? AND plan_id IS ? AND end_date >= ? AND start_date <= ? ORDER BY start_date, id`, uid, planID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -281,18 +282,23 @@ func (r Repo) Phases(ctx context.Context, uid int64, from, to string) ([]PlanPha
 	return out, rows.Err()
 }
 
-// ReplacePhases deletes the phases overlapping each new phase, then inserts the new ones (use in a transaction).
-func (r Repo) ReplacePhases(ctx context.Context, uid int64, phases []PlanPhase) error {
+// ReplacePhases attaches the new phases to planID (nil: no plan) after deleting that plan's phases
+// overlapping them, then renumbers the plan's phases by date (use in a transaction).
+func (r Repo) ReplacePhases(ctx context.Context, uid int64, planID *int64, phases []PlanPhase) error {
+	if len(phases) == 0 {
+		return nil
+	}
 	now := r.ts()
 	for _, p := range phases {
-		if _, err := r.DB.ExecContext(ctx, `DELETE FROM plan_phases WHERE user_id = ? AND end_date >= ? AND start_date <= ?`, uid, p.StartDate, p.EndDate); err != nil {
+		if _, err := r.DB.ExecContext(ctx, `DELETE FROM plan_phases WHERE user_id = ? AND plan_id IS ? AND end_date >= ? AND start_date <= ?`,
+			uid, planID, p.StartDate, p.EndDate); err != nil {
 			return err
 		}
 	}
 	for i := range phases {
 		p := &phases[i]
-		res, err := r.DB.ExecContext(ctx, `INSERT INTO plan_phases (user_id, name, start_date, end_date, focus, weekly_volume_km, note, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, p.Name, p.StartDate, p.EndDate, p.Focus, p.WeeklyVolumeKm, p.Note, now, now)
+		res, err := r.DB.ExecContext(ctx, `INSERT INTO plan_phases (user_id, plan_id, name, start_date, end_date, focus, weekly_volume_km, note, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, planID, p.Name, p.StartDate, p.EndDate, p.Focus, p.WeeklyVolumeKm, p.Note, now, now)
 		if err != nil {
 			return err
 		}
@@ -300,5 +306,8 @@ func (r Repo) ReplacePhases(ctx context.Context, uid int64, phases []PlanPhase) 
 			return err
 		}
 	}
-	return nil
+	_, err := r.DB.ExecContext(ctx, `UPDATE plan_phases SET order_index = (SELECT COUNT(*) FROM plan_phases o WHERE o.user_id = plan_phases.user_id
+		AND o.plan_id IS plan_phases.plan_id AND (o.start_date < plan_phases.start_date OR (o.start_date = plan_phases.start_date AND o.id < plan_phases.id)))
+		WHERE user_id = ? AND plan_id IS ?`, uid, planID)
+	return err
 }

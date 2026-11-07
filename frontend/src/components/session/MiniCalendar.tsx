@@ -13,6 +13,8 @@ interface MiniCalendarProps {
   onSelect: (iso: string) => void
   today: string
   loading?: boolean
+  /** Shows an « Aujourd’hui » button between the arrows: back to the current month, today selected. */
+  onToday?: () => void
 }
 
 const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
@@ -23,7 +25,7 @@ export function monthBounds(year: number, month0: number): { from: string; to: s
 }
 
 /** Compact month grid with activity dots and arrow-key navigation. */
-export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, onSelect, today, loading }: MiniCalendarProps) {
+export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, onSelect, today, loading, onToday }: MiniCalendarProps) {
   const gridRef = useRef<HTMLDivElement>(null)
   const days = useMemo(() => {
     const first = new Date(year, month0, 1)
@@ -70,17 +72,32 @@ export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, on
 
   return (
     <div className="select-none">
-      <div className="mb-2 flex items-center justify-between">
-        <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(-1)} aria-label="Mois précédent">
-          <ChevronLeft className="size-4" />
-        </button>
-        <p className="text-sm font-semibold capitalize" aria-live="polite">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-sm font-semibold capitalize" aria-live="polite">
           {fmtMonthYear(year, month0)}
           {loading && <span className="sr-only"> — chargement</span>}
         </p>
-        <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(1)} disabled={nextDisabled} aria-label="Mois suivant">
-          <ChevronRight className="size-4" />
-        </button>
+        <div className="flex flex-none items-center gap-1">
+          <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(-1)} aria-label="Mois précédent">
+            <ChevronLeft className="size-4" />
+          </button>
+          {onToday && (
+            <button
+              type="button"
+              className="btn btn-ghost h-8 min-h-8 px-2.5 text-xs"
+              disabled={selected === today && days.includes(today)}
+              onClick={() => {
+                setFocusDate(today)
+                onToday()
+              }}
+            >
+              Aujourd’hui
+            </button>
+          )}
+          <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(1)} disabled={nextDisabled} aria-label="Mois suivant">
+            <ChevronRight className="size-4" />
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-7 gap-1 text-center" aria-hidden="true">
         {WEEKDAYS.map((w, i) => (

@@ -10,6 +10,7 @@ services:
     user: "${STRIDE_UID:-65532}:${STRIDE_GID:-65532}"
     volumes:
       - ./data:/data
+    # STRIDE_METRICS_ADDR (e.g. ":9090") serves /metrics on the compose network only: never publish it.
     ports:
       - "${STRIDE_HOST_BIND:-127.0.0.1}:${STRIDE_HOST_PORT:-8080}:8080"
     depends_on:

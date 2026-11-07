@@ -15,9 +15,11 @@ import (
 
 type Config struct {
 	ListenAddr string
-	DataDir    string
-	DBPath     string
-	ValkeyURL  string
+	// MetricsAddr serves GET /metrics on a separate listener; empty disables it.
+	MetricsAddr string
+	DataDir     string
+	DBPath      string
+	ValkeyURL   string
 
 	MasterKey         []byte
 	MasterKeyPrevious []byte
@@ -67,6 +69,7 @@ func Load() (Config, error) {
 
 	c := Config{
 		ListenAddr:              get("STRIDE_LISTEN_ADDR", ":8080"),
+		MetricsAddr:             os.Getenv("STRIDE_METRICS_ADDR"),
 		DataDir:                 get("STRIDE_DATA_DIR", "./data"),
 		ValkeyURL:               os.Getenv("STRIDE_VALKEY_URL"),
 		PublicURL:               strings.TrimRight(get("STRIDE_PUBLIC_URL", "http://localhost:8080"), "/"),

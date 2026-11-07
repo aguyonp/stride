@@ -11,6 +11,7 @@ import (
 
 	"stride/internal/analysis"
 	"stride/internal/fitdata"
+	"stride/internal/queue"
 	"stride/internal/view"
 )
 
@@ -158,9 +159,23 @@ func firstNum(vs ...float64) float64 {
 	return math.NaN()
 }
 
-// ImportFile stores a rescue import (§11.7): merged into a matching activity lacking a FIT,
-// otherwise inserted as an import-only activity.
-func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, data []byte) (*view.ImportResult, error) {
+// ImportFile stores a rescue import (§11.7) through the sync worker pool: merged into a matching
+// activity lacking a FIT, otherwise inserted as an import-only activity. It returns the
+// *view.ImportResult, or the *queue.JobStatus when async or still running after the wait.
+func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, data []byte, async bool) (any, error) {
+	if importFormat(filename, data) == "" {
+		return nil, badRequest("Format non reconnu : fichiers .fit, .gpx ou .tcx uniquement.")
+	}
+	return awaitJob[view.ImportResult](ctx, s, queue.EnqueueRequest{
+		UserID:  uid,
+		Kind:    queue.KindImportActivity,
+		Queue:   queue.QueueCritical,
+		Label:   "Import de " + filepath.Base(filename),
+		Payload: importJobPayload{Filename: filename, Data: data},
+	}, async)
+}
+
+func (s *Services) importFileExec(ctx context.Context, uid int64, filename string, data []byte) (*view.ImportResult, error) {
 	format := importFormat(filename, data)
 	if format == "" {
 		return nil, badRequest("Format non reconnu : fichiers .fit, .gpx ou .tcx uniquement.")
@@ -233,6 +248,11 @@ func (s *Services) ImportFile(ctx context.Context, uid int64, filename string, d
 	})
 	if err != nil {
 		return nil, err
+	}
+	s.deps.Metrics.AddTelemetryPoints(format, len(act.Records))
+	s.deps.Metrics.IncActivitySynced("import")
+	if res.Merged {
+		s.deps.Metrics.IncActivitySynced("fusion")
 	}
 	s.log.Info("📥 Import de secours enregistré", "user", uid, "format", format, "fusion", res.Merged)
 	return res, nil

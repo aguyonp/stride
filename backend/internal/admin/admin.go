@@ -2,6 +2,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base32"
 	"errors"
@@ -13,9 +14,12 @@ import (
 	"time"
 
 	"stride/internal/apimeter"
+	"stride/internal/applog"
 	"stride/internal/auth"
 	"stride/internal/cache"
+	"stride/internal/domain"
 	"stride/internal/httpx"
+	"stride/internal/sse"
 	"stride/internal/store"
 )
 
@@ -27,6 +31,16 @@ type Deps struct {
 	PublicURL string
 	Log       *slog.Logger
 	Now       func() time.Time
+
+	// Control center (optional: a missing piece is reported as unavailable).
+	Domain    *domain.Services
+	SSE       *sse.Hub
+	Logs      *applog.Log
+	DBPath    string
+	Runtime   RuntimeConfig
+	StartedAt time.Time
+	// Maintenance purges expired sessions, invitations, API events, logs, jobs and share links.
+	Maintenance func(context.Context) (map[string]int64, error)
 }
 
 type Handler struct {
@@ -40,6 +54,9 @@ func New(d Deps) *Handler {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
+	if d.StartedAt.IsZero() {
+		d.StartedAt = d.Now()
+	}
 	return &Handler{d: d}
 }
 
@@ -51,6 +68,7 @@ type User struct {
 	CreatedAt   time.Time  `json:"createdAt"`
 	LastLoginAt *time.Time `json:"lastLoginAt"`
 	Passkeys    int        `json:"passkeys"`
+	domain.AdminUserStats
 }
 
 type Invitation struct {
@@ -80,6 +98,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("PUT /api/admin/settings", a(http.HandlerFunc(h.putSettings)))
 	mux.Handle("GET /api/admin/meter", a(http.HandlerFunc(h.meter)))
 	mux.Handle("POST /api/admin/cache/flush", a(http.HandlerFunc(h.flushCache)))
+	h.registerControl(mux)
 }
 
 func (h *Handler) internal(w http.ResponseWriter, r *http.Request, what string, err error) {
@@ -101,8 +120,21 @@ func admin(r *http.Request) auth.User {
 	return u
 }
 
-func userView(u store.User) User {
-	return User{ID: u.ID, DisplayName: u.DisplayName, Role: u.Role, Status: u.Status, CreatedAt: u.CreatedAt, LastLoginAt: u.LastLoginAt, Passkeys: u.Passkeys}
+func userView(u store.User, stats map[int64]domain.AdminUserStats) User {
+	v := User{ID: u.ID, DisplayName: u.DisplayName, Role: u.Role, Status: u.Status, CreatedAt: u.CreatedAt, LastLoginAt: u.LastLoginAt, Passkeys: u.Passkeys,
+		AdminUserStats: stats[u.ID]}
+	if v.Integrations == nil {
+		v.Integrations = []string{}
+	}
+	return v
+}
+
+// usersStats returns the footprint of every user, or nil without domain services.
+func (h *Handler) usersStats(ctx context.Context) (map[int64]domain.AdminUserStats, error) {
+	if h.d.Domain == nil {
+		return nil, nil
+	}
+	return h.d.Domain.AdminUsersStats(ctx)
 }
 
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -111,9 +143,14 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 		h.internal(w, r, "Liste des utilisateurs", err)
 		return
 	}
+	stats, err := h.usersStats(r.Context())
+	if err != nil {
+		h.internal(w, r, "Statistiques des utilisateurs", err)
+		return
+	}
 	out := make([]User, 0, len(users))
 	for _, u := range users {
-		out = append(out, userView(u))
+		out = append(out, userView(u, stats))
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
@@ -147,6 +184,9 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrUnknownUser):
 		httpx.Fail(w, http.StatusNotFound, httpx.CodeNotFound, "Utilisateur introuvable.")
 		return
+	case errors.Is(err, store.ErrLastAdmin):
+		httpx.Fail(w, http.StatusConflict, httpx.CodeConflict, lastAdminMsg)
+		return
 	case err != nil:
 		h.internal(w, r, "Mise à jour d'un utilisateur", err)
 		return
@@ -158,9 +198,14 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 		h.internal(w, r, "Liste des utilisateurs", err)
 		return
 	}
+	stats, err := h.usersStats(r.Context())
+	if err != nil {
+		h.internal(w, r, "Statistiques des utilisateurs", err)
+		return
+	}
 	for _, u := range users {
 		if u.ID == id {
-			httpx.JSON(w, http.StatusOK, userView(u))
+			httpx.JSON(w, http.StatusOK, userView(u, stats))
 			return
 		}
 	}
@@ -183,7 +228,15 @@ func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, http.StatusConflict, httpx.CodeConflict, "Vous ne pouvez pas supprimer votre propre compte depuis l'administration.")
 		return
 	}
-	switch err := h.d.Auth.DeleteUser(r.Context(), id); {
+	err := h.d.Store.EnsureNotLastAdmin(r.Context(), id)
+	if errors.Is(err, store.ErrLastAdmin) {
+		httpx.Fail(w, http.StatusConflict, httpx.CodeConflict, lastAdminMsg)
+		return
+	}
+	if err == nil {
+		err = h.d.Auth.DeleteUser(r.Context(), id)
+	}
+	switch {
 	case errors.Is(err, store.ErrUnknownUser):
 		httpx.Fail(w, http.StatusNotFound, httpx.CodeNotFound, "Utilisateur introuvable.")
 		return

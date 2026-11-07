@@ -19,9 +19,12 @@ import (
 	"stride/internal/egress"
 	"stride/internal/env"
 	"stride/internal/garmin"
+	"stride/internal/observability"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
+	"stride/internal/queue"
 	"stride/internal/secret"
+	"stride/internal/sse"
 	"stride/internal/store"
 )
 
@@ -33,9 +36,13 @@ type Deps struct {
 	Meter   apimeter.Meter
 	Strava  strava.API       // nil when Strava is not configured
 	Weather weather.Provider // nil when weather is disabled
+	SSE     *sse.Hub
+	Metrics *observability.Metrics
 	Log     *slog.Logger
 	// BaseURLs overrides fixed external endpoints in tests (keys: gemini, anthropic, openai, telegram).
 	BaseURLs map[string]string
+	// JobBackoff is the first retry delay of failed jobs (default 10 s; tests shorten it).
+	JobBackoff time.Duration
 }
 
 type Services struct {
@@ -47,9 +54,10 @@ type Services struct {
 	mu       sync.Mutex
 	clients  map[int64]*garmin.Client
 	running  map[int64]bool
+	syncJobs map[int64]string
 	subsOnce sync.Once
 	sf       singleflight.Group
-	bg       sync.WaitGroup
+	queue    *queue.Manager
 	egress   *http.Client
 	llmHTTP  *http.Client
 }
@@ -64,8 +72,22 @@ func New(d Deps) (*Services, error) {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	s := &Services{deps: d, log: d.Log, Now: time.Now, clients: map[int64]*garmin.Client{}, running: map[int64]bool{},
-		egress: egress.Client(d.Env.AllowPrivateEgress, llmTimeout), llmHTTP: &http.Client{Timeout: llmTimeout}}
+	s := &Services{
+		deps:     d,
+		log:      d.Log,
+		Now:      time.Now,
+		clients:  map[int64]*garmin.Client{},
+		running:  map[int64]bool{},
+		syncJobs: map[int64]string{},
+		egress:   egress.Client(d.Env.AllowPrivateEgress, llmTimeout),
+		llmHTTP:  &http.Client{Timeout: llmTimeout},
+	}
+	s.queue = queue.NewManager(queue.Options{DB: d.Store.DB, SSE: d.SSE, Metrics: d.Metrics, Log: d.Log,
+		BaseBackoff: d.JobBackoff, Now: func() time.Time { return s.now() }})
+	s.registerJobs()
+	if err := s.queue.Start(); err != nil {
+		return nil, err
+	}
 	s.ensureStravaSubscription()
 	return s, nil
 }
@@ -93,13 +115,15 @@ func (s *Services) db() *sql.DB { return s.deps.Store.DB }
 
 func (s *Services) repo() athlete.Repo { return athlete.Repo{DB: s.db(), Now: s.Now} }
 
-// Wait blocks until background work (lazy syncs, webhook processing) is done; for tests and shutdown.
-func (s *Services) Wait() { s.bg.Wait() }
+// Wait blocks until background work and jobs, including the jobs and goroutines they chain, are drained.
+func (s *Services) Wait() { s.queue.Wait() }
+
+// Close stops the job workers: queued jobs are dropped (failed at next start) and running ones get
+// until ctx expires to finish.
+func (s *Services) Close(ctx context.Context) { s.queue.Shutdown(ctx) }
 
 func (s *Services) goBackground(name string, timeout time.Duration, fn func(ctx context.Context)) {
-	s.bg.Add(1)
-	go func() {
-		defer s.bg.Done()
+	s.queue.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				s.log.Error("💥 Tâche de fond interrompue", "task", name, "panic", fmt.Sprint(r))
@@ -108,7 +132,7 @@ func (s *Services) goBackground(name string, timeout time.Duration, fn func(ctx 
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		fn(ctx)
-	}()
+	})
 }
 
 // profile returns the athlete profile (defaults when never saved).
@@ -174,6 +198,23 @@ func (s *Services) PurgeUserCache(ctx context.Context, userID int64) error {
 	s.dropClient(userID)
 	_, err := s.deps.Cache.DelPrefix(ctx, userKey(userID))
 	return err
+}
+
+// staleRetention is how long finished jobs and revoked or expired share links are kept.
+const staleRetention = 14 * 24 * time.Hour
+
+// PurgeStale deletes finished jobs and dead share links older than staleRetention (hourly maintenance).
+func (s *Services) PurgeStale(ctx context.Context) (jobs, links int64, err error) {
+	cutoff := s.now().Add(-staleRetention)
+	if jobs, err = s.queue.Purge(ctx, cutoff); err != nil {
+		return 0, 0, err
+	}
+	res, err := s.db().ExecContext(ctx, `DELETE FROM share_links WHERE revoked_at < ? OR expires_at < ?`, cutoff.Unix(), cutoff.Unix())
+	if err != nil {
+		return jobs, 0, err
+	}
+	links, err = res.RowsAffected()
+	return jobs, links, err
 }
 
 // ConnectedUserIDs lists active users with at least one connected provider (scheduler lister).

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"stride/internal/observability"
 )
 
 // Limits caps concurrent calls. When PerUser > 0, Global counts users holding at least one slot
@@ -44,8 +46,12 @@ type Options struct {
 	Recent []ErrorEvent
 	// OnCall receives every observed call (audit trail); it must not block.
 	OnCall func(Call)
-	Now    func() time.Time
-	Log    *slog.Logger
+	// OnSnapshot broadcasts updated meter snapshots (e.g. to admin SSE streams); optional.
+	OnSnapshot func(Snapshot)
+	// Metrics records Prometheus outbound API counters and latencies; optional.
+	Metrics *observability.Metrics
+	Now     func() time.Time
+	Log     *slog.Logger
 }
 
 type bucket struct {
@@ -79,21 +85,25 @@ type Local struct {
 	now       func() time.Time
 	log       *slog.Logger
 
-	sink   func(context.Context, []ErrorEvent) error
-	onCall func(Call)
-	events chan ErrorEvent
-	done   chan struct{}
-	closed bool
+	sink       func(context.Context, []ErrorEvent) error
+	onCall     func(Call)
+	onSnapshot func(Snapshot)
+	metrics    *observability.Metrics
+	events     chan ErrorEvent
+	done       chan struct{}
+	closed     bool
 }
 
 func NewLocal(o Options) *Local {
 	m := &Local{
-		providers: map[string]*providerState{},
-		limits:    o.Limits,
-		now:       o.Now,
-		log:       o.Log,
-		sink:      o.Sink,
-		onCall:    o.OnCall,
+		providers:  map[string]*providerState{},
+		limits:     o.Limits,
+		now:        o.Now,
+		log:        o.Log,
+		sink:       o.Sink,
+		onCall:     o.OnCall,
+		onSnapshot: o.OnSnapshot,
+		metrics:    o.Metrics,
 	}
 	if m.limits == nil {
 		m.limits = DefaultLimits()
@@ -185,6 +195,7 @@ func (m *Local) release(provider string, userID int64) {
 }
 
 func (m *Local) Observe(c Call) {
+	m.metrics.ObserveExternalAPI(c.Provider, c.Status, c.Err, c.Duration)
 	if m.onCall != nil {
 		m.onCall(c)
 	}
@@ -228,6 +239,9 @@ func (m *Local) Observe(c Call) {
 	m.mu.Unlock()
 	if rateLimited {
 		m.log.Warn("🚦 Limite de débit atteinte, pause du fournisseur", "provider", c.Provider, "endpoint", c.Endpoint, "status", c.Status)
+	}
+	if m.onSnapshot != nil {
+		m.onSnapshot(m.Snapshot())
 	}
 }
 

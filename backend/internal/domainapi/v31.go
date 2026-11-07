@@ -141,8 +141,8 @@ func (a *api) adaptPlan(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, "Corps JSON invalide ({from, mode, eventId?} attendu).")
 			return
 		}
-		v, err := a.s.AdaptPlan(r.Context(), uid, body)
-		a.reply3(w, r, v, err)
+		v, err := a.s.AdaptPlan(r.Context(), uid, body, isAsync(r))
+		a.replyJob(w, r, v, err)
 	})
 }
 

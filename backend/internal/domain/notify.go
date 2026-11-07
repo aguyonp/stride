@@ -20,6 +20,7 @@ import (
 	"stride/internal/apimeter"
 	"stride/internal/egress"
 	f "stride/internal/frfmt"
+	"stride/internal/queue"
 	"stride/internal/view"
 )
 
@@ -277,23 +278,39 @@ func telegramEscape(s string) string {
 	return strings.NewReplacer("_", "\\_", "*", "\\*", "`", "\\`", "[", "\\[").Replace(s)
 }
 
-func (s *Services) send(ctx context.Context, uid int64, t notifyTarget, msg notifyMessage) (int, error) {
+func prepareWebhookPayload(targetID int64, msg notifyMessage) webhookDeliverPayload {
+	discordText := msg.text(func(x string) string { return "**" + x + "**" }, func(x string) string { return x })
+	if r := []rune(discordText); len(r) > 1900 {
+		discordText = string(r[:1900]) + "…"
+	}
+	telegramText := msg.text(func(x string) string { return "*" + telegramEscape(x) + "*" }, telegramEscape)
+	var jp map[string]any
+	if m, ok := msg.payload.(map[string]any); ok {
+		jp = m
+	} else if raw, err := json.Marshal(msg.payload); err == nil {
+		_ = json.Unmarshal(raw, &jp)
+	}
+	return webhookDeliverPayload{
+		TargetID:     targetID,
+		DiscordText:  discordText,
+		TelegramText: telegramText,
+		JSONPayload:  jp,
+	}
+}
+
+func (s *Services) deliverPrepared(ctx context.Context, uid int64, t notifyTarget, p webhookDeliverPayload) (int, error) {
 	var endpoint string
 	var body any
 	switch t.Kind {
 	case "discord":
 		endpoint = t.secret.URL
-		text := msg.text(func(x string) string { return "**" + x + "**" }, func(x string) string { return x })
-		if r := []rune(text); len(r) > 1900 {
-			text = string(r[:1900]) + "…"
-		}
-		body = map[string]any{"content": text}
+		body = map[string]any{"content": p.DiscordText}
 	case "telegram":
 		endpoint = s.telegramBase() + "/bot" + t.secret.BotToken + "/sendMessage"
 		body = map[string]any{"chat_id": t.secret.ChatID, "parse_mode": "Markdown", "disable_web_page_preview": true,
-			"text": msg.text(func(x string) string { return "*" + telegramEscape(x) + "*" }, telegramEscape)}
+			"text": p.TelegramText}
 	default:
-		endpoint, body = t.secret.URL, msg.payload
+		endpoint, body = t.secret.URL, p.JSONPayload
 	}
 	raw, _ := json.Marshal(body)
 	release, err := s.deps.Meter.Acquire(ctx, apimeter.Webhook, uid)
@@ -306,7 +323,7 @@ func (s *Services) send(ctx context.Context, uid int64, t notifyTarget, msg noti
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Stride/3")
+	req.Header.Set("User-Agent", "Stride/4")
 	t0 := time.Now()
 	resp, err := s.egressHTTP().Do(req)
 	call := apimeter.Call{Provider: apimeter.Webhook, UserID: uid, Endpoint: "notify/" + t.Kind, Duration: time.Since(t0), Err: err}
@@ -322,6 +339,10 @@ func (s *Services) send(ctx context.Context, uid int64, t notifyTarget, msg noti
 		return resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return resp.StatusCode, nil
+}
+
+func (s *Services) send(ctx context.Context, uid int64, t notifyTarget, msg notifyMessage) (int, error) {
+	return s.deliverPrepared(ctx, uid, t, prepareWebhookPayload(t.ID, msg))
 }
 
 // sendErrText never echoes the target URL (Discord and Telegram secrets live in it).
@@ -443,14 +464,18 @@ func (s *Services) notifyPending(ctx context.Context, uid int64) {
 		}
 		msg := activityMessage(v, fmt.Sprintf("%s/?s=%d", s.deps.Env.PublicURL, a.ID))
 		for _, t := range targets {
-			sctx, cancel := context.WithTimeout(ctx, notifyTimeout)
-			_, err := s.send(sctx, uid, t, msg)
-			cancel()
-			s.recordSend(ctx, uid, t.ID, err)
-			if err != nil {
-				s.log.Warn("🔔 Notification en échec", "user", uid, "kind", t.Kind, "err", sendErrText(err))
+			payload := prepareWebhookPayload(t.ID, msg)
+			if _, err := s.queue.Enqueue(context.Background(), queue.EnqueueRequest{
+				UserID:      uid,
+				Kind:        queue.KindWebhookDeliver,
+				Queue:       queue.QueueDefault,
+				Label:       "Notification " + t.Label,
+				MaxAttempts: 3,
+				Payload:     payload,
+			}); err != nil {
+				s.log.Warn("🔔 Mise en file de notification en échec", "user", uid, "kind", t.Kind, "err", errText(err))
 			}
 		}
-		s.log.Info("🔔 Séance notifiée", "user", uid, "cibles", len(targets))
+		s.log.Info("🔔 Séance mise en file pour notification", "user", uid, "cibles", len(targets))
 	}
 }

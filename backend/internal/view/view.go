@@ -172,6 +172,12 @@ type ActivityView struct {
 	Efficiency    *analysis.Efficiency      `json:"efficiency"`
 	Impact        *analysis.Impact          `json:"impact"`
 	Readiness     analysis.ReadinessBanner  `json:"readiness"`
+	// BodyStress carries active anatomical pain entries for prompt injection.
+	BodyStress []analysis.BodyStressEntry `json:"bodyStress,omitempty"`
+	// BodyCorrelations are the conclusive body map correlations (prompts only).
+	BodyCorrelations []analysis.BodyCorrelationFactor `json:"-"`
+	// Health lists the tracked zones and conditions (prompts only, §14.7).
+	Health []analysis.HealthZone `json:"-"`
 	// PlannedToday is the planned session matched to (or scheduled on the day of) this activity.
 	PlannedToday *athlete.PlannedSession `json:"-"`
 	// Records feed the CONTEXTE & OBJECTIFS section of the prompts.
@@ -193,9 +199,15 @@ type DayView struct {
 	Alerts      []analysis.Alert          `json:"alerts"`
 	Warnings    []string                  `json:"warnings"`
 	Readiness   analysis.ReadinessBanner  `json:"readiness"`
+	// BodyStress carries active anatomical pain entries for prompt injection.
+	BodyStress []analysis.BodyStressEntry `json:"bodyStress,omitempty"`
+	// BodyCorrelations are the conclusive body map correlations (prompts only).
+	BodyCorrelations []analysis.BodyCorrelationFactor `json:"-"`
 	// History feeds the HISTORIQUE 14 JOURS table of the day report.
 	History []HistoryRow             `json:"-"`
 	Records []athlete.PersonalRecord `json:"-"`
+	// Health lists the tracked zones and conditions (prompts only, §14.7).
+	Health []analysis.HealthZone `json:"-"`
 }
 
 type GarminIntegration struct {
@@ -238,6 +250,7 @@ type ProviderSync struct {
 
 type SyncStatus struct {
 	Running       bool    `json:"running"`
+	JobID         *string `json:"jobId,omitempty"`
 	LastSyncAt    *string `json:"lastSyncAt"`
 	LastLiveAt    *string `json:"lastLiveAt"`
 	CooldownUntil *string `json:"cooldownUntil"`
@@ -327,17 +340,20 @@ type AlertCount struct {
 
 // MultiExport is the input of the multi-session report (§6.4).
 type MultiExport struct {
-	From, To   string
-	Weeks      int
-	NextWeeks  int
-	Goals      []athlete.Goal
-	Sessions   []MultiSession
-	Weekly     []WeekTrend
-	Plan       PlanVsDone
-	Alerts     []AlertCount
-	Upcoming   []athlete.PlannedSession
-	Unanalyzed int
-	Records    []athlete.PersonalRecord
+	From, To         string
+	Weeks            int
+	NextWeeks        int
+	Goals            []athlete.Goal
+	Sessions         []MultiSession
+	Weekly           []WeekTrend
+	Plan             PlanVsDone
+	Alerts           []AlertCount
+	Upcoming         []athlete.PlannedSession
+	Unanalyzed       int
+	Records          []athlete.PersonalRecord
+	BodyStress       []analysis.BodyStressEntry
+	BodyCorrelations []analysis.BodyCorrelationFactor
+	Health           []analysis.HealthZone
 }
 
 type EfficiencyPoint struct {

@@ -10,8 +10,11 @@ import {
   type QueryKey,
 } from '@tanstack/react-query'
 import { api, ApiError, type ListActivitiesParams } from './client'
+import { ADMIN_METER_POLL_MS, fallbackPollInterval } from './polling'
+import { resetEventStore, useHasActiveJob, useStreamConnected } from '../state/events'
 import type {
   LogFilter,
+  ActivityListResponse,
   ActivityNotesInput,
   ActivityView,
   AdminSettings,
@@ -35,7 +38,7 @@ export const qk = {
   auth: ['auth'] as const,
   passkeys: ['passkeys'] as const,
   integrations: ['integrations'] as const,
-  sync: ['sync'] as const,
+  sync: ['sync', 'status'] as const,
   activities: (p: ListActivitiesParams = {}) => ['activities', 'list', p] as const,
   activitiesRange: (from: string, to: string) => ['activities', 'range', from, to] as const,
   activity: (id: number) => ['activity', id] as const,
@@ -56,7 +59,30 @@ export const qk = {
   },
 }
 
-const DOMAIN_ROOTS = new Set(['activities', 'activity', 'report', 'day', 'plan', 'week', 'calendar', 'events', 'phases', 'records', 'efficiency', 'goals', 'shoes', 'integrations', 'profile', 'sync'])
+const DOMAIN_ROOTS = new Set([
+  'activities',
+  'activity',
+  'report',
+  'day',
+  'plan',
+  'week',
+  'calendar',
+  'events',
+  'phases',
+  'records',
+  'efficiency',
+  'goals',
+  'shoes',
+  'integrations',
+  'profile',
+  'sync',
+  'cycles',
+  'bodymap',
+  'share',
+  'jobs',
+  'load',
+  'readiness',
+])
 
 export function invalidateDomain(qc: QueryClient, roots?: string[]) {
   const set = roots ? new Set(roots) : DOMAIN_ROOTS
@@ -86,8 +112,8 @@ export const queryClient = new QueryClient({
 
 /* ---------------------------------- Auth & account ---------------------------------- */
 
-export function useAuthState() {
-  return useQuery({ queryKey: qk.auth, queryFn: api.authState, staleTime: 5 * 60_000, retry: 1 })
+export function useAuthState(enabled = true) {
+  return useQuery({ queryKey: qk.auth, queryFn: api.authState, staleTime: 5 * 60_000, retry: 1, enabled })
 }
 
 export function setMe(qc: QueryClient, me: Me | null) {
@@ -104,6 +130,7 @@ export function useLogout() {
   return useMutation({
     mutationFn: api.logout,
     onSettled: () => {
+      resetEventStore()
       qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'auth' })
       setMe(qc, null)
     },
@@ -162,13 +189,21 @@ export function useIntegrationMutations() {
   }
 }
 
+/** Polling interval factory for queries the event stream normally keeps fresh. */
+export function useFallbackPoll() {
+  const streamConnected = useStreamConnected()
+  const jobsBusy = useHasActiveJob()
+  return (busy = false) => fallbackPollInterval({ streamConnected, busy: busy || jobsBusy })
+}
+
 export function useSyncStatus(enabled = true) {
+  const poll = useFallbackPoll()
   return useQuery({
     queryKey: qk.sync,
     queryFn: api.syncStatus,
     enabled,
     staleTime: 15_000,
-    refetchInterval: (q) => (q.state.data?.running ? 2500 : 60_000),
+    refetchInterval: (q) => poll(q.state.data?.running === true),
   })
 }
 
@@ -193,10 +228,25 @@ export function useActivities(params: Omit<ListActivitiesParams, 'before' | 'lim
   })
 }
 
+/** Server cap of `GET /api/activities?limit=` (1..100); a larger value is rejected with a 400. */
+export const ACTIVITIES_MAX_LIMIT = 100
+const RANGE_MAX_PAGES = 20
+
+/** Every activity dated within [from, to], paging with `before` past the server cap. */
+export async function fetchActivitiesInRange(from: string, to: string): Promise<ActivityListResponse> {
+  let res = await api.activities({ from, to, limit: ACTIVITIES_MAX_LIMIT })
+  const items = [...res.items]
+  for (let page = 1; res.hasMore && res.items.length > 0 && page < RANGE_MAX_PAGES; page++) {
+    res = await api.activities({ from, to, limit: ACTIVITIES_MAX_LIMIT, before: res.items[res.items.length - 1].startLocal })
+    items.push(...res.items)
+  }
+  return { items, hasMore: res.hasMore, freshness: res.freshness }
+}
+
 export function useActivitiesInRange(from: string, to: string, enabled = true) {
   return useQuery({
     queryKey: qk.activitiesRange(from, to),
-    queryFn: () => api.activities({ from, to, limit: 200 }),
+    queryFn: () => fetchActivitiesInRange(from, to),
     enabled,
     placeholderData: keepPreviousData,
   })
@@ -334,7 +384,7 @@ export function useAdminSettings() {
   return useQuery({ queryKey: qk.admin.settings, queryFn: api.adminSettings })
 }
 export function useAdminMeter() {
-  return useQuery({ queryKey: qk.admin.meter, queryFn: api.adminMeter, refetchInterval: 15_000 })
+  return useQuery({ queryKey: qk.admin.meter, queryFn: api.adminMeter, refetchInterval: ADMIN_METER_POLL_MS })
 }
 export function useAdminLogs(f: LogFilter) {
   return useInfiniteQuery({
@@ -371,3 +421,6 @@ export function useAdminMutations() {
     restore: useMutation({ mutationFn: ({ id, mode, backup }: { id: number; mode: 'merge' | 'replace'; backup: string }) => api.adminRestore(id, mode, backup) }),
   }
 }
+
+export * from './queriesV4'
+export * from './queriesAdmin'

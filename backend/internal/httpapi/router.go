@@ -16,21 +16,27 @@ import (
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/domainapi"
+	"stride/internal/feedback"
 	"stride/internal/httpx"
+	"stride/internal/observability"
+	"stride/internal/sse"
 	"stride/internal/store"
 )
 
 type Deps struct {
-	Store  *store.Store
-	Cache  cache.Cache
-	Auth   *auth.Service
-	Admin  *admin.Handler
-	Domain *domain.Services
-	Log    *slog.Logger
-	Logs   *applog.Log
-	HTTPS  bool
-	// Static serves the SPA for every non-API path (nil: no frontend).
-	Static http.Handler
+	Store *store.Store
+	Cache cache.Cache
+	Auth  *auth.Service
+	Admin *admin.Handler
+	// Feedback is optional (POST /api/feedback, admin listing and triage).
+	Feedback *feedback.Handler
+	Domain   *domain.Services
+	Log      *slog.Logger
+	Logs     *applog.Log
+	HTTPS    bool
+	Static   http.Handler
+	SSE      *sse.Hub
+	Metrics  *observability.Metrics
 }
 
 func New(d Deps) http.Handler {
@@ -39,6 +45,12 @@ func New(d Deps) http.Handler {
 		httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
 	})
 	mux.HandleFunc("GET /health/ready", d.ready)
+
+	// Unauthenticated platform endpoints
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.JSON(w, http.StatusOK, buildinfo.Get())
+	})
+
 	d.Auth.Register(mux)
 	mux.Handle("GET /api/version", d.Auth.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		httpx.JSON(w, http.StatusOK, buildinfo.Get())
@@ -48,6 +60,9 @@ func New(d Deps) http.Handler {
 		mux.Handle("GET /api/admin/logs", d.Auth.RequireAdmin(adminLogs(d.Logs)))
 	}
 	d.Admin.Register(mux)
+	if d.Feedback != nil {
+		d.Feedback.Register(mux)
+	}
 	domainapi.Register(mux, domainapi.Deps{
 		Services:     d.Domain,
 		RequireUser:  d.Auth.RequireUser,
@@ -61,8 +76,25 @@ func New(d Deps) http.Handler {
 		mux.Handle("/", d.Static)
 	}
 
-	var h http.Handler = mux
+	var sseHandler http.Handler
+	if d.SSE != nil {
+		sseHandler = d.Auth.RequireUser(http.HandlerFunc(d.SSE.ServeHTTP))
+	}
+
+	var h http.Handler = d.Metrics.HTTPMiddleware(mux)
 	h = gzhttp.GzipHandler(h)
+
+	if sseHandler != nil {
+		gzHandler := h
+		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && r.URL.Path == "/api/events/stream" {
+				sseHandler.ServeHTTP(w, r)
+				return
+			}
+			gzHandler.ServeHTTP(w, r)
+		})
+	}
+
 	h = withCSRF(h)
 	h = withBodyLimit(h)
 	h = withSecurityHeaders(d.HTTPS, h)

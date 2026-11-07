@@ -297,9 +297,10 @@ func (r Repo) DeletePlanned(ctx context.Context, uid, id int64) error {
 
 // ---------- shoes ----------
 
-// A shoe's distance sums the activities whose note points to it, or (without a note shoe)
-// whose Strava gear matches it.
+// A shoe's analyzed distance sums the activities whose note points to it, or (without a note shoe)
+// whose Strava gear matches it. Its total is Strava's gear distance when the pair is linked and synced.
 const shoeSelect = `SELECT s.id, s.name, s.brand, s.model, s.drop_mm, s.type, s.strava_gear_id, s.retired, s.note, s.strava_distance_m,
+	s.strava_primary, s.strava_state, s.strava_synced_at,
 	COALESCE((SELECT SUM(a.distance_m) FROM activities a LEFT JOIN activity_notes n ON n.activity_id = a.id
 		WHERE a.user_id = s.user_id AND (n.shoe_id = s.id OR (n.shoe_id IS NULL AND s.strava_gear_id IS NOT NULL AND a.strava_gear = s.strava_gear_id))), 0)
 	FROM shoes s`
@@ -311,18 +312,30 @@ func scanShoe(sc interface{ Scan(...any) error }) (Shoe, error) {
 	var retired int
 	var distM float64
 	var stravaM sql.NullFloat64
-	err := sc.Scan(&s.ID, &s.Name, &s.Brand, &s.Model, &drop, &s.Type, &gear, &retired, &s.Note, &stravaM, &distM)
+	var primary int
+	var state sql.NullString
+	var synced sql.NullInt64
+	err := sc.Scan(&s.ID, &s.Name, &s.Brand, &s.Model, &drop, &s.Type, &gear, &retired, &s.Note, &stravaM, &primary, &state, &synced, &distM)
 	s.DropMm, s.StravaGearID, s.Retired = nf(drop), ns(gear), retired != 0
-	if stravaM.Valid {
-		km := float64(int64(stravaM.Float64/100+0.5)) / 10
-		s.StravaDistanceKm = &km
+	s.AnalyzedKm = float64(int64(distM/100+0.5)) / 10
+	s.DistanceKm, s.DistanceSource = s.AnalyzedKm, "stride"
+	if s.StravaGearID != nil { // an unlinked pair never shows a stale Strava figure
+		s.StravaPrimary, s.StravaState = primary != 0, ns(state)
+		if synced.Valid {
+			at := rfc(synced.Int64)
+			s.StravaSyncedAt = &at
+		}
+		if stravaM.Valid {
+			km := float64(int64(stravaM.Float64/100+0.5)) / 10
+			s.StravaDistanceKm = &km
+			s.DistanceKm, s.DistanceSource = km, "strava"
+		}
 	}
-	s.DistanceKm = float64(int64(distM/100+0.5)) / 10
 	return s, err
 }
 
 func (r Repo) Shoes(ctx context.Context, uid int64) ([]Shoe, error) {
-	rows, err := r.DB.QueryContext(ctx, shoeSelect+` WHERE s.user_id = ? ORDER BY s.retired, s.name COLLATE NOCASE, s.id`, uid)
+	rows, err := r.DB.QueryContext(ctx, shoeSelect+` WHERE s.user_id = ? ORDER BY s.retired, s.strava_primary DESC, s.name COLLATE NOCASE, s.id`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -400,8 +413,13 @@ func (r Repo) Notes(ctx context.Context, uid int64, aids []int64) (map[int64]Act
 	for _, id := range aids {
 		args = append(args, id)
 	}
-	rows, err := r.DB.QueryContext(ctx, `SELECT activity_id, pain_during, pain_cold, pain_next_morning, rpe, shoe_id, tags, note, updated_at, shoe_auto
-		FROM activity_notes WHERE user_id = ? AND activity_id IN (`+ph+`)`, args...)
+	// Pains linked to the activity in the body map win over the legacy note columns (projection).
+	rows, err := r.DB.QueryContext(ctx, `SELECT n.activity_id,
+		COALESCE((SELECT MAX(e.pain_score) FROM body_stress_entries e WHERE e.user_id = n.user_id AND e.activity_id = n.activity_id), n.pain_during),
+		n.pain_cold,
+		COALESCE((SELECT MAX(e.cold_next_day_score) FROM body_stress_entries e WHERE e.user_id = n.user_id AND e.activity_id = n.activity_id), n.pain_next_morning),
+		n.rpe, n.shoe_id, n.tags, n.note, n.updated_at, n.shoe_auto
+		FROM activity_notes n WHERE n.user_id = ? AND n.activity_id IN (`+ph+`)`, args...)
 	if err != nil {
 		return nil, err
 	}

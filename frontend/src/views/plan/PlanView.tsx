@@ -1,8 +1,9 @@
-import { CalendarDays, CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Flag, MoreHorizontal, Plus, Sparkles, Target, TriangleAlert, Wand2 } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Flag, Layers, MoreHorizontal, Plus, Sparkles, Target, TriangleAlert, Wand2 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGoalMutations, useGoals, usePlanMutations, useProfile, useWeekPlan } from '../../api/queries'
 import { useCalendarEvents, usePlanPhases } from '../../api/queriesV31'
 import type { ActivitySummary, CalendarEvent, Goal, PlannedSession, WeekPlan } from '../../api/types'
+import { CyclesTimeline } from '../../components/plan/CyclesTimeline'
 import { DoneActivityRow } from '../../components/plan/DoneActivityRow'
 import { EventChip, EventDialog } from '../../components/plan/EventDialog'
 import { GenerateDialog } from '../../components/plan/GenerateDialog'
@@ -215,7 +216,9 @@ export default function PlanView() {
   const [goalDialog, setGoalDialog] = useState<{ open: boolean; goal: Goal | null }>({ open: false, goal: null })
   const [deleteSession, setDeleteSession] = useState<PlannedSession | null>(null)
   const [deleteGoal, setDeleteGoal] = useState<Goal | null>(null)
-  const [mode, setMode] = useStoredState<'week' | 'month'>('stride.plan.view', 'week', (v) => (v === 'month' || v === 'week' ? v : undefined))
+  const [mode, setMode] = useStoredState<'cycles' | 'week' | 'month'>('stride.plan.view', 'week', (v) =>
+    v === 'cycles' || v === 'month' || v === 'week' ? v : undefined,
+  )
   const [genOpen, setGenOpen] = useState<{ horizon?: 'goal' } | null>(null)
   const [drawer, setDrawer] = useState<{ s: PlannedSession; edit: boolean } | null>(null)
   const [eventDlg, setEventDlg] = useState<EventState>(null)
@@ -299,72 +302,99 @@ export default function PlanView() {
         }
       />
 
-      {goal && (
+      {goal && mode !== 'cycles' && (
         <GoalHorizon goals={dated} goal={goal} onGoal={setGoalPick} phases={phases.data ?? []} today={today} onJump={jump} onGenerate={() => setGenOpen({ horizon: 'goal' })} />
       )}
 
-      <Card
-        as="section"
-        aria-label="Semaine affichée"
-        title={<span className="num">{mode === 'month' ? monthTitle : weekLabel(weekStart)}</span>}
-        subtitle={
-          mode === 'month'
-            ? 'Prévu vs réalisé sur le mois'
-            : `${weekStart === currentWeek ? 'Semaine en cours' : weekStart < currentWeek ? 'Semaine passée' : 'Semaine à venir'}${weekPhase ? ` · ${weekPhase.name}${weekPhase.weeklyVolumeKm ? ` (${fmtNumber(weekPhase.weeklyVolumeKm)} km visés)` : ''}` : ''}`
-        }
-        icon={<CalendarRange className="size-4" />}
-        action={
-          <div className="flex flex-wrap items-center gap-1.5">
+      {mode === 'cycles' ? (
+        <div className="space-y-4">
+          <div className="flex justify-end">
             <SegmentedControl
               ariaLabel="Affichage"
               size="sm"
               value={mode}
               onChange={setMode}
               options={[
+                { value: 'cycles', label: 'Cycles', icon: <Layers /> },
                 { value: 'week', label: 'Semaine', icon: <CalendarRange /> },
                 { value: 'month', label: 'Mois', icon: <CalendarDays /> },
               ]}
             />
-            <button type="button" className="icon-btn size-9" onClick={() => (mode === 'month' ? shiftMonth(-1) : setAnchor(addDays(weekStart, -7)))} aria-label={mode === 'month' ? 'Mois précédent' : 'Semaine précédente'}>
-              <ChevronLeft className="size-4" />
-            </button>
-            <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs max-sm:hidden" onClick={() => setAnchor(null)} disabled={mode === 'month' ? month === today.slice(0, 7) : weekStart === currentWeek}>
-              Aujourd’hui
-            </button>
-            <button type="button" className="icon-btn size-9" onClick={() => (mode === 'month' ? shiftMonth(1) : setAnchor(addDays(weekStart, 7)))} aria-label={mode === 'month' ? 'Mois suivant' : 'Semaine suivante'}>
-              <ChevronRight className="size-4" />
-            </button>
-            {goal && (
-              <button type="button" className="icon-btn size-9" onClick={() => jump(goal.targetDate as string)} aria-label={`Aller à l’échéance : ${goal.title}`} title="Aller à l’échéance">
-                <Flag className="size-4" />
-              </button>
-            )}
           </div>
-        }
-      >
-        {mode === 'month' ? (
-          <MonthCalendar
-            month={month}
+          <CyclesTimeline
             today={today}
-            onOpenSession={openSession}
-            onOpenEvent={(e, date) => setEventDlg({ date, event: e })}
-            goals={goalsByDate}
-            phases={phases.data ?? []}
-            onPickDay={(d) => {
-              setAnchor(d)
+            goals={goals.data ?? []}
+            onJumpToWeek={(ws) => {
+              setAnchor(ws)
               setMode('week')
             }}
           />
-        ) : week.isError && !data ? (
-          <InlineError>{week.error.message}</InlineError>
-        ) : (
-          <div aria-live="polite" aria-busy={week.isFetching}>
-            <WeekTotals week={data} />
-          </div>
-        )}
-      </Card>
+        </div>
+      ) : (
+        <Card
+          as="section"
+          aria-label="Semaine affichée"
+          title={<span className="num">{mode === 'month' ? monthTitle : weekLabel(weekStart)}</span>}
+          subtitle={
+            mode === 'month'
+              ? 'Prévu vs réalisé sur le mois'
+              : `${weekStart === currentWeek ? 'Semaine en cours' : weekStart < currentWeek ? 'Semaine passée' : 'Semaine à venir'}${weekPhase ? ` · ${weekPhase.name}${weekPhase.weeklyVolumeKm ? ` (${fmtNumber(weekPhase.weeklyVolumeKm)} km visés)` : ''}` : ''}`
+          }
+          icon={<CalendarRange className="size-4" />}
+          action={
+            <div className="flex flex-wrap items-center gap-1.5">
+              <SegmentedControl
+                ariaLabel="Affichage"
+                size="sm"
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: 'cycles', label: 'Cycles', icon: <Layers /> },
+                  { value: 'week', label: 'Semaine', icon: <CalendarRange /> },
+                  { value: 'month', label: 'Mois', icon: <CalendarDays /> },
+                ]}
+              />
+              <button type="button" className="icon-btn size-9" onClick={() => (mode === 'month' ? shiftMonth(-1) : setAnchor(addDays(weekStart, -7)))} aria-label={mode === 'month' ? 'Mois précédent' : 'Semaine précédente'}>
+                <ChevronLeft className="size-4" />
+              </button>
+              <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs max-sm:hidden" onClick={() => setAnchor(null)} disabled={mode === 'month' ? month === today.slice(0, 7) : weekStart === currentWeek}>
+                Aujourd’hui
+              </button>
+              <button type="button" className="icon-btn size-9" onClick={() => (mode === 'month' ? shiftMonth(1) : setAnchor(addDays(weekStart, 7)))} aria-label={mode === 'month' ? 'Mois suivant' : 'Semaine suivante'}>
+                <ChevronRight className="size-4" />
+              </button>
+              {goal && (
+                <button type="button" className="icon-btn size-9" onClick={() => jump(goal.targetDate as string)} aria-label={`Aller à l’échéance : ${goal.title}`} title="Aller à l’échéance">
+                  <Flag className="size-4" />
+                </button>
+              )}
+            </div>
+          }
+        >
+          {mode === 'month' ? (
+            <MonthCalendar
+              month={month}
+              today={today}
+              onOpenSession={openSession}
+              onOpenEvent={(e, date) => setEventDlg({ date, event: e })}
+              goals={goalsByDate}
+              phases={phases.data ?? []}
+              onPickDay={(d) => {
+                setAnchor(d)
+                setMode('week')
+              }}
+            />
+          ) : week.isError && !data ? (
+            <InlineError>{week.error.message}</InlineError>
+          ) : (
+            <div aria-live="polite" aria-busy={week.isFetching}>
+              <WeekTotals week={data} />
+            </div>
+          )}
+        </Card>
+      )}
 
-      <div className={cn('mt-4 transition-opacity', stale && 'is-refetching', mode === 'month' && 'hidden')} aria-busy={week.isFetching}>
+      <div className={cn('mt-4 transition-opacity', stale && 'is-refetching', mode !== 'week' && 'hidden')} aria-busy={week.isFetching}>
         <div className="hidden gap-3 xl:grid xl:grid-cols-7">
           {days.map((d) => (
             <DayBlock key={d.date} day={d} today={today} layout="column" events={eventsOf(d.date)} goal={goalsByDate.get(d.date) ?? null} onAdd={addSession} onEdit={editSession} onDelete={setDeleteSession} onOpen={openSession} onEvent={setEventDlg} />

@@ -1,7 +1,7 @@
 // Synthetic activity catalogue relative to today (generic places, synthetic ids).
 
 import type { Sport } from '../api/types'
-import { addDays, todayISO } from '../lib/format'
+import { addDays, diffDays, todayISO } from '../lib/format'
 import { elevGainLoss, hashStr, isRunKind, mean, rng, round, simulate, type Phase, type RunSpec, type Simulation } from './sim'
 
 export interface CatalogItem {
@@ -302,6 +302,21 @@ function buildOther(name: string, type: string, startLocal: string, durationS: n
   }
 }
 
+/** A race far back in the history (beyond the 82 synced days) so a month/year jump has something to find. */
+export const MARATHON_DATE = '2025-04-14'
+
+function marathonDef(daysAgo: number): RunDef {
+  return {
+    daysAgo,
+    time: '08:45:00',
+    name: 'Marathon',
+    type: 'running',
+    location: 'Paris',
+    spec: { ...baseSpec, phases: [{ kind: 'run', durationS: 11_120, pace: 263 }], cadence: 181, hrRef: 158, drift: 0.07, elev: { base: 40, amp: 12, cycles: 3, trend: 0 } },
+    strava: { title: 'Marathon', description: 'Premier marathon, objectif sous 3h05.', privateNote: '', rpe: 9, relativeEffort: 312 },
+  }
+}
+
 let cache: { today: string; items: CatalogItem[] } | null = null
 
 export function getCatalog(today = todayISO()): CatalogItem[] {
@@ -327,6 +342,11 @@ export function getCatalog(today = todayISO()): CatalogItem[] {
     stravaId: onStrava ? 70_000_000 + i * 104_729 : null,
   }))
   items.reverse()
+  const ago = diffDays(MARATHON_DATE, today)
+  if (ago > 82) {
+    const { onStrava, ...m } = buildRun(marathonDef(ago), today)
+    items.push({ ...m, id: 100, garminId: 89_990_000, stravaId: onStrava ? 69_990_000 : null })
+  }
   cache = { today, items }
   return items
 }
