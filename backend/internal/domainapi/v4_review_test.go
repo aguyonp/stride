@@ -45,13 +45,13 @@ func TestBodyMapRejectsForeignActivities(t *testing.T) {
 	if code, body := e.do(2, "GET", "/api/bodymap", nil, &ov); code != 200 || len(ov.Entries) != 1 || ov.Entries[0].ActivityName != nil {
 		t.Fatalf("foreign activity name leaked: %d %s", code, body)
 	}
-	for _, q := range []string{"days=3", "days=400", "days=abc", "zone=elbow"} {
+	for _, q := range []string{"days=3", "days=4000", "days=abc", "zone=elbow"} {
 		if code, _ := e.do(2, "GET", "/api/bodymap?"+q, nil, nil); code != http.StatusBadRequest {
 			t.Fatalf("%s: %d", q, code)
 		}
 	}
-	if code, _ := e.do(2, "GET", "/api/bodymap?days=365", nil, nil); code != 200 {
-		t.Fatal("days=365 refused")
+	if code, _ := e.do(2, "GET", "/api/bodymap?days=3650", nil, nil); code != 200 {
+		t.Fatal("days=3650 refused")
 	}
 }
 
@@ -82,10 +82,10 @@ func TestPublicShareNewUserHasNoFabricatedMetrics(t *testing.T) {
 	}
 	ls := v.LoadSummary
 	if v.Athlete.DisplayName != "bob" || ls.EFLatest != nil || ls.EFTrendPct != nil || ls.ImpactLoad7d != nil || ls.JointIndex7d != nil ||
-		ls.ACWR != nil || ls.Verdict != nil || len(v.RecentSessions) != 0 || len(v.LoadSeries) != 42 {
+		ls.ACWR != nil || ls.Verdict != nil || len(*v.RecentSessions) != 0 || len(*v.LoadSeries) != 84 {
 		t.Fatalf("new user view: %+v %+v", v.Athlete, ls)
 	}
-	for _, p := range v.LoadSeries {
+	for _, p := range *v.LoadSeries {
 		if p.EFSpeed != nil || p.ImpactLoad7d != nil || p.JointIndex7d != nil || p.ACWR != nil {
 			t.Fatalf("fabricated series point: %+v", p)
 		}
@@ -103,14 +103,14 @@ func TestPublicShareRealMetricsCacheAndRevocation(t *testing.T) {
 		t.Fatalf("list must reopen the sealed URL: %+v", list)
 	}
 	var v domain.PublicShareView
-	if code, body := publicGet(t, e, token, &v); code != 200 || len(v.RecentSessions) == 0 {
+	if code, body := publicGet(t, e, token, &v); code != 200 || v.RecentSessions == nil || len(*v.RecentSessions) == 0 {
 		t.Fatalf("public view: %d %s", code, body)
 	}
 	if v.Athlete.DisplayName != "admin" {
 		t.Fatalf("display name: %q", v.Athlete.DisplayName)
 	}
 	// session metrics are the activity's own (Garmin impact load, persisted EF and joint index)
-	for _, it := range v.RecentSessions {
+	for _, it := range *v.RecentSessions {
 		if it.ID != e.id(`SELECT id FROM activities WHERE garmin_id = 1001`) {
 			continue
 		}

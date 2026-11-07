@@ -1,6 +1,7 @@
 package domainapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -31,12 +32,19 @@ func registerV4(mux *http.ServeMux, user func(string, http.HandlerFunc), a *api)
 	// Secure read-only share links
 	user("GET /api/share", a.listShareLinks)
 	user("POST /api/share", a.createShareLink)
+	user("PATCH /api/share/{id}", a.patchShareLink)
 	user("DELETE /api/share/{id}", a.deleteShareLink)
 	mux.HandleFunc("GET /api/public/share/{token}", a.publicShare)
 
 	// Async jobs
 	user("GET /api/jobs", a.listJobs)
 	user("GET /api/jobs/{id}", a.getJob)
+
+	// 4.1.0
+	user("GET /api/health/status", a.healthStatus)
+	user("PUT /api/health/status", a.putHealthStatus)
+	user("POST /api/sync/history", a.syncHistory)
+	user("GET /api/search", a.search)
 }
 
 // ---------- Cycles ----------
@@ -136,8 +144,8 @@ func (a *api) bodyMap(w http.ResponseWriter, r *http.Request) {
 		days := 90
 		if raw := r.URL.Query().Get("days"); raw != "" {
 			d, err := strconv.Atoi(raw)
-			if err != nil || d < 7 || d > 365 {
-				badRequest(w, "days doit être un entier compris entre 7 et 365.")
+			if err != nil || d < 7 || d > 3650 {
+				badRequest(w, "days doit être un entier compris entre 7 et 3650.")
 				return
 			}
 			days = d
@@ -189,13 +197,25 @@ func (a *api) listShareLinks(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) createShareLink(w http.ResponseWriter, r *http.Request) {
 	a.withUser(w, r, func(uid int64) {
-		var in domain.ShareLinkInput
+		var in map[string]json.RawMessage
 		if err := httpx.Decode(w, r, &in, 4<<10); err != nil {
 			badRequest(w, "Corps JSON invalide.")
 			return
 		}
 		v, err := a.s.CreateShareLink(r.Context(), uid, in)
 		a.created(w, r, v, err)
+	})
+}
+
+func (a *api) patchShareLink(w http.ResponseWriter, r *http.Request) {
+	a.withID(w, r, func(uid, id int64) {
+		var in map[string]json.RawMessage
+		if err := httpx.Decode(w, r, &in, 4<<10); err != nil {
+			badRequest(w, "Corps JSON invalide.")
+			return
+		}
+		v, err := a.s.PatchShareLink(r.Context(), uid, id, in)
+		a.reply(w, r, v, err)
 	})
 }
 

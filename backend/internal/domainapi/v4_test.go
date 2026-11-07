@@ -238,10 +238,7 @@ func TestSecureShareLinks(t *testing.T) {
 	e := setup(t)
 
 	// 1. Create a share link
-	in := domain.ShareLinkInput{
-		Label:         "Partage Médecin du Sport",
-		ExpiresInDays: func() *int { d := 30; return &d }(),
-	}
+	in := m{"label": "Partage Médecin du Sport", "expiresInDays": 30}
 	var link domain.ShareLink
 	code, raw := e.do(2, "POST", "/api/share", in, &link)
 	if code != http.StatusCreated {
@@ -287,10 +284,7 @@ func TestSecureShareLinks(t *testing.T) {
 
 	// 4. Test expired link returns 410 Gone
 	pastTime := time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)
-	expiredIn := domain.ShareLinkInput{
-		Label:     "Lien Expiré",
-		ExpiresAt: &pastTime,
-	}
+	expiredIn := m{"label": "Lien Expiré", "expiresAt": pastTime}
 	var expLink domain.ShareLink
 	code, raw = e.do(2, "POST", "/api/share", expiredIn, &expLink)
 	if code != http.StatusCreated {
