@@ -1,5 +1,10 @@
 # Stride
 
+[![CI](https://github.com/aguyonp/stride/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/aguyonp/stride/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/aguyonp/stride?sort=semver&display_name=tag)](https://github.com/aguyonp/stride/releases)
+[![Image](https://img.shields.io/badge/ghcr.io-aguyonp%2Fstride-blue?logo=docker)](https://github.com/aguyonp/stride/pkgs/container/stride)
+[![Go](https://img.shields.io/github/go-mod/go-version/aguyonp/stride?filename=backend%2Fgo.mod)](backend/go.mod)
+
 Stride merges your Garmin and Strava telemetry, computes biomechanics, aerobic efficiency, cumulative impact, ACWR load and readiness, structures Macro/Méso/Micro training cycles, correlates localized musculoskeletal stress with shoe wear and terrain, and streams AI-coach analyses in real time. Plans export to `.FIT`, clinical views share via revocable read-only links, and authentication uses WebAuthn passkeys only.
 
 ![Stride dashboard (demo data)](docs/screenshot.png)
@@ -76,3 +81,7 @@ make dev-frontend   # Vite on :5173 (npm run dev:mock for mocked data)
 make test           # Go race tests + frontend Vitest suite
 make docker-up      # Build locally and start docker compose (stride + valkey)
 ```
+
+## Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=aguyonp/stride&type=Date)](https://star-history.com/#aguyonp/stride&Date)
