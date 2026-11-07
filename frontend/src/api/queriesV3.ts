@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import { invalidateDomain } from './queries'
-import type { LLMAnalysis, LLMAnalyzeRequest, LLMConfigInput, NotificationInput, PlanGenerateRequest, PlannedSessionInput, PlanPhase } from './types'
+import type { LLMConfigInput, NotificationInput, PlanGenerateRequest, PlannedSessionInput, PlanPhase } from './types'
 
 const qk3 = {
   llm: ['llm'] as const,
@@ -30,16 +30,6 @@ export function useLlmMutations() {
 
 export function useAnalyses(kind: string, ref: string | null, enabled = true) {
   return useQuery({ queryKey: qk3.analyses(kind, ref ?? ''), queryFn: () => api.analyses(kind, ref as string), enabled: enabled && ref !== null })
-}
-
-export function useAnalyze() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (b: LLMAnalyzeRequest) => api.analyze(b),
-    onSuccess: (a: LLMAnalysis) => {
-      qc.setQueryData<LLMAnalysis[]>(qk3.analyses(a.kind, a.ref), (list) => [a, ...(list ?? []).filter((x) => x.id !== a.id)].slice(0, 20))
-    },
-  })
 }
 
 export function useCalendar(from: string, to: string) {
@@ -78,11 +68,6 @@ export function useNotificationMutations() {
     remove: useMutation({ mutationFn: (id: number) => api.deleteNotification(id), onSuccess: done }),
     test: useMutation({ mutationFn: (id: number) => api.testNotification(id), onSettled: done }),
   }
-}
-
-export function useImportFile() {
-  const qc = useQueryClient()
-  return useMutation({ mutationFn: (f: File) => api.importFile(f), onSuccess: () => void invalidateDomain(qc) })
 }
 
 export function useMergeShoe() {

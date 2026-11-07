@@ -42,6 +42,22 @@ function sampleOverview(entries: BodyStressEntry[]): BodyMapOverview {
         },
         summary: 'Les gênes rotuliennes apparaissent lors des sorties à fort D−.',
       },
+      {
+        zone: 'achilles',
+        zoneLabel: BODY_ZONE_META.achilles.label,
+        factor: 'shoe_drop',
+        factorLabel: 'Drop chaussure',
+        unit: 'mm',
+        symptomaticMean: null,
+        baselineMean: null,
+        deltaPct: null,
+        symptomaticRuns: 1,
+        baselineRuns: null,
+        confidence: null,
+        shoeHighlight: null,
+        summary: null,
+        insufficientData: true,
+      },
     ],
   }
 }
@@ -159,6 +175,12 @@ describe('BodyMapView', () => {
       expect(document.body.textContent).toContain('Fiabilité élevée')
       expect(document.body.textContent).toContain('Pegasus 41')
     })
+
+    const items = Array.from(document.querySelectorAll('[aria-label="Facteurs de corrélation biomécanique"] > li'))
+    expect(items).toHaveLength(2)
+    expect(items[1].textContent).toContain('Drop chaussure')
+    expect(items[1].textContent).toContain('Données insuffisantes')
+    expect(items[1].textContent).not.toMatch(/Fiabilité|\d/)
 
     // Click the Achilles anatomical hotspot to filter
     const achillesHotspot = document.querySelector('[data-zone="achilles"][role="button"]')!

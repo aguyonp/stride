@@ -932,7 +932,7 @@ export interface PlanAdaptPreview {
 
 export type JobQueue = 'critical' | 'default' | 'low'
 export type JobState = 'queued' | 'running' | 'retrying' | 'completed' | 'failed'
-export type JobKind =
+type JobKind =
   | 'sync.provider'
   | 'sync.strava_webhook'
   | 'sync.resync'
@@ -964,13 +964,13 @@ export interface JobListResponse {
   items: JobStatus[]
 }
 
-export interface StreamConnectedEvent {
+interface StreamConnectedEvent {
   status: 'ok'
   userId: number
   serverTime: string
 }
 
-export interface StreamAlertEvent {
+interface StreamAlertEvent {
   id: string
   activityId: number | null
   date: string
@@ -981,14 +981,14 @@ export interface StreamAlertEvent {
   createdAt: string
 }
 
-export interface StreamLLMTokenEvent {
+interface StreamLLMTokenEvent {
   jobId: string
   kind: string
   ref: string
   delta: string
 }
 
-export interface StreamLLMDoneEvent {
+interface StreamLLMDoneEvent {
   jobId: string
   kind: string
   ref: string
@@ -1005,7 +1005,6 @@ export interface StrideStreamEventMap {
   'alert.triggered': StreamAlertEvent
   'llm.token': StreamLLMTokenEvent
   'llm.done': StreamLLMDoneEvent
-  'meter.updated': MeterSnapshot
 }
 
 export type PhaseType = 'foundation' | 'build' | 'threshold' | 'specific' | 'assimilation' | 'taper' | 'recovery'
@@ -1165,14 +1164,15 @@ export interface BodyZoneSummary {
   trend: 'improving' | 'stable' | 'worsening' | 'none'
 }
 
-export interface BodyShoeHighlight {
+interface BodyShoeHighlight {
   shoeId: number
   shoeName: string
   dropMm: number | null
-  distanceKm: number
-  painEpisodes: number
+  distanceKm: number | null
+  painEpisodes: number | null
 }
 
+// Every measured value is null when the backend lacks the data to compute it; no fallback is fabricated.
 export interface BodyCorrelationFactor {
   zone: BodyZone
   zoneLabel: string
@@ -1182,11 +1182,12 @@ export interface BodyCorrelationFactor {
   symptomaticMean: number | null
   baselineMean: number | null
   deltaPct: number | null
-  symptomaticRuns: number
-  baselineRuns: number
-  confidence: 'insufficient' | 'low' | 'moderate' | 'high'
+  symptomaticRuns: number | null
+  baselineRuns: number | null
+  confidence: 'insufficient' | 'low' | 'moderate' | 'high' | null
   shoeHighlight: BodyShoeHighlight | null
-  summary: string
+  summary: string | null
+  insufficientData?: boolean
 }
 
 export interface BodyMapOverview {
@@ -1251,7 +1252,7 @@ export interface PublicLoadPoint {
   jointIndex7d: number | null
 }
 
-export interface PublicShoeItem {
+interface PublicShoeItem {
   id: number
   name: string
   brand: string

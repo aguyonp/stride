@@ -10,7 +10,8 @@ import {
   type QueryKey,
 } from '@tanstack/react-query'
 import { api, ApiError, type ListActivitiesParams } from './client'
-import { resetEventStore } from '../state/events'
+import { ADMIN_METER_POLL_MS, fallbackPollInterval } from './polling'
+import { resetEventStore, useHasActiveJob, useStreamConnected } from '../state/events'
 import type {
   LogFilter,
   ActivityNotesInput,
@@ -187,12 +188,21 @@ export function useIntegrationMutations() {
   }
 }
 
+/** Polling interval factory for queries the event stream normally keeps fresh. */
+export function useFallbackPoll() {
+  const streamConnected = useStreamConnected()
+  const jobsBusy = useHasActiveJob()
+  return (busy = false) => fallbackPollInterval({ streamConnected, busy: busy || jobsBusy })
+}
+
 export function useSyncStatus(enabled = true) {
+  const poll = useFallbackPoll()
   return useQuery({
     queryKey: qk.sync,
     queryFn: api.syncStatus,
     enabled,
     staleTime: 15_000,
+    refetchInterval: (q) => poll(q.state.data?.running === true),
   })
 }
 
@@ -358,7 +368,7 @@ export function useAdminSettings() {
   return useQuery({ queryKey: qk.admin.settings, queryFn: api.adminSettings })
 }
 export function useAdminMeter() {
-  return useQuery({ queryKey: qk.admin.meter, queryFn: api.adminMeter })
+  return useQuery({ queryKey: qk.admin.meter, queryFn: api.adminMeter, refetchInterval: ADMIN_METER_POLL_MS })
 }
 export function useAdminLogs(f: LogFilter) {
   return useInfiniteQuery({

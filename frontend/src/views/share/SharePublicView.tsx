@@ -6,10 +6,11 @@ import { BodyAnatomySvg } from '../../components/bodymap/BodyAnatomySvg'
 import { BodyCorrelationList } from '../../components/bodymap/BodyCorrelationList'
 import { BODY_SIDE_LABEL, BODY_ZONE_META, effectiveZoneScore, painScoreTone, TREND_META } from '../../components/bodymap/bodyMapMeta'
 import { Ambient } from '../../components/layout/Ambient'
-import { PHASE_TYPE_META } from '../../components/plan/CyclesTimeline'
+import { PHASE_TYPE_META } from '../../components/plan/cycles/cycleMeta'
 import { Card } from '../../components/ui/Card'
 import { StrideMark } from '../../components/ui/icons'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { Insufficient } from '../../components/ui/Value'
 import { ReadinessBanner } from '../../components/v3/ReadinessBanner'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { useTheme } from '../../hooks/useTheme'
@@ -314,8 +315,8 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
           <div className="glass-inset p-3">
             <dt className="text-xs text-ink-3">Efficiency Factor</dt>
             <dd className="num mt-1 flex items-baseline gap-1.5 text-lg font-bold text-ink">
-              <span>{isNum(loadSummary.efLatest) ? fmtNumber(loadSummary.efLatest, 2) : 'N/D'}</span>
-              {isNum(loadSummary.efTrendPct) && (
+              {isNum(loadSummary.efLatest) ? <span>{fmtNumber(loadSummary.efLatest, 2)}</span> : <Insufficient />}
+              {isNum(loadSummary.efLatest) && isNum(loadSummary.efTrendPct) && (
                 <span className={cn('text-xs font-semibold', loadSummary.efTrendPct >= 0 ? 'text-ok' : 'text-warn')}>
                   {fmtSigned(loadSummary.efTrendPct, 1)} %
                 </span>
@@ -326,14 +327,14 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
           <div className="glass-inset p-3">
             <dt className="text-xs text-ink-3">Impact Load (7 j)</dt>
             <dd className="num mt-1 text-lg font-bold text-ink">
-              {isNum(loadSummary.impactLoad7d) ? `${fmtNumber(loadSummary.impactLoad7d, 0)} pts` : 'N/D'}
+              {isNum(loadSummary.impactLoad7d) ? `${fmtNumber(loadSummary.impactLoad7d, 0)} pts` : <Insufficient />}
             </dd>
           </div>
 
           <div className="glass-inset p-3">
             <dt className="text-xs text-ink-3">Indice articulaire (7 j)</dt>
             <dd className="num mt-1 text-lg font-bold text-ink">
-              {isNum(loadSummary.jointIndex7d) ? fmtNumber(loadSummary.jointIndex7d, 1) : 'N/D'}
+              {isNum(loadSummary.jointIndex7d) ? fmtNumber(loadSummary.jointIndex7d, 1) : <Insufficient />}
             </dd>
           </div>
         </dl>

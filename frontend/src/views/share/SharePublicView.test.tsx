@@ -218,6 +218,25 @@ describe('SharePublicView & unauthenticated /share/:token routing', () => {
     expect(document.querySelectorAll('[data-zone]').length).toBeGreaterThanOrEqual(6)
   })
 
+  it('shows « Données insuffisantes » instead of numbers when EF, impact or joint index are unknown', async () => {
+    const view = sampleShareView()
+    view.loadSummary = { ...view.loadSummary, efLatest: null, efTrendPct: 3.1, impactLoad7d: null, jointIndex7d: null }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify(view), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      ),
+    )
+
+    mounted = await mountWithProviders(<SharePublicView token="sparse-token" />, '/share/sparse-token')
+
+    const cell = (label: string) =>
+      Array.from(document.querySelectorAll('dt')).find((dt) => dt.textContent === label)?.parentElement?.textContent ?? ''
+    await waitFor(() => expect(cell('Efficiency Factor')).toBe('Efficiency FactorDonnées insuffisantes'))
+    expect(cell('Impact Load (7 j)')).toBe('Impact Load (7 j)Données insuffisantes')
+    expect(cell('Indice articulaire (7 j)')).toBe('Indice articulaire (7 j)Données insuffisantes')
+  })
+
   it('renders a dedicated French unavailable screen when the token is revoked (404) or expired (410)', async () => {
     vi.stubGlobal(
       'fetch',

@@ -6,6 +6,7 @@ import type {
   PlanDraftsResponse,
   StrideStreamEventMap,
 } from '../api/types'
+import { hasActiveJob, isJobActive } from '../api/polling'
 
 export interface LLMStreamState {
   jobId: string
@@ -100,7 +101,7 @@ export function seedJobsInStore(items: JobStatus[]) {
   })
 }
 
-export const streamRefKey = (kind: string, ref: string) => `${kind}:${ref}`
+const streamRefKey = (kind: string, ref: string) => `${kind}:${ref}`
 
 export function startLlmStream(jobId: string, kind: string, ref: string) {
   const key = streamRefKey(kind, ref)
@@ -273,9 +274,7 @@ export function isJobStatus(v: unknown): v is JobStatus {
 function selectActiveJobs(s: EventStoreState): JobStatus[] {
   const active: JobStatus[] = []
   for (const job of Object.values(s.jobs)) {
-    if (job.state === 'queued' || job.state === 'running' || job.state === 'retrying') {
-      active.push(job)
-    }
+    if (isJobActive(job.state)) active.push(job)
   }
   active.sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1))
   return active
@@ -283,6 +282,17 @@ function selectActiveJobs(s: EventStoreState): JobStatus[] {
 
 export function useActiveJobs(): JobStatus[] {
   return useEventStore(selectActiveJobs)
+}
+
+const selectConnected = (s: EventStoreState) => s.connected
+const selectHasActiveJob = (s: EventStoreState) => hasActiveJob(Object.values(s.jobs))
+
+export function useStreamConnected(): boolean {
+  return useEventStore(selectConnected)
+}
+
+export function useHasActiveJob(): boolean {
+  return useEventStore(selectHasActiveJob)
 }
 
 export function useLlmStream(jobId: string | null, kind?: string, ref?: string): LLMStreamState | null {

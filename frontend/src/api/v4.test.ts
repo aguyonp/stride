@@ -7,7 +7,8 @@ import { setFlags } from '../mocks/flags'
 import { mockFetch } from '../mocks/server'
 import { emitStreamEvent, getEventStoreState, resetEventStore, startLlmStream } from '../state/events'
 import { installDomPolyfills, mountWithProviders, waitFor } from '../test/domHarness'
-import { openapiRequest } from './openapiClient'
+import { FALLBACK_POLL_MS } from './polling'
+import type { BodyMapOverview, PublicShareView } from './types'
 
 const rawModules = import.meta.glob('../**/*.{ts,tsx}', {
   query: '?raw',
@@ -22,7 +23,7 @@ const mockCall = (method: string, path: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 
-describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller & v4 mocks', () => {
+describe('Stride 4.0.0 architecture invariants, SSE controller & v4 mocks', () => {
   beforeEach(() => {
     installDomPolyfills()
     resetEventStore()
@@ -35,7 +36,7 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
     vi.unstubAllGlobals()
   })
 
-  it('enforces the Zero Polling invariant across all production frontend source files', () => {
+  it('confines polling to the stream fallbacks declared in the API query layer', () => {
     const entries = Object.entries(rawModules).filter(
       ([path]) => !/\.test\.(ts|tsx)$/.test(path),
     )
@@ -43,54 +44,14 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
 
     const violations: string[] = []
     for (const [path, content] of entries) {
-      if (content.includes('refetchInterval')) {
-        violations.push(`${path}: contains refetchInterval`)
-      }
-      if (/\bsetInterval\s*\(/.test(content)) {
-        violations.push(`${path}: contains setInterval(`)
+      if (/\bsetInterval\s*\(/.test(content)) violations.push(`${path}: contains setInterval(`)
+      for (const line of content.split('\n')) {
+        if (!line.includes('refetchInterval')) continue
+        const allowed = /^\.\/queries(V\d+)?\.ts$/.test(path) && /poll\(|ADMIN_METER_POLL_MS/.test(line)
+        if (!allowed) violations.push(`${path}: ${line.trim()}`)
       }
     }
     expect(violations).toEqual([])
-  })
-
-  it('executes strictly typed openapiRequest calls with path params, query params, and CSRF protection', async () => {
-    const fetchSpy = vi.fn(async (_url: string, _init?: RequestInit) => {
-      return new Response(
-        JSON.stringify({
-          id: 9,
-          label: 'Coach club',
-          tokenPrefix: 'sh_abc12',
-          url: '/share/sh_abc12345',
-          expiresAt: null,
-          revoked: false,
-          revokedAt: null,
-          accessCount: 0,
-          lastAccessedAt: null,
-          createdAt: '2026-11-06T12:00:00Z',
-        }),
-        { status: 201, headers: { 'Content-Type': 'application/json' } },
-      )
-    })
-    vi.stubGlobal('fetch', fetchSpy)
-
-    const link = await openapiRequest('post', '/api/share', {
-      body: { label: 'Coach club', expiresInDays: 30 },
-    })
-    expect(link.label).toBe('Coach club')
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/share')
-    const postInit = fetchSpy.mock.calls[0][1] as RequestInit
-    expect((postInit.headers as Record<string, string>)['X-Stride-CSRF']).toBe('1')
-
-    fetchSpy.mockImplementationOnce(async () =>
-      new Response(
-        JSON.stringify({ zones: [], entries: [], correlations: [], windowDays: 90 }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    )
-    await openapiRequest('get', '/api/bodymap', {
-      query: { days: 90, zone: 'knee_pfps' },
-    })
-    expect(fetchSpy.mock.calls[1][0]).toBe('/api/bodymap?days=90&zone=knee_pfps')
   })
 
   it('processes SSE events in EventStreamController (job progress, sync cache, and LLM token streaming)', async () => {
@@ -105,9 +66,22 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
     )
 
     const mounted = await mountWithProviders(createElement(EventStreamController, { userId: 1 }), '/')
+    const jobsFetches = () => vi.mocked(fetch).mock.calls.filter(([u]) => String(u).startsWith('/api/jobs')).length
+    const jobsInterval = () => {
+      const q = mounted.queryClient.getQueryCache().find({ queryKey: ['jobs'] })
+      const opt = q?.observers[0]?.options.refetchInterval
+      return typeof opt === 'function' && q ? opt(q) : opt
+    }
 
+    // Stream down: jobs fall back to slow polling
+    await waitFor(() => expect(jobsFetches()).toBe(1))
+    expect(jobsInterval()).toBe(FALLBACK_POLL_MS)
+
+    // Every (re)connection refetches jobs and stops polling while idle
     emitStreamEvent('connected', { status: 'ok', userId: 1, serverTime: '2026-11-06T20:00:00Z' })
     expect(getEventStoreState().connected).toBe(true)
+    await waitFor(() => expect(jobsFetches()).toBe(2))
+    await waitFor(() => expect(jobsInterval()).toBe(false))
 
     emitStreamEvent('job.updated', {
       id: 'job_sync_99',
@@ -127,6 +101,7 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
       updatedAt: '2026-11-06T20:00:02Z',
     })
     expect(getEventStoreState().jobs['job_sync_99']?.processed).toBe(3)
+    await waitFor(() => expect(jobsInterval()).toBe(FALLBACK_POLL_MS))
 
     // Token-by-token LLM stream accumulation
     startLlmStream('job_llm_77', 'day', '2026-11-06')
@@ -149,6 +124,16 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
       const cached = mounted.queryClient.getQueryData<{ lastSyncAt: string }>(['sync', 'status'])
       expect(cached?.lastSyncAt).toBe('2026-11-06T20:01:00Z')
     })
+
+    emitStreamEvent('job.updated', {
+      ...getEventStoreState().jobs['job_sync_99']!,
+      state: 'completed',
+      updatedAt: '2026-11-06T20:01:00Z',
+    })
+    await waitFor(() => expect(jobsInterval()).toBe(false))
+
+    emitStreamEvent('connected', { status: 'ok', userId: 1, serverTime: '2026-11-06T20:05:00Z' })
+    await waitFor(() => expect(jobsFetches()).toBe(3))
 
     await mounted.unmount()
   })
@@ -176,10 +161,12 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
     const createdCycles = await createdCyclesRes.json()
     expect(createdCycles.activePlan.name).toBe('Prépa 10 km Hiver')
 
-    // BodyMap
-    const bm = await (await mockCall('GET', '/api/bodymap?days=90')).json()
+    // BodyMap: realistic factors where data allows, explicit insufficient data elsewhere
+    const bm = (await (await mockCall('GET', '/api/bodymap?days=90')).json()) as BodyMapOverview
     expect(bm.zones).toHaveLength(6)
-    expect(bm.correlations.length).toBeGreaterThan(0)
+    expect(bm.correlations.some((c) => !c.insufficientData && c.symptomaticMean !== null)).toBe(true)
+    const thin = bm.correlations.find((c) => c.insufficientData)
+    expect(thin).toMatchObject({ symptomaticMean: null, baselineMean: null, deltaPct: null, confidence: null })
 
     const newEntryRes = await mockCall('POST', '/api/bodymap/entries', {
       date: '2026-11-06',
@@ -204,8 +191,9 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
     db().sessionUserId = null
     const pubOk = await mockCall('GET', `/api/public/share/${token}`)
     expect(pubOk.status).toBe(200)
-    const pubPayload = await pubOk.json()
+    const pubPayload = (await pubOk.json()) as PublicShareView
     expect(pubPayload.shareLabel).toBe('Cabinet Kiné Sport')
+    expect(pubPayload.loadSummary.efLatest).not.toBeNull()
 
     // Expired link returns 410 GONE
     const pubExpired = await mockCall('GET', '/api/public/share/expired-token')
@@ -218,5 +206,22 @@ describe('Stride 4.0.0 architecture invariants, OpenAPI client, SSE controller &
 
     const pubRevoked = await mockCall('GET', `/api/public/share/${token}`)
     expect(pubRevoked.status).toBe(404)
+  })
+
+  it('returns nulls and insufficientData flags, never fabricated values, under the sparse scenario', async () => {
+    setFlags(['admin', 'sparse'])
+    resetDb()
+
+    const bm = (await (await mockCall('GET', '/api/bodymap?days=90')).json()) as BodyMapOverview
+    expect(bm.correlations.length).toBeGreaterThan(0)
+    for (const c of bm.correlations) {
+      expect(c).toMatchObject({ insufficientData: true, symptomaticMean: null, symptomaticRuns: null, confidence: null, summary: null })
+    }
+
+    const share = await (await mockCall('POST', '/api/share', { label: 'Coach', expiresInDays: 7 })).json()
+    const view = (await (await mockCall('GET', `/api/public/share/${String(share.url).replace('/share/', '')}`)).json()) as PublicShareView
+    expect(view.loadSummary).toMatchObject({ efLatest: null, efTrendPct: null, impactLoad7d: null, jointIndex7d: null })
+    expect(view.loadSeries.every((p) => p.efSpeed === null && p.impactLoad7d === null && p.jointIndex7d === null)).toBe(true)
+    expect(view.recentSessions.every((r) => r.efSpeed === null && r.impactLoad === null && r.jointIndex === null)).toBe(true)
   })
 })

@@ -5,7 +5,7 @@ import { useIntegrations, useStartSync, useSyncStatus } from '../../api/queries'
 import type { JobQueue, JobStatus, ProviderSync, SyncStatus } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtClock, fmtNumber, fmtWhen } from '../../lib/format'
-import { useActiveJobs, useEventStore } from '../../state/events'
+import { useActiveJobs, useStreamConnected } from '../../state/events'
 import { Popover } from '../ui/Popover'
 
 type Tone = 'running' | 'cooldown' | 'error' | 'ok' | 'idle'
@@ -109,7 +109,7 @@ export function SyncIndicator() {
   const integ = useIntegrations()
   const connected = integ.data ? integ.data.garmin.connected || integ.data.strava.connected : true
   const activeJobs = useActiveJobs()
-  const streamLive = useEventStore((st) => st.connected)
+  const streamLive = useStreamConnected()
   const status = useSyncStatus(connected)
   const start = useStartSync()
   const s = status.data
@@ -153,7 +153,7 @@ export function SyncIndicator() {
             <p className="text-sm font-semibold text-ink">Synchronisation & file</p>
             <span className={cn('inline-flex items-center gap-1 text-[11px]', streamLive || IS_MOCK ? 'text-ok' : 'text-ink-3')}>
               <Radio className="size-3" aria-hidden="true" />
-              {streamLive ? 'Temps réel actif' : IS_MOCK ? 'Flux simulé' : 'Connexion…'}
+              {IS_MOCK ? 'Flux simulé' : streamLive ? 'Temps réel actif' : 'Connexion…'}
             </span>
           </div>
           <p className={cn('num mt-0.5 text-xs', color)} aria-live="polite">

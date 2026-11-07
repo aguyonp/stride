@@ -1,4 +1,5 @@
 import type { BodyCorrelationFactor, BodySide, BodyZone, BodyZoneSummary } from '../../api/types'
+import { fmtNumber, isNum } from '../../lib/format'
 
 export const BODY_ZONE_META: Record<
   BodyZone,
@@ -64,11 +65,39 @@ export const TREND_META: Record<BodyZoneSummary['trend'], { label: string; cls: 
   none: { label: 'Aucun signal', cls: 'border-line bg-track/60 text-ink-3' },
 }
 
-export const CONFIDENCE_META: Record<BodyCorrelationFactor['confidence'], { label: string; cls: string }> = {
+const CONFIDENCE_META: Record<NonNullable<BodyCorrelationFactor['confidence']>, { label: string; cls: string }> = {
   high: { label: 'Fiabilité élevée', cls: 'border-ok/30 bg-ok/12 text-ok' },
   moderate: { label: 'Fiabilité modérée', cls: 'border-info/30 bg-info/12 text-info' },
   low: { label: 'Fiabilité faible', cls: 'border-warn/30 bg-warn/12 text-warn' },
   insufficient: { label: 'Données insuffisantes', cls: 'border-line bg-track text-ink-3' },
+}
+
+/** True when the backend could not compute a usable comparison for this factor. */
+export function isCorrelationInsufficient(c: BodyCorrelationFactor): boolean {
+  return c.insufficientData === true || (c.symptomaticMean === null && c.baselineMean === null && c.deltaPct === null)
+}
+
+/** Confidence chip, hidden when unknown or redundant with the insufficient-data notice. */
+export function correlationConfidence(c: BodyCorrelationFactor): { label: string; cls: string } | null {
+  if (c.confidence === null || isCorrelationInsufficient(c)) return null
+  return CONFIDENCE_META[c.confidence]
+}
+
+export function fmtMeasure(v: number | null, unit: string): string | null {
+  return isNum(v) ? `${fmtNumber(v, 1, { trim: true })} ${unit}` : null
+}
+
+export function correlationSample(c: BodyCorrelationFactor): string | null {
+  if (!isNum(c.symptomaticRuns) || !isNum(c.baselineRuns)) return null
+  return `${c.symptomaticRuns} avec gêne · ${c.baselineRuns} réf.`
+}
+
+export function shoeHighlightDetail(h: NonNullable<BodyCorrelationFactor['shoeHighlight']>): string {
+  const parts: string[] = []
+  if (isNum(h.dropMm)) parts.push(`Drop ${fmtNumber(h.dropMm)} mm`)
+  if (isNum(h.distanceKm)) parts.push(`${fmtNumber(h.distanceKm, 0)} km`)
+  if (isNum(h.painEpisodes)) parts.push(`${h.painEpisodes} épisode${h.painEpisodes > 1 ? 's' : ''}`)
+  return parts.join(' · ')
 }
 
 export function effectiveZoneScore(z: BodyZoneSummary | undefined): number {

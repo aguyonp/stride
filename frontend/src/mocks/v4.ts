@@ -1,5 +1,6 @@
 // 4.0.0 mock endpoints (§13): background jobs + synthetic SSE streaming, macro/meso/micro training cycles,
 // anatomical body stress map & biomechanical correlations, and read-only physio/coach share links.
+// Flag: sparse (too little data: correlations flagged insufficientData, share-view EF / impact / joint index null).
 
 import type {
   ApiErrorBody,
@@ -30,8 +31,9 @@ import type {
   TrainingWeekInput,
 } from '../api/types'
 import { ALL_BODY_ZONES, BODY_ZONE_META } from '../components/bodymap/bodyMapMeta'
-import { addDays, diffDays, mondayOf, todayISO } from '../lib/format'
+import { addDays, diffDays, isNum, mondayOf, todayISO } from '../lib/format'
 import { emitStreamEvent } from '../state/events'
+import type { CatalogItem } from './catalog'
 import { db, nextId, userData, type MockUser, type UserData } from './db'
 import { avgGct, gapSummary, loadRatio, notesOf, plannedWithMatch, sourceMode, summarize, visibleItems } from './domain'
 import { has } from './flags'
@@ -198,7 +200,7 @@ function scaffoldPhasesForPlan(
   return { phases, weeks }
 }
 
-export function v4Of(data: UserData, userId = 1): V4Data {
+function v4Of(data: UserData, userId = 1): V4Data {
   if (!data.v4) {
     const today = todayISO()
     const seeded = !has('empty') && data.shoes.length > 0
@@ -398,7 +400,7 @@ function computeActualsForRange(
   return { actuals, workouts: planned }
 }
 
-export function buildCyclesOverview(
+function buildCyclesOverview(
   data: UserData,
   userId = 1,
   requestedPlanId?: number | null,
@@ -543,7 +545,36 @@ export function buildCyclesOverview(
 
 /* ---------------------------------- Body Map computation ---------------------------------- */
 
-export function buildBodyMapOverview(
+const deltaPct = (value: number, baseline: number) => Math.round((value / baseline - 1) * 1000) / 10
+
+const PRIMARY_FACTOR: Record<BodyZone, Pick<BodyCorrelationFactor, 'factor' | 'factorLabel' | 'unit'>> = {
+  knee_pfps: { factor: 'elev_loss', factorLabel: 'Dénivelé négatif (D−)', unit: 'm' },
+  achilles: { factor: 'shoe_drop', factorLabel: 'Drop chaussure', unit: 'mm' },
+  plantar_fascia: { factor: 'shoe_drop', factorLabel: 'Drop chaussure', unit: 'mm' },
+  shin_splints: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
+  iliotibial_band: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
+  hamstrings_calves: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
+}
+
+// Too few episodes to compare symptomatic and reference runs: the backend sends nulls, never estimates.
+function insufficientFactor(z: BodyZoneSummary): BodyCorrelationFactor {
+  return {
+    zone: z.zone,
+    zoneLabel: z.zoneLabel,
+    ...PRIMARY_FACTOR[z.zone],
+    symptomaticMean: null,
+    baselineMean: null,
+    deltaPct: null,
+    symptomaticRuns: has('sparse') ? null : z.entriesCount90d,
+    baselineRuns: null,
+    confidence: null,
+    shoeHighlight: null,
+    summary: null,
+    insufficientData: true,
+  }
+}
+
+function buildBodyMapOverview(
   data: UserData,
   userId: number,
   windowDays: number,
@@ -599,20 +630,20 @@ export function buildBodyMapOverview(
   )
 
   for (const z of activeZonesWithPain) {
-    if (z.zone === 'knee_pfps') {
+    if (has('sparse') || z.entriesCount90d < 2) {
+      correlations.push(insufficientFactor(z))
+    } else if (z.zone === 'knee_pfps') {
       correlations.push(
         {
           zone: 'knee_pfps',
           zoneLabel: z.zoneLabel,
-          factor: 'elev_loss',
-          factorLabel: 'Dénivelé négatif (D−)',
-          unit: 'm',
+          ...PRIMARY_FACTOR.knee_pfps,
           symptomaticMean: 168,
           baselineMean: 54,
           deltaPct: 211.1,
-          symptomaticRuns: Math.max(2, z.entriesCount90d),
+          symptomaticRuns: z.entriesCount90d,
           baselineRuns: 14,
-          confidence: z.entriesCount90d >= 2 ? 'high' : 'low',
+          confidence: 'high',
           shoeHighlight: null,
           summary: 'Les épisodes rotuliens surviennent sur des sorties comportant plus de 3× le D− habituel.',
         },
@@ -622,10 +653,10 @@ export function buildBodyMapOverview(
           factor: 'shoe_wear',
           factorLabel: 'Usure chaussure',
           unit: 'km',
-          symptomaticMean: primaryShoe ? Math.round(primaryShoe.distanceKm) : 540,
+          symptomaticMean: primaryShoe ? Math.round(primaryShoe.distanceKm) : null,
           baselineMean: 245,
-          deltaPct: 120.4,
-          symptomaticRuns: Math.max(2, z.entriesCount90d),
+          deltaPct: primaryShoe ? deltaPct(primaryShoe.distanceKm, 245) : null,
+          symptomaticRuns: z.entriesCount90d,
           baselineRuns: 14,
           confidence: 'moderate',
           shoeHighlight: primaryShoe
@@ -634,7 +665,7 @@ export function buildBodyMapOverview(
                 shoeName: primaryShoe.name,
                 dropMm: primaryShoe.dropMm,
                 distanceKm: primaryShoe.distanceKm,
-                painEpisodes: Math.max(1, z.entriesCount90d),
+                painEpisodes: z.entriesCount90d,
               }
             : null,
           summary: 'Gêne plus fréquente avec les paires dépassant 500 km de roulage.',
@@ -645,22 +676,20 @@ export function buildBodyMapOverview(
       correlations.push({
         zone: z.zone,
         zoneLabel: z.zoneLabel,
-        factor: 'shoe_drop',
-        factorLabel: 'Drop chaussure',
-        unit: 'mm',
-        symptomaticMean: lowDropShoe?.dropMm ?? 4,
+        ...PRIMARY_FACTOR[z.zone],
+        symptomaticMean: lowDropShoe?.dropMm ?? null,
         baselineMean: 8.5,
-        deltaPct: -52.9,
-        symptomaticRuns: Math.max(1, z.entriesCount90d),
+        deltaPct: isNum(lowDropShoe?.dropMm) ? deltaPct(lowDropShoe.dropMm, 8.5) : null,
+        symptomaticRuns: z.entriesCount90d,
         baselineRuns: 15,
-        confidence: z.entriesCount90d >= 2 ? 'moderate' : 'low',
+        confidence: 'moderate',
         shoeHighlight: lowDropShoe
           ? {
               shoeId: lowDropShoe.id,
               shoeName: lowDropShoe.name,
               dropMm: lowDropShoe.dropMm,
               distanceKm: lowDropShoe.distanceKm,
-              painEpisodes: Math.max(1, z.entriesCount90d),
+              painEpisodes: z.entriesCount90d,
             }
           : null,
         summary: 'Raideur matinale accrue après les séances courues avec un drop réduit.',
@@ -669,13 +698,11 @@ export function buildBodyMapOverview(
       correlations.push({
         zone: z.zone,
         zoneLabel: z.zoneLabel,
-        factor: 'gct',
-        factorLabel: 'Temps de contact au sol (GCT)',
-        unit: 'ms',
+        ...PRIMARY_FACTOR[z.zone],
         symptomaticMean: 258,
         baselineMean: 241,
         deltaPct: 7.1,
-        symptomaticRuns: Math.max(1, z.entriesCount90d),
+        symptomaticRuns: z.entriesCount90d,
         baselineRuns: 14,
         confidence: z.entriesCount90d >= 3 ? 'moderate' : 'low',
         shoeHighlight: null,
@@ -694,6 +721,57 @@ export function buildBodyMapOverview(
 
 /* ---------------------------------- Public Share View builder ---------------------------------- */
 
+interface SessionHealth {
+  date: string
+  ef: number | null
+  impact: number | null
+  joint: number | null
+}
+
+const round = (v: number, decimals: number) => Math.round(v * 10 ** decimals) / 10 ** decimals
+
+function sumOrNull(values: (number | null)[]): number | null {
+  const known = values.filter(isNum)
+  return known.length ? known.reduce((a, b) => a + b, 0) : null
+}
+
+function meanOrNull(values: (number | null)[], min = 1): number | null {
+  const known = values.filter(isNum)
+  return known.length >= min ? known.reduce((a, b) => a + b, 0) / known.length : null
+}
+
+// Health metrics are derived from sessions only; with `sparse` (or no eligible session) they stay null.
+function sessionHealth(it: CatalogItem, data: UserData): SessionHealth {
+  const rich = enrichActivityView(buildActivityView(it, data), it, data)
+  const steps = rich.impact?.steps
+  return {
+    date: it.date,
+    ef: rich.efficiency?.eligible ? rich.efficiency.efSpeed : null,
+    impact: steps ? Math.round(steps / 25) : null,
+    joint: rich.impact?.jointIndex ?? null,
+  }
+}
+
+function healthWindow(health: SessionHealth[], date: string) {
+  const week = health.filter((h) => h.date <= date && h.date > addDays(date, -7))
+  const ef = health.find((h) => h.date <= date && h.date > addDays(date, -28) && isNum(h.ef))?.ef ?? null
+  const impact = sumOrNull(week.map((h) => h.impact))
+  const joint = sumOrNull(week.map((h) => h.joint))
+  return {
+    efSpeed: isNum(ef) ? round(ef, 2) : null,
+    impactLoad7d: isNum(impact) ? Math.round(impact) : null,
+    jointIndex7d: isNum(joint) ? round(joint, 1) : null,
+  }
+}
+
+function efTrendPct(health: SessionHealth[], today: string): number | null {
+  const efIn = (from: number, to: number) =>
+    health.filter((h) => h.date > addDays(today, -from) && h.date <= addDays(today, -to)).map((h) => h.ef)
+  const recent = meanOrNull(efIn(28, 0), 2)
+  const previous = meanOrNull(efIn(56, 28), 2)
+  return isNum(recent) && isNum(previous) ? round((recent / previous - 1) * 100, 1) : null
+}
+
 function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare): PublicShareView {
   const today = todayISO()
   const mode = sourceMode(data)
@@ -701,6 +779,9 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
   const items = visibleItems(data, today)
   const planned = plannedWithMatch(data, items, today)
   const lr = loadRatio(items, today, mode)
+
+  const sparse = has('sparse')
+  const health = sparse ? [] : items.filter((it) => it.date > addDays(today, -56)).map((it) => sessionHealth(it, data))
 
   const loadSeries: PublicLoadPoint[] = []
   for (let d = 41; d >= 0; d--) {
@@ -711,15 +792,14 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
       acute: Math.round(pointLr?.acute ?? 0),
       chronic: Math.round(pointLr?.chronic ?? 0),
       acwr: pointLr && pointLr.ratio !== null ? Math.round(pointLr.ratio * 100) / 100 : null,
-      efSpeed: 1.48,
-      impactLoad7d: 420,
-      jointIndex7d: 6.4,
+      ...healthWindow(health, dt),
     })
   }
+  const latestHealth = healthWindow(health, today)
 
   const recentSessions: PublicActivityItem[] = items.slice(0, 12).map((it) => {
     const sum = summarize(it, data, planned)
-    const rich = enrichActivityView(buildActivityView(it, data), it, data)
+    const h = sparse ? null : sessionHealth(it, data)
     const notes = notesOf(data, it.id)
     const shoe = notes.shoeId ? data.shoes.find((s) => s.id === notes.shoeId) ?? null : null
     return {
@@ -739,9 +819,9 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
       elevGainM: it.base.elevGainM,
       elevLossM: it.base.elevLossM,
       trainingLoad: it.base.trainingLoad,
-      impactLoad: rich.impact?.steps ? Math.round(rich.impact.steps / 25) : null,
-      jointIndex: rich.impact?.jointIndex ?? null,
-      efSpeed: rich.efficiency?.efSpeed ?? null,
+      impactLoad: h?.impact ?? null,
+      jointIndex: h?.joint ?? null,
+      efSpeed: h?.ef ?? null,
       shoeName: shoe?.name ?? null,
       shoeDropMm: shoe?.dropMm ?? null,
       painDuring: notes.painDuring,
@@ -774,10 +854,10 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
       chronic: Math.round(lr?.chronic ?? 0),
       acwr: lr && lr.ratio !== null ? Math.round(lr.ratio * 100) / 100 : null,
       verdict: lr?.verdict ?? null,
-      efLatest: 1.52,
-      efTrendPct: 2.4,
-      impactLoad7d: 435,
-      jointIndex7d: 6.2,
+      efLatest: latestHealth.efSpeed,
+      efTrendPct: latestHealth.efSpeed === null ? null : efTrendPct(health, today),
+      impactLoad7d: latestHealth.impactLoad7d,
+      jointIndex7d: latestHealth.jointIndex7d,
     },
     loadSeries,
     cycles: buildCyclesOverview(data, me.id),

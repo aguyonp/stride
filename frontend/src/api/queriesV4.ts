@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import { invalidateDomain } from './queries'
+import { invalidateDomain, useFallbackPoll } from './queries'
 import { seedJobsInStore } from '../state/events'
 import type {
   BodyStressInput,
@@ -12,7 +12,6 @@ import type {
 } from './types'
 
 export const qk4 = {
-  publicVersion: ['version', 'public'] as const,
   jobs: ['jobs'] as const,
   job: (id: string) => ['jobs', id] as const,
   cycles: (planId?: number | null) => ['cycles', planId ?? 'active'] as const,
@@ -21,11 +20,8 @@ export const qk4 = {
   publicShare: (token: string) => ['publicShare', token] as const,
 }
 
-export function usePublicVersion(enabled = true) {
-  return useQuery({ queryKey: qk4.publicVersion, queryFn: api.publicVersion, staleTime: Infinity, enabled })
-}
-
 export function useJobs(limit = 20, enabled = true) {
+  const poll = useFallbackPoll()
   return useQuery({
     queryKey: qk4.jobs,
     queryFn: async () => {
@@ -35,6 +31,7 @@ export function useJobs(limit = 20, enabled = true) {
     },
     enabled,
     staleTime: 60_000,
+    refetchInterval: () => poll(),
   })
 }
 

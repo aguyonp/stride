@@ -12,6 +12,11 @@ export function NA({ className, reason }: { className?: string; reason?: string 
   )
 }
 
+/** Discreet notice for a health metric the backend could not compute (never a fallback number). */
+export function Insufficient({ className }: { className?: string }) {
+  return <span className={cn('text-xs font-normal text-ink-3', className)}>Données insuffisantes</span>
+}
+
 interface ValueProps {
   value: number | null | undefined
   format: (v: number) => string

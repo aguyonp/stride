@@ -144,10 +144,6 @@ async function send(path: string, opts: { method?: string; body?: Body; accept?:
   return res
 }
 
-export async function rawJson<T>(path: string, opts: { method?: string; body?: Body } = {}): Promise<T> {
-  return json<T>(path, opts)
-}
-
 async function json<T>(path: string, opts: { method?: string; body?: Body } = {}): Promise<T> {
   const res = await send(path, opts)
   if (res.status === 204) return undefined as T
@@ -280,7 +276,6 @@ export const api = {
   saveLlm: (body: LLMConfigInput) => json<LLMConfig>('/api/llm', { method: 'PUT', body }),
   deleteLlm: () => json<void>('/api/llm', { method: 'DELETE' }),
   testLlm: () => json<LLMTestResult>('/api/llm/test', { method: 'POST' }),
-  analyze: (body: LLMAnalyzeRequest) => json<LLMAnalysis>('/api/llm/analyze', { method: 'POST', body }),
   analyses: (kind: string, ref: string) => json<LLMAnalysis[]>(`/api/llm/analyses${qs({ kind, ref })}`),
 
   planGenerate: <T extends PlanPromptResponse | PlanDraftsResponse>(body: PlanGenerateRequest) => json<T>('/api/plan/generate', { method: 'POST', body }),
@@ -303,12 +298,6 @@ export const api = {
   deleteNotification: (id: number) => json<void>(`/api/notifications/${id}`, { method: 'DELETE' }),
   testNotification: (id: number) => json<NotificationTestResult>(`/api/notifications/${id}/test`, { method: 'POST' }),
 
-  importFile: async (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    const res = await send('/api/imports', { method: 'POST', form })
-    return (await res.json()) as ImportResult
-  },
   mergeShoe: (id: number, intoId: number) => json<Shoe | void>(`/api/shoes/${id}/merge`, { method: 'POST', body: { intoId } }),
 
   records: () => json<{ records: PersonalRecord[] }>('/api/records'),
@@ -333,7 +322,6 @@ export const api = {
   planPhases: () => json<PlanPhase[]>('/api/plan/phases'),
 
   /* 4.0.0 endpoints */
-  publicVersion: () => json<BuildInfo>('/version'),
   jobs: (limit = 20) => json<JobListResponse>(`/api/jobs${qs({ limit })}`),
   job: (id: string) => json<JobStatus>(`/api/jobs/${encodeURIComponent(id)}`),
   importFileAsync: async (file: File, asyncMode = true) => {

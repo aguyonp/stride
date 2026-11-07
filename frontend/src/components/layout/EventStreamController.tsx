@@ -30,12 +30,13 @@ const STREAM_EVENTS: (keyof StrideStreamEventMap)[] = [
   'alert.triggered',
   'llm.token',
   'llm.done',
-  'meter.updated',
 ]
 
 /**
  * Maintains the authenticated SSE connection to `/api/events/stream` and routes
  * real or synthetic stream frames into React Query caches and UI notifications.
+ * Every (re)connection refetches sync status and jobs, since frames sent while
+ * disconnected are lost; the queries themselves poll slowly while the stream is down.
  */
 export function EventStreamController({ userId }: { userId: number }) {
   const qc = useQueryClient()
@@ -49,6 +50,11 @@ export function EventStreamController({ userId }: { userId: number }) {
     seen.clear()
 
     const unsubs = [
+      subscribeStreamEvent('connected', () => {
+        void qc.invalidateQueries({ queryKey: qk.sync })
+        void qc.invalidateQueries({ queryKey: qk4.jobs })
+      }),
+
       subscribeStreamEvent('job.updated', (job) => {
         const prev = seen.get(job.id)
         seen.set(job.id, job.state)
@@ -91,10 +97,6 @@ export function EventStreamController({ userId }: { userId: number }) {
           )
         }
       }),
-
-      subscribeStreamEvent('meter.updated', (meter) => {
-        qc.setQueryData(qk.admin.meter, meter)
-      }),
     ]
 
     return () => {
@@ -103,7 +105,12 @@ export function EventStreamController({ userId }: { userId: number }) {
   }, [qc, toast, userId])
 
   useEffect(() => {
-    if (IS_MOCK || typeof EventSource === 'undefined' || !userId) return
+    if (!userId) return
+    if (IS_MOCK) {
+      emitStreamEvent('connected', { status: 'ok', userId, serverTime: new Date().toISOString() })
+      return () => setStreamConnected(false)
+    }
+    if (typeof EventSource === 'undefined') return
 
     const es = new EventSource('/api/events/stream', { withCredentials: true })
     const handlers: Array<[string, EventListener]> = []

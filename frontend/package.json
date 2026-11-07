@@ -9,7 +9,6 @@
     "build": "tsc -b && vite build",
     "build:mock": "tsc -b && VITE_MOCK=1 vite build --outDir dist-mock",
     "preview": "vite preview",
-    "generate:api": "openapi-typescript ../docs/openapi.yaml -o src/api/schema.d.ts",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
@@ -31,7 +30,6 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
     "jsdom": "^31.0.0",
-    "openapi-typescript": "^6.7.6",
     "tailwindcss": "^4.3.4",
     "typescript": "~7.0.2",
     "vite": "^8.3.5",

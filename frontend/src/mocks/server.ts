@@ -11,6 +11,7 @@
 //            pkcancel (passkey ceremony cancelled) · stravaerr (Strava OAuth returns an error)
 //   v3       see ./v3.ts (nollm, llmerr, pushok, importerr, notiferr, ready-*, noeff)
 //   3.1      see ./v31.ts (standalone, stravascope, longgoal)
+//   4.0      see ./v4.ts (sparse)
 // Example: /?mock=user,strava,cooldown
 
 import type {
@@ -35,6 +36,7 @@ import type {
 } from '../api/types'
 import { todayISO } from '../lib/format'
 import { CONTEXT_TAGS } from '../lib/labels'
+import { emitStreamEvent } from '../state/events'
 import { getCatalog } from './catalog'
 import { currentUser, db, emptyData, nextId, presetFor, PRESETS, save, userData, type MockUser, type PlanEntry, type StoredNotes, type UserData } from './db'
 import { notesOf, plannedWithMatch, summarize, visibleItems, weekPlan } from './domain'
@@ -541,6 +543,10 @@ route('POST', /^\/api\/sync$/, ({ data }) => {
     s.running = true
     s.startedAt = Date.now()
     s.runs++
+    setTimeout(() => {
+      tickSync()
+      if (!db().sync.running) emitStreamEvent('sync.updated', syncStatus(data))
+    }, 4200)
   }
   return json(syncStatus(data))
 })
