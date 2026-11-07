@@ -154,3 +154,30 @@ func TestVerifySchemaDetectsTampering(t *testing.T) {
 		t.Fatalf("expected missing table error, got %v", err)
 	}
 }
+
+func TestOrphanRowsNeverBlockVerifyAndShowInDoctor(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t, "orphans.db")
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := database.CheckIntegrity(ctx, db); err != nil || len(p) != 0 {
+		t.Fatalf("clean database: %v %v", p, err)
+	}
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO goals (user_id, title, kind, created_at, updated_at) VALUES (404, 'orphan', 'race', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.VerifySchema(ctx, db); err != nil {
+		t.Fatalf("orphan rows must not fail the boot check: %v", err)
+	}
+	fk, err := database.ForeignKeyViolations(ctx, db)
+	if err != nil || len(fk) != 1 || !strings.Contains(fk[0], "goals") {
+		t.Fatalf("foreign keys: %v %v", fk, err)
+	}
+	if p, _ := database.CheckIntegrity(ctx, db); len(p) != 1 {
+		t.Fatalf("doctor: %v", p)
+	}
+}

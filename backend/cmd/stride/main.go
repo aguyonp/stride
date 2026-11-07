@@ -3,6 +3,7 @@
 //	stride [serve]      start the HTTP server (default)
 //	stride healthcheck  GET /health/ready on the local port, exit 0/1 (container healthcheck)
 //	stride version      print the version
+//	stride doctor       full SQLite integrity and foreign-key check, exit 0/1
 package main
 
 import (
@@ -28,6 +29,7 @@ import (
 	"stride/internal/auth"
 	"stride/internal/buildinfo"
 	"stride/internal/cache"
+	"stride/internal/database"
 	"stride/internal/domain"
 	"stride/internal/env"
 	"stride/internal/httpapi"
@@ -57,8 +59,10 @@ func main() {
 		os.Exit(healthcheck())
 	case "version", "--version", "-v":
 		fmt.Println(buildinfo.Get().Label)
+	case "doctor":
+		os.Exit(doctor())
 	default:
-		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version)\n", cmd)
+		fmt.Fprintf(os.Stderr, "commande inconnue %q (attendu : serve | healthcheck | version | doctor)\n", cmd)
 		os.Exit(2)
 	}
 }
@@ -84,6 +88,50 @@ func healthcheck() int {
 	return 0
 }
 
+// doctor runs the full integrity and foreign-key checks that boot skips.
+func doctor() int {
+	cfg, err := env.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌", err)
+		return 1
+	}
+	ctx := context.Background()
+	st, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌", err)
+		return 1
+	}
+	defer st.Close()
+	problems, err := database.CheckIntegrity(ctx, st.DB)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌", err)
+		return 1
+	}
+	for _, p := range problems {
+		fmt.Println("⚠️", p)
+	}
+	if len(problems) > 0 {
+		fmt.Printf("❌ %d problème(s) détecté(s) dans %s\n", len(problems), cfg.DBPath)
+		return 1
+	}
+	fmt.Println("✅ Base SQLite intègre :", cfg.DBPath)
+	return 0
+}
+
+// warnForeignKeys logs orphan rows in the background: they never block the boot.
+func warnForeignKeys(ctx context.Context, st *store.Store, log *slog.Logger) {
+	go func() {
+		v, err := database.ForeignKeyViolations(ctx, st.DB)
+		if err != nil {
+			log.Warn("⚠️ Contrôle des clés étrangères impossible", "err", err.Error())
+			return
+		}
+		if len(v) > 0 {
+			log.Warn("⚠️ Lignes orphelines détectées, lancez « stride doctor »", "nombre", len(v), "exemple", v[0])
+		}
+	}()
+}
+
 func run() error {
 	cfg, err := env.Load()
 	if err != nil {
@@ -107,6 +155,7 @@ func run() error {
 		return fmt.Errorf("base SQLite %s : %w", cfg.DBPath, err)
 	}
 	defer st.Close()
+	warnForeignKeys(ctx, st, log)
 	if err := st.EnsureSetting(ctx, store.SettingRegistrationMode, cfg.RegistrationMode, time.Now()); err != nil {
 		return err
 	}

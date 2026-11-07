@@ -333,55 +333,54 @@ var expectedSchema = map[string][]string{
 	"async_jobs":           {"id", "user_id", "kind", "queue", "state", "label", "progress_pct", "processed", "total", "attempts", "max_attempts", "error", "result_json", "created_at", "updated_at"},
 }
 
-// VerifySchema performs SQLite integrity, foreign-key, and v4 table/column assertions.
-func VerifySchema(ctx context.Context, db *sql.DB) error {
-	// 1. PRAGMA quick_check
-	qRows, err := db.QueryContext(ctx, `PRAGMA quick_check`)
+// CheckIntegrity runs the full PRAGMA integrity_check and foreign_key_check (whole-database scans,
+// for `stride doctor`) and returns the problems found.
+func CheckIntegrity(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `PRAGMA integrity_check`)
 	if err != nil {
-		return fmt.Errorf("pragma quick_check: %w", err)
+		return nil, fmt.Errorf("pragma integrity_check: %w", err)
 	}
-	var qcResults []string
-	for qRows.Next() {
+	var problems []string
+	for rows.Next() {
 		var res string
-		if err := qRows.Scan(&res); err != nil {
-			qRows.Close()
-			return err
+		if err := rows.Scan(&res); err != nil {
+			rows.Close()
+			return nil, err
 		}
-		qcResults = append(qcResults, res)
+		if res != "ok" {
+			problems = append(problems, res)
+		}
 	}
-	qRows.Close()
-	if err := qRows.Err(); err != nil {
-		return err
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
-	if len(qcResults) != 1 || qcResults[0] != "ok" {
-		return fmt.Errorf("sqlite quick_check failed: %v", qcResults)
-	}
+	fk, err := ForeignKeyViolations(ctx, db)
+	return append(problems, fk...), err
+}
 
-	// 2. PRAGMA foreign_key_check
-	fkRows, err := db.QueryContext(ctx, `PRAGMA foreign_key_check`)
+// ForeignKeyViolations lists the rows whose referenced parent row is missing.
+func ForeignKeyViolations(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `PRAGMA foreign_key_check`)
 	if err != nil {
-		return fmt.Errorf("pragma foreign_key_check: %w", err)
+		return nil, fmt.Errorf("pragma foreign_key_check: %w", err)
 	}
-	var fkViolations []string
-	for fkRows.Next() {
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
 		var tbl, parent string
 		var rowid sql.NullInt64
 		var fkid int
-		if err := fkRows.Scan(&tbl, &rowid, &parent, &fkid); err != nil {
-			fkRows.Close()
-			return err
+		if err := rows.Scan(&tbl, &rowid, &parent, &fkid); err != nil {
+			return nil, err
 		}
-		fkViolations = append(fkViolations, fmt.Sprintf("%s(rowid=%v -> %s)", tbl, rowid.Int64, parent))
+		out = append(out, fmt.Sprintf("%s(rowid=%d) -> %s", tbl, rowid.Int64, parent))
 	}
-	fkRows.Close()
-	if err := fkRows.Err(); err != nil {
-		return err
-	}
-	if len(fkViolations) > 0 {
-		return fmt.Errorf("sqlite foreign_key_check violations: %s", strings.Join(fkViolations, ", "))
-	}
+	return out, rows.Err()
+}
 
-	// 3. Assert all expected tables and columns exist.
+// VerifySchema asserts that every expected table and column exists (fast: schema only).
+func VerifySchema(ctx context.Context, db *sql.DB) error {
 	tRows, err := db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table'`)
 	if err != nil {
 		return err

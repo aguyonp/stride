@@ -110,19 +110,19 @@ CREATE TABLE goals (
 CREATE INDEX goals_user ON goals (user_id, status);
 
 CREATE TABLE planned_sessions (
-    id                INTEGER PRIMARY KEY,
-    user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    date              TEXT    NOT NULL,
-    sport             TEXT    NOT NULL,
-    title             TEXT    NOT NULL DEFAULT '',
+    id               INTEGER PRIMARY KEY,
+    user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date             TEXT    NOT NULL,
+    sport            TEXT    NOT NULL,
+    title            TEXT    NOT NULL DEFAULT '',
     target_duration_s REAL,
     target_distance_m REAL,
-    target_pace_min   REAL,
-    target_pace_max   REAL,
-    target_cadence    REAL,
-    instructions      TEXT    NOT NULL DEFAULT '',
-    created_at        INTEGER NOT NULL,
-    updated_at        INTEGER NOT NULL
+    target_pace_min  REAL,
+    target_pace_max  REAL,
+    target_cadence   REAL,
+    instructions     TEXT    NOT NULL DEFAULT '',
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL
 );
 CREATE INDEX planned_sessions_user_date ON planned_sessions (user_id, date);
 
