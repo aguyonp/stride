@@ -1,6 +1,6 @@
 // Package sse implements the native Go Server-Sent Events hub for real-time
-// job progress, sync updates, biometric alerts, LLM token streaming, and admin API metering,
-// with optional Valkey Pub/Sub multi-instance fanout.
+// job progress, sync updates, biometric alerts and LLM token streaming, with optional Valkey
+// Pub/Sub multi-instance fanout.
 package sse
 
 import (
@@ -35,7 +35,6 @@ const (
 	EventAlertTriggered = "alert.triggered"
 	EventLLMToken       = "llm.token"
 	EventLLMDone        = "llm.done"
-	EventMeterUpdated   = "meter.updated"
 )
 
 type ConnectedEvent struct {
@@ -73,16 +72,14 @@ type StreamLLMDoneEvent struct {
 }
 
 type pubsubEnvelope struct {
-	Origin    string          `json:"origin"`
-	UserID    int64           `json:"userId,omitempty"`
-	AdminOnly bool            `json:"adminOnly,omitempty"`
-	Event     string          `json:"event"`
-	Data      json.RawMessage `json:"data"`
+	Origin string          `json:"origin"`
+	UserID int64           `json:"userId,omitempty"`
+	Event  string          `json:"event"`
+	Data   json.RawMessage `json:"data"`
 }
 
 type client struct {
 	userID int64
-	admin  bool
 	ch     chan []byte
 }
 
@@ -102,7 +99,6 @@ type Hub struct {
 
 	mu       sync.RWMutex
 	byUser   map[int64]map[*client]struct{}
-	admins   map[*client]struct{}
 	closed   chan struct{}
 	stopOnce sync.Once
 	cancel   context.CancelFunc
@@ -128,7 +124,6 @@ func NewHub(opts Options) *Hub {
 		heartbeat:  hb,
 		instanceID: hex.EncodeToString(idBytes[:]),
 		byUser:     make(map[int64]map[*client]struct{}),
-		admins:     make(map[*client]struct{}),
 		closed:     make(chan struct{}),
 		cancel:     cancel,
 	}
@@ -147,11 +142,8 @@ func (h *Hub) runPubSub(ctx context.Context) {
 			if json.Unmarshal([]byte(msg.Message), &env) != nil || env.Origin == h.instanceID {
 				return
 			}
-			frame := formatFrame(env.Event, env.Data)
-			if env.AdminOnly {
-				h.deliverAdmins(frame)
-			} else if env.UserID > 0 {
-				h.deliverUser(env.UserID, frame)
+			if env.UserID > 0 {
+				h.deliverUser(env.UserID, formatFrame(env.Event, env.Data))
 			}
 		})
 		if ctx.Err() != nil {
@@ -224,45 +216,10 @@ func (h *Hub) PublishToUser(userID int64, event string, payload any) {
 	}
 }
 
-// PublishToAdmins sends a JSON SSE event exclusively to streams authenticated with admin role.
-func (h *Hub) PublishToAdmins(event string, payload any) {
-	if h == nil {
-		return
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	frame := formatFrame(event, raw)
-	h.deliverAdmins(frame)
-	if h.valkey != nil {
-		env, _ := json.Marshal(pubsubEnvelope{
-			Origin:    h.instanceID,
-			AdminOnly: true,
-			Event:     event,
-			Data:      raw,
-		})
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		_ = h.valkey.Do(ctx, h.valkey.B().Publish().Channel(PubSubChannel).Message(string(env)).Build()).Error()
-		cancel()
-	}
-}
-
 func (h *Hub) deliverUser(userID int64, frame []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.byUser[userID] {
-		select {
-		case c.ch <- frame:
-		default:
-		}
-	}
-}
-
-func (h *Hub) deliverAdmins(frame []byte) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for c := range h.admins {
 		select {
 		case c.ch <- frame:
 		default:
@@ -276,9 +233,6 @@ func (h *Hub) addClient(c *client) {
 		h.byUser[c.userID] = make(map[*client]struct{})
 	}
 	h.byUser[c.userID][c] = struct{}{}
-	if c.admin {
-		h.admins[c] = struct{}{}
-	}
 	h.mu.Unlock()
 	h.metrics.AddSSEClient(1)
 }
@@ -291,7 +245,6 @@ func (h *Hub) removeClient(c *client) {
 			delete(h.byUser, c.userID)
 		}
 	}
-	delete(h.admins, c)
 	h.mu.Unlock()
 	h.metrics.AddSSEClient(-1)
 }
@@ -319,11 +272,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hdr.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	c := &client{
-		userID: u.ID,
-		admin:  u.IsAdmin(),
-		ch:     make(chan []byte, clientBufferSize),
-	}
+	c := &client{userID: u.ID, ch: make(chan []byte, clientBufferSize)}
 	h.addClient(c)
 	defer h.removeClient(c)
 

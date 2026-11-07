@@ -18,6 +18,7 @@ func NewValkey(url string) (*Valkey, error) {
 		return nil, err
 	}
 	opt.DisableCache = true
+	// RESP2 keeps Pub/Sub on its own connection; miniredis (SSE fanout test) only relays it this way.
 	opt.AlwaysRESP2 = true
 	c, err := valkey.NewClient(opt)
 	if err != nil {

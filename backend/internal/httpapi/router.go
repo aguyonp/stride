@@ -47,9 +47,6 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.JSON(w, http.StatusOK, buildinfo.Get())
 	})
-	if d.Metrics != nil {
-		mux.Handle("GET /metrics", d.Metrics.Handler())
-	}
 
 	d.Auth.Register(mux)
 	mux.Handle("GET /api/version", d.Auth.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -78,7 +75,7 @@ func New(d Deps) http.Handler {
 		sseHandler = d.Auth.RequireUser(http.HandlerFunc(d.SSE.ServeHTTP))
 	}
 
-	var h http.Handler = mux
+	var h http.Handler = d.Metrics.HTTPMiddleware(mux)
 	h = gzhttp.GzipHandler(h)
 
 	if sseHandler != nil {

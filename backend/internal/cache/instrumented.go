@@ -7,9 +7,6 @@ import (
 	"stride/internal/observability"
 )
 
-// Store is an alias for Cache matching the v4 contract terminology.
-type Store = Cache
-
 // Instrumented wraps a Cache implementation and records Prometheus cache metrics.
 type Instrumented struct {
 	inner   Cache
@@ -24,8 +21,6 @@ func NewInstrumented(c Cache, backend string, m *observability.Metrics) *Instrum
 	}
 	return &Instrumented{inner: c, backend: backend, metrics: m}
 }
-
-func (c *Instrumented) Unwrap() Cache { return c.inner }
 
 func (c *Instrumented) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	t0 := time.Now()

@@ -111,10 +111,16 @@ func run() error {
 		return err
 	}
 
+	metrics := observability.New()
 	kv, cacheBackend, err := openCache(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
+	var valkeyClient valkey.Client
+	if vk, ok := kv.(*cache.Valkey); ok {
+		valkeyClient = vk.Client()
+	}
+	kv = cache.NewInstrumented(kv, cacheBackend, metrics)
 	defer kv.Close()
 
 	sealer, err := secret.New(cfg.MasterKey, cfg.MasterKeyPrevious)
@@ -124,7 +130,8 @@ func run() error {
 
 	logs := applog.New(st.DB, log)
 	defer logs.Close()
-	meter := apimeter.NewLocal(apimeter.Options{Log: log, Recent: recentErrors(ctx, st, log), Sink: persistErrors(st), OnCall: auditCall(logs)})
+	meter := apimeter.NewLocal(apimeter.Options{Log: log, Recent: recentErrors(ctx, st, log), Sink: persistErrors(st), OnCall: auditCall(logs),
+		Metrics: metrics})
 	defer meter.Close()
 
 	var stravaAPI strava.API
@@ -139,11 +146,6 @@ func run() error {
 		wx = weather.NewOpenMeteo(weather.OpenMeteoOptions{Meter: meter})
 	}
 
-	var valkeyClient valkey.Client
-	if vk, ok := kv.(*cache.Valkey); ok {
-		valkeyClient = vk.Client()
-	}
-	metrics := observability.New()
 	sseHub := sse.NewHub(sse.Options{
 		Metrics: metrics,
 		Valkey:  valkeyClient,
@@ -210,13 +212,20 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("écoute sur %s impossible : %w", cfg.ListenAddr, err)
 	}
+	var metricsLn net.Listener
+	if cfg.MetricsAddr != "" {
+		if metricsLn, err = net.Listen("tcp", cfg.MetricsAddr); err != nil {
+			return fmt.Errorf("écoute des métriques sur %s impossible : %w", cfg.MetricsAddr, err)
+		}
+	}
 
 	mode, _ := st.RegistrationMode(ctx)
 	absDB, _ := filepath.Abs(cfg.DBPath)
 	log.Info(fmt.Sprintf("🚀 Stride %s démarré", buildinfo.Get().Label),
 		"écoute", cfg.ListenAddr, "urlPublique", cfg.PublicURL, "db", absDB, "cache", cacheBackend,
 		"inscription", mode, "strava", onOff(stravaAPI != nil), "météo", onOff(wx != nil),
-		"tz", cfg.Timezone, "syncMatinale", fmt.Sprintf("%02d:00", cfg.SyncHour), "frontend", web.HasFrontend())
+		"tz", cfg.Timezone, "syncMatinale", fmt.Sprintf("%02d:00", cfg.SyncHour), "frontend", web.HasFrontend(),
+		"métriques", onOff(cfg.MetricsAddr != ""))
 
 	var wg sync.WaitGroup
 	schedCtx, stopSched := context.WithCancel(context.Background())
@@ -225,13 +234,14 @@ func run() error {
 		defer wg.Done()
 		sched.Run(schedCtx)
 	}()
-	errCh := make(chan error, 1)
-	go func() {
-		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	errCh := make(chan error, 2)
+	serve := func(s *http.Server, l net.Listener) {
+		if err := s.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
-		close(errCh)
-	}()
+	}
+	go serve(srv, ln)
+	metricsSrv := serveMetrics(metricsLn, metrics, serve)
 
 	var serveErr error
 	select {
@@ -247,11 +257,26 @@ func run() error {
 	if err := srv.Shutdown(shCtx); err != nil {
 		log.Warn("⚠️ Arrêt forcé", "err", err.Error())
 	}
+	if metricsSrv != nil {
+		_ = metricsSrv.Shutdown(shCtx)
+	}
 	stopSched()
 	wg.Wait()
 	dom.Close(shCtx)
 	log.Info("🛑 Serveur arrêté")
 	return serveErr
+}
+
+// serveMetrics exposes GET /metrics on its own listener (STRIDE_METRICS_ADDR, never the public one).
+func serveMetrics(ln net.Listener, m *observability.Metrics, serve func(*http.Server, net.Listener)) *http.Server {
+	if ln == nil {
+		return nil
+	}
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", m.Handler())
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 30 * time.Second}
+	go serve(srv, ln)
+	return srv
 }
 
 func onOff(b bool) string {
@@ -277,7 +302,7 @@ func ensureWritable(dir string) error {
 // openCache connects to Valkey with backoff (it may still be starting) or falls back to memory when not configured.
 func openCache(ctx context.Context, cfg env.Config, log *slog.Logger) (cache.Cache, string, error) {
 	if cfg.ValkeyURL == "" {
-		return cache.NewMemory(), "mémoire", nil
+		return cache.NewMemory(), "memory", nil
 	}
 	delay := 500 * time.Millisecond
 	deadline := time.Now().Add(60 * time.Second)

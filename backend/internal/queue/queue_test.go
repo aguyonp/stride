@@ -164,6 +164,20 @@ func TestEngineLifecycleIsolationAndSSE(t *testing.T) {
 		t.Fatalf("transient failures retried until success: %+v (%v)", got, err)
 	}
 
+	scrape := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(scrape, httptest.NewRequest("GET", "/metrics", nil))
+	for _, series := range []string{
+		`stride_worker_jobs_processed_total{job_type="import.activity",queue="critical",status="completed"} 1`,
+		`stride_worker_jobs_processed_total{job_type="webhook.deliver",queue="default",status="retried"} 2`,
+		`stride_worker_jobs_processed_total{job_type="llm.analyze",queue="critical",status="failed"} 1`,
+		`stride_worker_jobs_queued{queue="default"} 0`,
+		`stride_worker_jobs_active{job_type="webhook.deliver",queue="default"} 0`,
+	} {
+		if !strings.Contains(scrape.Body.String(), series) {
+			t.Fatalf("missing %s", series)
+		}
+	}
+
 	sawProgress := false
 	for _, f := range frames() {
 		var js queue.JobStatus

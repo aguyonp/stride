@@ -32,6 +32,12 @@ func (downCache) Ping(context.Context) error { return errors.New("connection ref
 
 func newRouter(t *testing.T, c cache.Cache, logOut io.Writer) http.Handler {
 	t.Helper()
+	h, _ := newRouterWithMetrics(t, c, logOut)
+	return h
+}
+
+func newRouterWithMetrics(t *testing.T, c cache.Cache, logOut io.Writer) (http.Handler, *observability.Metrics) {
+	t.Helper()
 	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "http.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +60,7 @@ func newRouter(t *testing.T, c cache.Cache, logOut io.Writer) http.Handler {
 		Admin:   admin.New(admin.Deps{Store: st, Cache: c, Meter: apimeter.Nop(), Auth: a, Log: log}),
 		Metrics: metrics,
 		SSE:     hub,
-	})
+	}), metrics
 }
 
 func call(h http.Handler, method, path string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -155,7 +161,7 @@ func TestRecoverAndBodyLimit(t *testing.T) {
 }
 
 func TestPlatformEndpoints(t *testing.T) {
-	h := newRouter(t, cache.NewMemory(), nil)
+	h, metrics := newRouterWithMetrics(t, cache.NewMemory(), nil)
 
 	// GET /version
 	rec := call(h, "GET", "/version", nil)
@@ -166,13 +172,21 @@ func TestPlatformEndpoints(t *testing.T) {
 		t.Fatalf("version body: %s", rec.Body.String())
 	}
 
-	// GET /metrics
-	rec = call(h, "GET", "/metrics", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("metrics code: %d", rec.Code)
+	// /metrics is served on its own listener only (STRIDE_METRICS_ADDR)
+	if rec = call(h, "GET", "/metrics", nil); strings.Contains(rec.Body.String(), "stride_http_requests_total") {
+		t.Fatal("metrics exposed on the public listener")
 	}
-	if !strings.Contains(rec.Body.String(), "stride_") {
-		t.Fatalf("metrics body: %s", rec.Body.String())
+	call(h, "GET", "/api/nope", nil)
+	scrape := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(scrape, httptest.NewRequest("GET", "/metrics", nil))
+	for _, series := range []string{
+		`stride_http_requests_total{method="GET",route="/version",status="200"} 1`,
+		`stride_http_requests_total{method="GET",route="unmatched",status="404"} 1`,
+		`stride_http_request_duration_seconds_count{method="GET",route="/version",status="200"} 1`,
+	} {
+		if !strings.Contains(scrape.Body.String(), series) {
+			t.Fatalf("missing %s in\n%s", series, scrape.Body.String())
+		}
 	}
 
 	for _, path := range []string{"/openapi.json", "/openapi.yaml"} {

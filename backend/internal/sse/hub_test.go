@@ -60,7 +60,7 @@ func readFrames(r io.Reader, out chan<- sseFrame) {
 	close(out)
 }
 
-func TestHubConnectIsolationAdminAndDisconnect(t *testing.T) {
+func TestHubConnectIsolationAndDisconnect(t *testing.T) {
 	metrics := observability.New()
 	hub := sse.NewHub(sse.Options{
 		Metrics:           metrics,
@@ -118,25 +118,19 @@ func TestHubConnectIsolationAdminAndDisconnect(t *testing.T) {
 	hub.PublishToUser(1, sse.EventLLMToken, sse.StreamLLMTokenEvent{
 		JobID: "j1", Kind: "activity", Ref: "42", Delta: "Bonjour",
 	})
-	hub.PublishToAdmins(sse.EventMeterUpdated, map[string]any{"providers": []any{}})
 
-	gotToken, gotMeter := false, false
+	gotToken := false
 	deadline := time.After(500 * time.Millisecond)
-	for !(gotToken && gotMeter) {
+	for !gotToken {
 		select {
 		case fr := <-ch1:
-			if fr.event == sse.EventLLMToken && strings.Contains(fr.data, `"delta":"Bonjour"`) {
-				gotToken = true
-			}
-			if fr.event == sse.EventMeterUpdated {
-				gotMeter = true
-			}
+			gotToken = fr.event == sse.EventLLMToken && strings.Contains(fr.data, `"delta":"Bonjour"`)
 		case <-deadline:
-			t.Fatalf("timed out waiting for user 1 events (token=%v meter=%v)", gotToken, gotMeter)
+			t.Fatal("timed out waiting for user 1 token event")
 		}
 	}
 
-	// Verify user 2 only receives heartbeats (no user 1 event, no admin meter event).
+	// Verify user 2 only receives heartbeats (no user 1 event).
 	sawHeartbeat := false
 	checkTimer := time.After(90 * time.Millisecond)
 drain2:
