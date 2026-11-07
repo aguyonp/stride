@@ -47,7 +47,7 @@ describe('Stride 4.0.0 architecture invariants, SSE controller & v4 mocks', () =
       if (/\bsetInterval\s*\(/.test(content)) violations.push(`${path}: contains setInterval(`)
       for (const line of content.split('\n')) {
         if (!line.includes('refetchInterval')) continue
-        const allowed = /^\.\/queries(V\d+)?\.ts$/.test(path) && /poll\(|ADMIN_METER_POLL_MS/.test(line)
+        const allowed = /^\.\/queries(V\d+|Admin)?\.ts$/.test(path) && /poll\(|ADMIN_METER_POLL_MS/.test(line)
         if (!allowed) violations.push(`${path}: ${line.trim()}`)
       }
     }
@@ -163,7 +163,7 @@ describe('Stride 4.0.0 architecture invariants, SSE controller & v4 mocks', () =
 
     // BodyMap: realistic factors where data allows, explicit insufficient data elsewhere
     const bm = (await (await mockCall('GET', '/api/bodymap?days=90')).json()) as BodyMapOverview
-    expect(bm.zones).toHaveLength(6)
+    expect(bm.zones).toHaveLength(10)
     expect(bm.correlations.some((c) => !c.insufficientData && c.symptomaticMean !== null)).toBe(true)
     const thin = bm.correlations.find((c) => c.insufficientData)
     expect(thin).toMatchObject({ symptomaticMean: null, baselineMean: null, deltaPct: null, confidence: null })

@@ -1,7 +1,8 @@
-import type { AdminUser, Invitation } from '../../api/types'
+import type { AdminIntegration, AdminUser, AlertLevel, Invitation, JobGroup, JobState } from '../../api/types'
 import { cn } from '../../lib/cn'
+import { fmtNumber } from '../../lib/format'
 
-const PROVIDER_NAME: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', 'open-meteo': 'Open-Meteo' }
+const PROVIDER_NAME: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', 'open-meteo': 'Open-Meteo', llm: 'IA (LLM)', webhook: 'Webhooks' }
 export const providerName = (p: string) => PROVIDER_NAME[p] ?? p
 
 export function userName(users: AdminUser[] | undefined, id: number): string {
@@ -59,6 +60,67 @@ export function UsageBar({ label, used, limit }: { label: string; used: number; 
       <div className="h-2 overflow-hidden rounded-full bg-track" role="img" aria-label={`${label} : ${used} sur ${limit} (${Math.round(pct)} %)`}>
         <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: color }} />
       </div>
+    </div>
+  )
+}
+
+/** Binary sizes in French units: « 12,4 Mo ». */
+export function fmtBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 o'
+  const units = ['o', 'Ko', 'Mo', 'Go', 'To']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
+  const v = n / 1024 ** i
+  return `${fmtNumber(v, i === 0 || v >= 100 ? 0 : 1, { trim: true })} ${units[i]}`
+}
+
+/** Uptime: « 3 j 4 h », « 5 h 12 min », « 42 s ». */
+export function fmtUptime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  const d = Math.floor(s / 86_400)
+  const h = Math.floor((s % 86_400) / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (d > 0) return `${d} j ${h} h`
+  if (h > 0) return `${h} h ${String(m).padStart(2, '0')} min`
+  if (m > 0) return `${m} min`
+  return `${s} s`
+}
+
+export const JOB_GROUP_LABEL: Record<JobGroup, string> = { sync: 'Synchro & imports', llm: 'Coach IA', webhook: 'Notifications' }
+
+export const JOB_STATE: Record<JobState, { label: string; level: AlertLevel }> = {
+  queued: { label: 'En attente', level: 'info' },
+  running: { label: 'En cours', level: 'info' },
+  retrying: { label: 'Nouvel essai', level: 'warn' },
+  completed: { label: 'Terminée', level: 'ok' },
+  failed: { label: 'Échec', level: 'danger' },
+}
+
+export const INTEGRATION_LABEL: Record<AdminIntegration, string> = { garmin: 'Garmin', strava: 'Strava', llm: 'IA' }
+
+/** Active administrators other than `id` (guards: never leave the instance without an admin). */
+export function isLastActiveAdmin(users: AdminUser[], u: AdminUser): boolean {
+  return u.role === 'admin' && u.status === 'active' && !users.some((x) => x.id !== u.id && x.role === 'admin' && x.status === 'active')
+}
+
+/** Compact single-choice filter for panel toolbars (toggle buttons, current one pressed). */
+export function FilterChips<T extends string>({ value, onChange, options, ariaLabel }: { value: T; onChange: (v: T) => void; options: { value: T; label: string; count?: number }[]; ariaLabel: string }) {
+  return (
+    <div role="group" aria-label={ariaLabel} className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const on = o.value === value
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(o.value)}
+            className={cn('chip h-8 border px-3 transition-colors', on ? 'border-accent/50 bg-accent/15 text-ink' : 'border-line bg-track/60 text-ink-2 hover:text-ink')}
+          >
+            {o.label}
+            {o.count !== undefined && <span className={cn('num text-[11px]', on ? 'text-ink-2' : 'text-ink-3')}>{o.count}</span>}
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -46,6 +46,7 @@ export interface Passkey {
   lastUsedAt: string | null
   backedUp: boolean
 }
+export type AdminIntegration = 'garmin' | 'strava' | 'llm'
 export interface AdminUser {
   id: number
   displayName: string
@@ -54,6 +55,12 @@ export interface AdminUser {
   createdAt: string
   lastLoginAt: string | null
   passkeys: number
+  /** Latest session activity (4.1 control center). */
+  lastSeenAt: string | null
+  sessions: number
+  activities: number
+  storageBytes: number
+  integrations: AdminIntegration[]
 }
 export interface Invitation {
   id: number
@@ -108,6 +115,133 @@ interface MeterErrorEvent {
 export interface MeterSnapshot {
   providers: ProviderStats[]
   recentErrors: MeterErrorEvent[]
+}
+
+/* ---------------------------------- Admin control center (§14.6) ---------------------------------- */
+
+export type JobGroup = 'sync' | 'llm' | 'webhook'
+export interface JobGroupStats {
+  group: JobGroup
+  workers: number
+  running: number
+  queued: number
+  delayed: number
+}
+/** Non-secret runtime configuration (allowlist, never keys, tokens or internal addresses). */
+export interface RuntimeConfig {
+  publicUrl: string
+  rpId: string
+  secureCookies: boolean
+  sessionTtlHours: number
+  timezone: string
+  logLevel: string
+  logFormat: string
+  cacheBackend: string
+  metricsEnabled: boolean
+  stravaEnabled: boolean
+  weatherProvider: string
+  allowPrivateEgress: boolean
+  syncHour: number
+}
+export interface DatabaseStatus {
+  ok: boolean
+  sizeBytes: number
+  walBytes: number
+  freeBytes: number
+}
+export interface AdminOverview {
+  generatedAt: string
+  build: BuildInfo
+  startedAt: string
+  uptimeS: number
+  registrationMode: RegistrationMode
+  database: DatabaseStatus
+  cache: { backend: string; ok: boolean; latencyMs: number | null }
+  jobs: { groups: JobGroupStats[]; active: number; failed24h: number }
+  streams: { clients: number; users: number }
+  errors24h: number
+  logsDropped: number
+  providers: ProviderStats[]
+  counts: { users: number; activeUsers: number; admins: number; connectedUsers: number; llmUsers: number; activities: number; activeShareLinks: number; sessions: number; feedbackNew: number }
+  config: RuntimeConfig
+}
+/** A job of any user; `result` is always null here (it may hold a private AI analysis). */
+export interface AdminJob extends JobStatus {
+  userName: string
+  retryable: boolean
+  cancellable: boolean
+}
+export type AdminJobFilter = 'active' | 'failed' | 'all'
+export interface AdminJobList {
+  items: AdminJob[]
+  groups: JobGroupStats[]
+}
+/** A share link seen by an administrator: token prefix only, never the URL. */
+export interface AdminShareLink {
+  id: number
+  userId: number
+  userName: string
+  label: string
+  tokenPrefix: string
+  createdAt: string
+  expiresAt: string | null
+  revokedAt: string | null
+  accessCount: number
+  lastAccessedAt: string | null
+  state: 'active' | 'expired' | 'revoked'
+  periodWeeks: SharePeriodWeeks
+  sections: ShareSection[]
+  anonymize: boolean
+}
+export interface PurgeResult {
+  removed: Record<'sessions' | 'invitations' | 'apiEvents' | 'logs' | 'jobs' | 'shareLinks', number>
+}
+export interface OptimizeResult {
+  vacuum: boolean
+  before: DatabaseStatus
+  after: DatabaseStatus
+  durationMs: number
+}
+export type FeedbackCategory = 'bug' | 'idea' | 'other'
+export type FeedbackStatus = 'new' | 'read' | 'done'
+/** Non-sensitive environment attached to a feedback (path only, never query strings). */
+export interface FeedbackContext {
+  appVersion: string
+  route: string
+  viewport: string
+  userAgent: string
+}
+export interface FeedbackInput {
+  category: FeedbackCategory
+  message: string
+  contactOk: boolean
+  /** Sent only when `contactOk` is true. */
+  contactEmail?: string
+  context: FeedbackContext
+}
+export interface FeedbackItem {
+  id: number
+  userId: number
+  userName: string
+  category: FeedbackCategory
+  message: string
+  contactOk: boolean
+  contactEmail: string | null
+  context: FeedbackContext
+  status: FeedbackStatus
+  adminNote: string
+  createdAt: string
+  updatedAt: string
+}
+export interface FeedbackList {
+  items: FeedbackItem[]
+  counts: { new: number; read: number; done: number; total: number }
+}
+export interface IntegrityResult {
+  ok: boolean
+  problems: string[]
+  total: number
+  durationMs: number
 }
 
 /* ---------------------------------- Domain (§3.2) ---------------------------------- */
@@ -444,6 +578,8 @@ export interface CrossLoad {
 }
 
 export type ShoeType = 'soft' | 'tempo' | 'carbon'
+/** Strava-side state of a linked pair at the last sync (§14.5). */
+export type ShoeStravaState = 'active' | 'retired' | 'deleted'
 export interface Shoe {
   id: number
   name: string
@@ -453,10 +589,19 @@ export interface Shoe {
   type: ShoeType
   stravaGearId: string | null
   retired: boolean
+  /** Real total: Strava's all-time gear distance when known, else `analyzedKm`. */
   distanceKm: number
+  /** Sum of the activities Stride holds for this pair (partial when Strava knows more). */
+  analyzedKm: number
+  distanceSource: 'strava' | 'stride'
+  stravaDistanceKm: number | null
+  stravaPrimary: boolean
+  stravaState: ShoeStravaState | null
+  stravaSyncedAt: string | null
   note: string
 }
-export type ShoeInput = Omit<Shoe, 'id' | 'distanceKm' | 'stravaGearId'> & { stravaGearId?: string | null }
+type ShoeReadOnly = 'id' | 'distanceKm' | 'analyzedKm' | 'distanceSource' | 'stravaDistanceKm' | 'stravaPrimary' | 'stravaState' | 'stravaSyncedAt' | 'stravaGearId'
+export type ShoeInput = Omit<Shoe, ShoeReadOnly> & { stravaGearId?: string | null }
 
 export interface ActivityNotes {
   painDuring: number | null
@@ -1125,6 +1270,10 @@ export type BodyZone =
   | 'shin_splints'
   | 'iliotibial_band'
   | 'hamstrings_calves'
+  | 'ankle'
+  | 'forefoot'
+  | 'hip'
+  | 'lower_back'
 
 export type BodySide = 'left' | 'right' | 'both'
 
@@ -1312,6 +1461,29 @@ export interface HealthZone {
   side: BodySide
   since: string | null
   note: string
+  /** Catalog key of the zone's condition (§14.7); `other` requires `customLabel`. */
+  condition?: string | null
+  /** Free text (1–80 chars) describing an `other` condition; rendered as text only. */
+  customLabel?: string | null
+  /** Derived, read only: catalog label or custom label. */
+  conditionLabel?: string | null
+}
+
+/** One pathology of the backend catalog (GET /api/health/conditions). */
+export interface HealthCondition {
+  key: string
+  label: string
+}
+
+export interface HealthConditionZone {
+  zone: BodyZone
+  zoneLabel: string
+  /** Zone-specific conditions, « Autre (préciser) » (`other`) last. */
+  conditions: HealthCondition[]
+}
+
+export interface HealthConditionCatalog {
+  zones: HealthConditionZone[]
 }
 
 export interface HealthStatusInput {

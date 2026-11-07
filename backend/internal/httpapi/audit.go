@@ -65,6 +65,17 @@ var actions = map[string]string{
 	"POST /api/admin/users/{id}/resync":  "admin.user_resync",
 	"GET /api/admin/users/{id}/backup":   "admin.user_backup",
 	"POST /api/admin/users/{id}/restore": "admin.user_restore",
+	// 4.1.0 control center (actor = session user, target = path with the user, job or link id).
+	"DELETE /api/admin/users/{id}/sessions": "admin.user_sessions_revoke",
+	"POST /api/admin/users/{id}/sync":       "admin.user_sync",
+	"POST /api/admin/jobs/{id}/retry":       "admin.job_retry",
+	"POST /api/admin/jobs/{id}/cancel":      "admin.job_cancel",
+	"DELETE /api/admin/shares/{id}":         "admin.share_revoke",
+	"POST /api/admin/maintenance/purge":     "admin.maintenance_purge",
+	"POST /api/admin/maintenance/optimize":  "admin.maintenance_optimize",
+	"POST /api/admin/maintenance/check":     "admin.maintenance_check",
+	"POST /api/feedback":                    "feedback.create",
+	"PATCH /api/admin/feedback/{id}":        "admin.feedback_update",
 }
 
 // clientActions are events only the browser sees (POST /api/actions).

@@ -227,6 +227,19 @@ func (h *Hub) deliverUser(userID int64, frame []byte) {
 	}
 }
 
+// Stats returns the open streams and distinct users connected to this instance.
+func (h *Hub) Stats() (clients, users int) {
+	if h == nil {
+		return 0, 0
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, m := range h.byUser {
+		clients += len(m)
+	}
+	return clients, len(h.byUser)
+}
+
 func (h *Hub) addClient(c *client) {
 	h.mu.Lock()
 	if h.byUser[c.userID] == nil {

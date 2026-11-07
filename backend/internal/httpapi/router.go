@@ -16,6 +16,7 @@ import (
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/domainapi"
+	"stride/internal/feedback"
 	"stride/internal/httpx"
 	"stride/internal/observability"
 	"stride/internal/sse"
@@ -23,17 +24,19 @@ import (
 )
 
 type Deps struct {
-	Store   *store.Store
-	Cache   cache.Cache
-	Auth    *auth.Service
-	Admin   *admin.Handler
-	Domain  *domain.Services
-	Log     *slog.Logger
-	Logs    *applog.Log
-	HTTPS   bool
-	Static  http.Handler
-	SSE     *sse.Hub
-	Metrics *observability.Metrics
+	Store *store.Store
+	Cache cache.Cache
+	Auth  *auth.Service
+	Admin *admin.Handler
+	// Feedback is optional (POST /api/feedback, admin listing and triage).
+	Feedback *feedback.Handler
+	Domain   *domain.Services
+	Log      *slog.Logger
+	Logs     *applog.Log
+	HTTPS    bool
+	Static   http.Handler
+	SSE      *sse.Hub
+	Metrics  *observability.Metrics
 }
 
 func New(d Deps) http.Handler {
@@ -57,6 +60,9 @@ func New(d Deps) http.Handler {
 		mux.Handle("GET /api/admin/logs", d.Auth.RequireAdmin(adminLogs(d.Logs)))
 	}
 	d.Admin.Register(mux)
+	if d.Feedback != nil {
+		d.Feedback.Register(mux)
+	}
 	domainapi.Register(mux, domainapi.Deps{
 		Services:     d.Domain,
 		RequireUser:  d.Auth.RequireUser,

@@ -6,6 +6,7 @@ import { cn } from '../../lib/cn'
 import { todayISO } from '../../lib/format'
 import { ALL_INCLUDE, effectiveInclude } from '../../lib/include'
 import { ui, useUi } from '../../state/ui'
+import { FeedbackDialog } from '../feedback/FeedbackDialog'
 import { FeelingSheet } from '../feeling/FeelingSheet'
 import { ManualActivityDialog } from '../session/ManualActivityDialog'
 import { Ambient } from './Ambient'
@@ -24,11 +25,13 @@ function GlobalOverlays({ me }: { me: Me }) {
   const manualOpen = useUi((s) => s.manualActivityOpen)
   const dayAiOpen = useUi((s) => s.dayAnalysisOpen)
   const dayAiRun = useUi((s) => s.dayAnalysisRun)
+  const feedbackOpen = useUi((s) => s.feedbackOpen)
 
   return (
     <>
       <EventStreamController userId={me.id} />
       <CommandPalette me={me} />
+      {feedbackOpen && <FeedbackDialog open onClose={ui.closeFeedback} />}
       {manualOpen && (
         <ManualActivityDialog
           open

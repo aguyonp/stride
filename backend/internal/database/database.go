@@ -314,7 +314,7 @@ var expectedSchema = map[string][]string{
 	"wellness_days":        {"user_id", "date", "kind", "data"},
 	"athlete_profiles":     {"user_id", "focus_area", "timezone"},
 	"goals":                {"id", "user_id", "title", "kind", "status"},
-	"shoes":                {"id", "user_id", "name", "drop_mm", "strava_distance_m"},
+	"shoes":                {"id", "user_id", "name", "drop_mm", "strava_distance_m", "strava_state"},
 	"activity_notes":       {"activity_id", "user_id", "shoe_id", "shoe_auto"},
 	"daily_checkins":       {"user_id", "date", "training_readiness"},
 	"llm_configs":          {"user_id", "provider", "model", "key_enc"},
@@ -331,7 +331,8 @@ var expectedSchema = map[string][]string{
 	"body_stress_entries":  {"id", "user_id", "date", "activity_id", "zone", "side", "pain_score", "cold_next_day_score", "note", "created_at", "updated_at"},
 	"share_links":          {"id", "user_id", "label", "token_hash", "token_prefix", "url_ciphertext", "expires_at", "revoked_at", "access_count", "last_accessed_at", "created_at", "scope_json"},
 	"health_status":        {"user_id", "zones", "updated_at"},
-	"async_jobs":           {"id", "user_id", "kind", "queue", "state", "label", "progress_pct", "processed", "total", "attempts", "max_attempts", "error", "result_json", "created_at", "updated_at"},
+	"feedback":             {"id", "user_id", "category", "message", "contact_ok", "contact_email", "context_json", "status", "admin_note", "created_at", "updated_at"},
+	"async_jobs":           {"id", "user_id", "kind", "queue", "state", "label", "progress_pct", "processed", "total", "attempts", "max_attempts", "error", "result_json", "created_at", "updated_at", "payload_json"},
 }
 
 // CheckIntegrity runs the full PRAGMA integrity_check and foreign_key_check (whole-database scans,

@@ -68,6 +68,7 @@ const (
 
 	msgGeneric     = "La tâche a échoué (détails dans les journaux du serveur)."
 	msgInterrupted = "Tâche interrompue par un redémarrage du serveur."
+	msgCancelled   = "Tâche annulée par un administrateur."
 )
 
 var defaultConcurrency = map[string]int{GroupSync: 2, GroupLLM: 2, GroupWebhook: 4}
@@ -242,6 +243,12 @@ type Manager struct {
 	pending  int
 	closed   bool
 
+	// Admin control center: retry timers by job id, running job cancellations, busy workers per group.
+	delayed   map[string]delayedJob
+	runCancel map[string]context.CancelFunc
+	cancelled map[string]bool
+	active    map[string]int
+
 	startOnce sync.Once
 }
 
@@ -253,6 +260,10 @@ func NewManager(opts Options) *Manager {
 		handlers:    map[string]HandlerFunc{},
 		waiters:     map[string]chan jobOutcome{},
 		timers:      map[*time.Timer]struct{}{},
+		delayed:     map[string]delayedJob{},
+		runCancel:   map[string]context.CancelFunc{},
+		cancelled:   map[string]bool{},
+		active:      map[string]int{},
 	}
 	if m.log == nil {
 		m.log = slog.Default()
@@ -358,6 +369,7 @@ func (m *Manager) Shutdown(ctx context.Context) {
 		t.Stop()
 	}
 	m.timers = map[*time.Timer]struct{}{}
+	m.delayed = map[string]delayedJob{}
 	m.mu.Unlock()
 	for _, l := range m.lanes {
 		l.stop()
@@ -481,8 +493,8 @@ func (m *Manager) Enqueue(ctx context.Context, req EnqueueRequest) (*JobStatus, 
 		return nil, ErrClosed
 	}
 	if it.persisted = m.canPersistUser(ctx, it.userID); it.persisted {
-		if _, err := m.db.ExecContext(ctx, `INSERT INTO async_jobs (id, user_id, kind, queue, state, label, attempts, max_attempts, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`, it.id, it.userID, it.kind, it.queue, StateQueued, it.label, it.maxAttempts, now, now); err != nil {
+		if _, err := m.db.ExecContext(ctx, `INSERT INTO async_jobs (id, user_id, kind, queue, state, label, attempts, max_attempts, created_at, updated_at, payload_json)
+			VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`, it.id, it.userID, it.kind, it.queue, StateQueued, it.label, it.maxAttempts, now, now, replayPayload(it)); err != nil {
 			return nil, err
 		}
 	}
@@ -550,12 +562,14 @@ func (m *Manager) schedule(it item, delay time.Duration) {
 	t = time.AfterFunc(delay, func() {
 		m.mu.Lock()
 		delete(m.timers, t)
+		delete(m.delayed, it.id)
 		m.mu.Unlock()
 		if !l.push(it) {
 			m.drop(it)
 		}
 	})
 	m.timers[t] = struct{}{}
+	m.delayed[it.id] = delayedJob{timer: t, it: it}
 }
 
 func (m *Manager) drop(it item) {
@@ -586,10 +600,27 @@ func (m *Manager) worker(l *lane) {
 func (m *Manager) run(it item) {
 	m.metrics.AddQueueDepth(it.queue, -1)
 	m.metrics.AddWorkerActive(it.queue, it.kind, 1)
+	group := groupOf(it.kind)
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.mu.Lock()
+	m.runCancel[it.id] = cancel
+	m.active[group]++
+	m.mu.Unlock()
 	t0 := time.Now()
-	res, err := m.execute(it)
+	res, err := m.execute(ctx, it)
+	cancel()
+	m.mu.Lock()
+	delete(m.runCancel, it.id)
+	m.active[group]--
+	aborted := m.cancelled[it.id]
+	delete(m.cancelled, it.id)
+	m.mu.Unlock()
 	m.metrics.AddWorkerActive(it.queue, it.kind, -1)
 	dur := time.Since(t0)
+	if err != nil && aborted {
+		m.finish(it, nil, Permanent(msgCancelled, err), dur)
+		return
+	}
 	if err == nil {
 		m.finish(it, res, nil, dur)
 		return
@@ -612,7 +643,7 @@ func (m *Manager) run(it item) {
 	m.schedule(it, delay)
 }
 
-func (m *Manager) execute(it item) (res any, err error) {
+func (m *Manager) execute(ctx context.Context, it item) (res any, err error) {
 	m.mu.Lock()
 	fn := m.handlers[it.kind]
 	m.mu.Unlock()
@@ -626,7 +657,7 @@ func (m *Manager) execute(it item) (res any, err error) {
 			res, err = nil, Permanent(msgGeneric, fmt.Errorf("panic: %v", r))
 		}
 	}()
-	return fn(m.ctx, &JobContext{ID: it.id, UserID: it.userID, Kind: it.kind, Queue: it.queue, Payload: it.payload,
+	return fn(ctx, &JobContext{ID: it.id, UserID: it.userID, Kind: it.kind, Queue: it.queue, Payload: it.payload,
 		Attempt: it.attempt, MaxAttempts: it.maxAttempts, mgr: m, persisted: it.persisted})
 }
 

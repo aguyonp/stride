@@ -32,6 +32,7 @@ import (
 	"stride/internal/database"
 	"stride/internal/domain"
 	"stride/internal/env"
+	"stride/internal/feedback"
 	"stride/internal/httpapi"
 	"stride/internal/logx"
 	"stride/internal/observability"
@@ -133,6 +134,7 @@ func warnForeignKeys(ctx context.Context, st *store.Store, log *slog.Logger) {
 }
 
 func run() error {
+	startedAt := time.Now()
 	cfg, err := env.Load()
 	if err != nil {
 		return err
@@ -227,17 +229,20 @@ func run() error {
 		return err
 	}
 	handler := httpapi.New(httpapi.Deps{
-		Store:   st,
-		Cache:   kv,
-		Auth:    authSvc,
-		Domain:  dom,
-		Log:     log,
-		Logs:    logs,
-		HTTPS:   cfg.CookieSecure,
-		Static:  web.New(),
-		Admin:   admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log}),
-		SSE:     sseHub,
-		Metrics: metrics,
+		Store:  st,
+		Cache:  kv,
+		Auth:   authSvc,
+		Domain: dom,
+		Log:    log,
+		Logs:   logs,
+		HTTPS:  cfg.CookieSecure,
+		Static: web.New(),
+		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log,
+			Domain: dom, SSE: sseHub, Logs: logs, DBPath: cfg.DBPath, Runtime: admin.RuntimeFromEnv(cfg, cacheBackend),
+			StartedAt: startedAt, Maintenance: purgeExpired(st, dom, logs)}),
+		SSE:      sseHub,
+		Metrics:  metrics,
+		Feedback: feedback.New(feedback.Deps{DB: st.DB, Auth: authSvc, Log: log}),
 	})
 
 	sched := scheduler.New(scheduler.Options{
@@ -402,20 +407,31 @@ func persistErrors(st *store.Store) func(context.Context, []apimeter.ErrorEvent)
 	}
 }
 
-func maintenance(st *store.Store, dom *domain.Services, logs *applog.Log, log *slog.Logger) func(context.Context) error {
+// purgeExpired removes expired sessions, old invitations and API events, purged logs, finished jobs and
+// dead share links; it backs the hourly maintenance and the admin « Purger » action.
+func purgeExpired(st *store.Store, dom *domain.Services, logs *applog.Log) func(context.Context) (map[string]int64, error) {
 	const keep = 7 * 24 * time.Hour
-	return func(ctx context.Context) error {
+	return func(ctx context.Context) (map[string]int64, error) {
 		now := time.Now()
 		sessions, err1 := st.PurgeExpiredSessions(ctx, now)
 		invitations, err2 := st.PurgeInvitations(ctx, now, keep)
 		events, err3 := st.PurgeAPIEvents(ctx, now.Add(-keep))
 		auditRows, err4 := logs.Purge(ctx, now)
 		jobs, links, err5 := dom.PurgeStale(ctx)
-		if sessions+invitations+events+auditRows+jobs+links > 0 {
-			log.Info("🧹 Maintenance", "sessionsExpirées", sessions, "invitations", invitations, "événementsAPI", events,
-				"journaux", auditRows, "tâches", jobs, "liensPartage", links)
+		return map[string]int64{"sessions": sessions, "invitations": invitations, "apiEvents": events, "logs": auditRows,
+			"jobs": jobs, "shareLinks": links}, errors.Join(err1, err2, err3, err4, err5)
+	}
+}
+
+func maintenance(st *store.Store, dom *domain.Services, logs *applog.Log, log *slog.Logger) func(context.Context) error {
+	purge := purgeExpired(st, dom, logs)
+	return func(ctx context.Context) error {
+		n, err := purge(ctx)
+		if n["sessions"]+n["invitations"]+n["apiEvents"]+n["logs"]+n["jobs"]+n["shareLinks"] > 0 {
+			log.Info("🧹 Maintenance", "sessionsExpirées", n["sessions"], "invitations", n["invitations"], "événementsAPI", n["apiEvents"],
+				"journaux", n["logs"], "tâches", n["jobs"], "liensPartage", n["shareLinks"])
 		}
-		return errors.Join(err1, err2, err3, err4, err5)
+		return err
 	}
 }
 

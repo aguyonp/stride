@@ -7,6 +7,7 @@ interface UiState {
   manualActivityOpen: boolean
   dayAnalysisOpen: boolean
   dayAnalysisRun: number
+  feedbackOpen: boolean
 }
 
 const INITIAL: UiState = {
@@ -16,6 +17,7 @@ const INITIAL: UiState = {
   manualActivityOpen: false,
   dayAnalysisOpen: false,
   dayAnalysisRun: 0,
+  feedbackOpen: false,
 }
 
 let state: UiState = INITIAL
@@ -46,5 +48,7 @@ export const ui = {
   closeManualActivity: () => set({ manualActivityOpen: false }),
   triggerDayAnalysis: () => set({ dayAnalysisOpen: true, dayAnalysisRun: state.dayAnalysisRun + 1 }),
   closeDayAnalysis: () => set({ dayAnalysisOpen: false }),
+  openFeedback: () => set({ feedbackOpen: true }),
+  closeFeedback: () => set({ feedbackOpen: false }),
   reset: () => set(INITIAL),
 }

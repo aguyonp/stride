@@ -8,6 +8,7 @@ import {
   Footprints,
   History,
   LayoutDashboard,
+  MessageSquarePlus,
   Plus,
   RefreshCw,
   Search,
@@ -146,6 +147,15 @@ export function CommandPalette({ me }: { me: Me }) {
         keywords: 'douleur gene blessure corps genou achille periostite tfl aponevrose',
         icon: Stethoscope,
         onSelect: () => navigate('/health?new=1'),
+      },
+      {
+        id: 'act-feedback',
+        group: 'Actions rapides',
+        label: 'Donner un avis',
+        subtitle: 'Signaler un bug ou proposer une idée à l’administrateur',
+        keywords: 'avis bug idee suggestion retour feedback probleme contact',
+        icon: MessageSquarePlus,
+        onSelect: () => ui.openFeedback(),
       },
       {
         id: 'act-share',

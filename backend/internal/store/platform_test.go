@@ -128,6 +128,12 @@ func TestSessionsAndDisable(t *testing.T) {
 		t.Fatalf("slid session: %v", err)
 	}
 	disabled := StatusDisabled
+	if err := s.UpdateUserAccess(ctx, u.ID, nil, &disabled); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("the last active admin cannot be disabled: %v", err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO users (display_name, role, status, created_at) VALUES ('root', 'admin', 'active', ?)`, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.UpdateUserAccess(ctx, u.ID, nil, &disabled); err != nil {
 		t.Fatal(err)
 	}

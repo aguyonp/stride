@@ -149,6 +149,16 @@ func (l *Log) Purge(ctx context.Context, now time.Time) (int64, error) {
 	return n + m, nil
 }
 
+// CountErrorsSince counts error-level entries recorded after since (pending batch excluded).
+func (l *Log) CountErrorsSince(ctx context.Context, since time.Time) (int, error) {
+	var n int
+	err := l.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_logs WHERE level = ? AND at_ms >= ?`, LevelError, since.UnixMilli()).Scan(&n)
+	return n, err
+}
+
+// Dropped is the number of entries lost because the write buffer was full.
+func (l *Log) Dropped() int64 { return l.dropped.Load() }
+
 type Filter struct {
 	Category string
 	Level    string

@@ -41,12 +41,14 @@ import { getCatalog } from './catalog'
 import { currentUser, db, emptyData, nextId, presetFor, PRESETS, save, userData, type MockUser, type PlanEntry, type StoredNotes, type UserData } from './db'
 import { notesOf, plannedWithMatch, summarize, visibleItems, weekPlan } from './domain'
 import { has } from './flags'
+import { localShoe, syncStravaGear } from './gear'
 import { activityReport, dayReport, multiReport, parseIncludeParam } from './report'
 import { buildActivityView, buildDayView } from './view'
 import { enrichActivityView, enrichDayView, llmConfigured, registerV3 } from './v3'
 import { registerV31 } from './v31'
 import { registerV4, tryAsyncMockV4 } from './v4'
 import { registerV41 } from './v41'
+import { adminUserExtras, dropUserFeedback, isLastAdmin, registerAdmin, revokeMockSessions } from './admin'
 
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -73,7 +75,7 @@ function parse<T>(init?: RequestInit): T | null {
 
 const isoNow = () => new Date().toISOString()
 const toMe = (u: MockUser): Me => ({ id: u.id, displayName: u.displayName, role: u.role, createdAt: u.createdAt, onboardingCompleted: u.onboardingCompleted })
-const toAdmin = (u: MockUser): AdminUser => ({ id: u.id, displayName: u.displayName, role: u.role, status: u.status, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt, passkeys: u.passkeys.length })
+const toAdmin = (u: MockUser): AdminUser => ({ id: u.id, displayName: u.displayName, role: u.role, status: u.status, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt, passkeys: u.passkeys.length, ...adminUserExtras(u) })
 const rand = (len: number, alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789') => Array.from({ length: len }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')
 
 function deviceName(): string {
@@ -392,8 +394,10 @@ route('PATCH', /^\/api\/admin\/users\/(\d+)$/, ({ me, params, init }) => {
   if (!u) return err(404, 'NOT_FOUND', 'Utilisateur introuvable.')
   if (u.id === me.id) return err(409, 'CONFLICT', 'Tu ne peux pas modifier ton propre compte.')
   const b = parse<{ status?: string; role?: string }>(init) ?? {}
+  if ((b.status === 'disabled' || b.role === 'user') && isLastAdmin(u)) return err(409, 'CONFLICT', 'Impossible : ce compte est le dernier administrateur actif.')
   if (b.status !== undefined) {
     if (b.status !== 'active' && b.status !== 'disabled') return err(400, 'BAD_REQUEST', 'Statut invalide.')
+    if (b.status === 'disabled') revokeMockSessions(u.id)
     u.status = b.status
   }
   if (b.role !== undefined) {
@@ -406,9 +410,12 @@ route('DELETE', /^\/api\/admin\/users\/(\d+)$/, ({ me, params }) => {
   const s = db()
   const id = Number(params[0])
   if (id === me.id) return err(409, 'CONFLICT', 'Tu ne peux pas supprimer ton propre compte ici.')
-  if (!s.users.some((u) => u.id === id)) return err(404, 'NOT_FOUND', 'Utilisateur introuvable.')
+  const target = s.users.find((u) => u.id === id)
+  if (!target) return err(404, 'NOT_FOUND', 'Utilisateur introuvable.')
+  if (isLastAdmin(target)) return err(409, 'CONFLICT', 'Impossible : ce compte est le dernier administrateur actif.')
   s.users = s.users.filter((u) => u.id !== id)
   delete s.data[String(id)]
+  dropUserFeedback(id)
   return noContent()
 })
 route('GET', /^\/api\/admin\/invitations$/, () => json(db().invitations.map(({ code: _c, ...i }) => i)))
@@ -559,7 +566,8 @@ route('GET', /^\/api\/activities$/, ({ data, url }) => {
   const today = todayISO()
   const all = visibleItems(data, today)
   const q = url.searchParams
-  const limit = Math.max(1, Math.min(200, Number(q.get('limit') ?? 30) || 30))
+  const limit = Number(q.get('limit') ?? 30)
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) return err(400, 'BAD_REQUEST', 'limit doit être un entier entre 1 et 100.')
   let items = all
   const before = q.get('before')
   const from = q.get('from')
@@ -733,7 +741,7 @@ route('POST', /^\/api\/shoes$/, ({ data, init }) => {
   const b = parse<Partial<Shoe>>(init) ?? {}
   const e = validShoe(b, false)
   if (e) return err(400, 'BAD_REQUEST', e)
-  const s: Shoe = { id: nextId(), name: b.name!.trim(), brand: b.brand ?? '', model: b.model ?? '', dropMm: b.dropMm ?? null, type: b.type as ShoeType, stravaGearId: b.stravaGearId ?? null, retired: !!b.retired, distanceKm: 0, note: b.note ?? '' }
+  const s: Shoe = localShoe({ id: nextId(), name: b.name!.trim(), brand: b.brand ?? '', model: b.model ?? '', dropMm: b.dropMm ?? null, type: b.type as ShoeType, stravaGearId: b.stravaGearId ?? null, retired: !!b.retired, note: b.note ?? '' })
   data.shoes.push(s)
   return json(s, 201)
 })
@@ -743,7 +751,8 @@ route('PATCH', /^\/api\/shoes\/(\d+)$/, ({ data, params, init }) => {
   const b = parse<Partial<Shoe>>(init) ?? {}
   const e = validShoe(b, true)
   if (e) return err(400, 'BAD_REQUEST', e)
-  Object.assign(s, { ...b, id: s.id, distanceKm: s.distanceKm })
+  const { name, brand, model, dropMm, type, retired, note } = b
+  Object.assign(s, Object.fromEntries(Object.entries({ name, brand, model, dropMm, type, retired, note }).filter(([, v]) => v !== undefined)))
   return json(s)
 })
 route('DELETE', /^\/api\/shoes\/(\d+)$/, ({ data, params }) => {
@@ -754,18 +763,10 @@ route('DELETE', /^\/api\/shoes\/(\d+)$/, ({ data, params }) => {
   return before === data.shoes.length ? err(404, 'NOT_FOUND', 'Chaussure introuvable.') : noContent()
 })
 route('POST', /^\/api\/shoes\/import-strava$/, ({ data }) => {
-  if (!data.integrations.strava.connected) return err(400, 'PROVIDER_NOT_CONNECTED', 'Connecte Strava pour importer tes chaussures.')
-  const gear = [
-    { id: 'g2741001', brand: 'Vela', model: 'Cloudline 3', km: 418.7 },
-    { id: 'g2741002', brand: 'Kairo', model: 'Swift 2', km: 191.4 },
-    { id: 'g2741003', brand: 'Orra', model: 'Trail XT', km: 96.3 },
-  ]
-  for (const g of gear) {
-    const existing = data.shoes.find((s) => s.stravaGearId === g.id) ?? data.shoes.find((s) => !s.stravaGearId && s.model === g.model)
-    if (existing) Object.assign(existing, { stravaGearId: g.id, distanceKm: g.km })
-    else data.shoes.push({ id: nextId(), name: `${g.brand} ${g.model}`, brand: g.brand, model: g.model, dropMm: null, type: 'soft', stravaGearId: g.id, retired: false, distanceKm: g.km, note: 'Importée depuis Strava' })
-  }
-  return json(data.shoes)
+  if (!data.integrations.strava.connected) return err(412, 'PROVIDER_NOT_CONNECTED', 'Fournisseur non connecté : configurez-le dans Réglages › Intégrations.')
+  if (data.integrations.strava.missingScopes?.includes('profile:read_all'))
+    return err(409, 'CONFLICT', 'Strava ne partage pas ton équipement : reconnecte Strava (Réglages › Intégrations) en autorisant l’accès complet au profil (profile:read_all).')
+  return json(syncStravaGear(data.shoes, nextId, isoNow()))
 })
 
 /* --- domain: exports & backup --- */
@@ -788,6 +789,7 @@ registerV3(route, (data, id) => {
 registerV31(route, llmConfigured)
 registerV4(route, pub)
 registerV41(route)
+registerAdmin(route, meter)
 
 /* ---------------------------------- Entry point ---------------------------------- */
 
