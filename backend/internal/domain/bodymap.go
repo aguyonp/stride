@@ -10,177 +10,173 @@ import (
 	"stride/internal/analysis"
 )
 
-// BodyMap builds the full anatomical body stress overview with canonical zones, entries, and correlations.
+const bodyEntrySelect = `SELECT e.id, e.date, e.activity_id, a.name, e.zone, e.side, e.pain_score, e.cold_next_day_score, e.note, e.created_at, e.updated_at
+	FROM body_stress_entries e LEFT JOIN activities a ON a.id = e.activity_id AND a.user_id = e.user_id`
+
+// BodyMap builds the body stress overview: zone summaries (30/90 days), the entries of the last
+// days (7 to 365) and the correlations computed on the runs of the last 90 days.
 func (s *Services) BodyMap(ctx context.Context, uid int64, days int, zoneFilter string) (*analysis.BodyMapOverview, error) {
-	if days <= 0 {
+	if days == 0 {
 		days = 90
 	}
-
-	today := s.now().Format("2006-01-02")
-	cutoffWindow := addDays(today, -days)
-	cutoff30 := addDays(today, -30)
+	if days < 7 || days > 365 {
+		return nil, badRequest("days doit être compris entre 7 et 365.")
+	}
+	if zoneFilter != "" && !isValidZone(analysis.BodyZone(zoneFilter)) {
+		return nil, badRequest("Zone anatomique inconnue.")
+	}
+	p, err := s.profile(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	today := s.today(p)
 	cutoff90 := addDays(today, -90)
+	all, err := s.bodyStressSince(ctx, uid, min(addDays(today, -days), cutoff90))
+	if err != nil {
+		return nil, err
+	}
+	var entries, last90 []analysis.BodyStressEntry
+	for _, e := range all {
+		if e.Date >= addDays(today, -days) && (zoneFilter == "" || string(e.Zone) == zoneFilter) {
+			entries = append(entries, e)
+		}
+		if e.Date >= cutoff90 {
+			last90 = append(last90, e)
+		}
+	}
+	zones := make([]analysis.BodyZoneSummary, 0, len(analysis.AllBodyZones))
+	var active []analysis.BodyZoneSummary
+	for _, z := range analysis.AllBodyZones {
+		zs := zoneSummary(z, last90, addDays(today, -30))
+		zones = append(zones, zs)
+		if zs.EntriesCount90d > 0 && (zoneFilter == "" || string(z) == zoneFilter) {
+			active = append(active, zs)
+		}
+	}
+	corrs := []analysis.BodyCorrelationFactor{}
+	if len(active) > 0 {
+		if corrs, err = s.bodyCorrelations(ctx, uid, active, last90, cutoff90, today); err != nil {
+			return nil, err
+		}
+	}
+	if entries == nil {
+		entries = []analysis.BodyStressEntry{}
+	}
+	return &analysis.BodyMapOverview{Zones: zones, Entries: entries, Correlations: corrs, WindowDays: days}, nil
+}
 
-	// Fetch entries in 90 days window for zone summaries & correlations
-	q := `SELECT e.id, e.date, e.activity_id, a.name, e.zone, e.side, e.pain_score, e.cold_next_day_score, e.note, e.created_at, e.updated_at
-		FROM body_stress_entries e
-		LEFT JOIN activities a ON e.activity_id = a.id
-		WHERE e.user_id = ? AND e.date >= ?
-		ORDER BY e.date DESC, e.id DESC`
-	rows, err := s.db().QueryContext(ctx, q, uid, cutoff90)
+// zoneSummary summarizes the entries of one zone (entries are sorted newest first).
+func zoneSummary(z analysis.BodyZone, entries []analysis.BodyStressEntry, cutoff30 string) analysis.BodyZoneSummary {
+	out := analysis.BodyZoneSummary{Zone: z, ZoneLabel: analysis.BodyZoneLabel(z), Trend: "none"}
+	var latest, prev *analysis.BodyStressEntry
+	for i := range entries {
+		e := &entries[i]
+		if e.Zone != z {
+			continue
+		}
+		out.EntriesCount90d++
+		switch {
+		case latest == nil:
+			latest = e
+		case prev == nil:
+			prev = e
+		}
+		if e.Date >= cutoff30 {
+			m := e.PainScore
+			if e.ColdNextDayScore != nil {
+				m = max(m, *e.ColdNextDayScore)
+			}
+			if out.MaxScore30d == nil || m > *out.MaxScore30d {
+				out.MaxScore30d = &m
+			}
+		}
+	}
+	if latest == nil {
+		return out
+	}
+	score, side, date := latest.PainScore, latest.Side, latest.Date
+	out.LatestScore, out.LatestColdNextDayScore, out.LatestSide, out.LatestDate = &score, latest.ColdNextDayScore, &side, &date
+	out.Trend = "stable"
+	if prev != nil {
+		switch d := latest.PainScore - prev.PainScore; {
+		case d >= 1:
+			out.Trend = "worsening"
+		case d <= -1:
+			out.Trend = "improving"
+		}
+	}
+	return out
+}
+
+// bodyCorrelations feeds the correlation engine with the user's shoes and activities since from.
+func (s *Services) bodyCorrelations(ctx context.Context, uid int64, active []analysis.BodyZoneSummary, entries []analysis.BodyStressEntry, from, today string) ([]analysis.BodyCorrelationFactor, error) {
+	shoes, err := s.Shoes(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	shoeSums := make([]analysis.ShoeBioSummary, 0, len(shoes))
+	for _, sh := range shoes {
+		shoeSums = append(shoeSums, analysis.ShoeBioSummary{ID: sh.ID, Name: sh.Name, DropMm: sh.DropMm, DistanceKm: sh.DistanceKm})
+	}
+	acts, err := s.activitiesBetween(ctx, uid, from, today)
+	if err != nil {
+		return nil, err
+	}
+	shoeOf, err := s.activityShoes(ctx, uid, from)
+	if err != nil {
+		return nil, err
+	}
+	actSums := make([]analysis.ActivityBioSummary, 0, len(acts))
+	for _, a := range acts {
+		sum := analysis.ActivityBioSummary{ID: a.ID, Date: a.LocalDate, IsRunning: a.isRunning(), ElevLossM: a.ElevLoss, GctMs: a.AvgGCT}
+		if a.DistanceM != nil {
+			km := *a.DistanceM / 1000
+			sum.DistanceKm = &km
+		}
+		if id, ok := shoeOf[a.ID]; ok {
+			sum.ShoeID = &id
+		}
+		actSums = append(actSums, sum)
+	}
+	return analysis.ComputeCorrelations(active, entries, shoeSums, actSums), nil
+}
+
+// activityShoes maps activities since from to their shoe: the note's shoe, else the shoe matching
+// the Strava gear (same rule as the shoe mileage).
+func (s *Services) activityShoes(ctx context.Context, uid int64, from string) (map[int64]int64, error) {
+	rows, err := s.db().QueryContext(ctx, `SELECT a.id, COALESCE(n.shoe_id,
+			(SELECT sh.id FROM shoes sh WHERE sh.user_id = a.user_id AND sh.strava_gear_id IS NOT NULL AND sh.strava_gear_id = a.strava_gear))
+		FROM activities a LEFT JOIN activity_notes n ON n.activity_id = a.id AND n.user_id = a.user_id
+		WHERE a.user_id = ? AND a.local_date >= ?`, uid, from)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var all90 []analysis.BodyStressEntry
+	out := map[int64]int64{}
 	for rows.Next() {
-		e, err := scanBodyStressEntry(rows)
-		if err != nil {
+		var id int64
+		var shoe sql.NullInt64
+		if err := rows.Scan(&id, &shoe); err != nil {
 			return nil, err
 		}
-		all90 = append(all90, e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	// Compute summaries for all 6 canonical zones
-	zones := make([]analysis.BodyZoneSummary, 0, len(analysis.AllBodyZones))
-	for _, z := range analysis.AllBodyZones {
-		var z90 []analysis.BodyStressEntry
-		var z30 []analysis.BodyStressEntry
-		for _, e := range all90 {
-			if e.Zone == z {
-				z90 = append(z90, e)
-				if e.Date >= cutoff30 {
-					z30 = append(z30, e)
-				}
-			}
-		}
-
-		var latest *analysis.BodyStressEntry
-		var prev *analysis.BodyStressEntry
-		if len(z90) > 0 {
-			latest = &z90[0]
-			if len(z90) > 1 {
-				prev = &z90[1]
-			}
-		}
-
-		var latestScore *float64
-		var latestCold *float64
-		var latestSide *analysis.BodySide
-		var latestDate *string
-		if latest != nil {
-			s := latest.PainScore
-			latestScore = &s
-			latestCold = latest.ColdNextDayScore
-			side := latest.Side
-			latestSide = &side
-			d := latest.Date
-			latestDate = &d
-		}
-
-		var max30 *float64
-		if len(z30) > 0 {
-			m := 0.0
-			for _, e := range z30 {
-				if e.PainScore > m {
-					m = e.PainScore
-				}
-				if e.ColdNextDayScore != nil && *e.ColdNextDayScore > m {
-					m = *e.ColdNextDayScore
-				}
-			}
-			max30 = &m
-		}
-
-		trend := "none"
-		if latest != nil {
-			if prev == nil {
-				trend = "stable"
-			} else if latest.PainScore-prev.PainScore >= 1.0 {
-				trend = "worsening"
-			} else if prev.PainScore-latest.PainScore >= 1.0 {
-				trend = "improving"
-			} else {
-				trend = "stable"
-			}
-		}
-
-		zones = append(zones, analysis.BodyZoneSummary{
-			Zone:                   z,
-			ZoneLabel:              analysis.BodyZoneLabel(z),
-			LatestScore:            latestScore,
-			LatestColdNextDayScore: latestCold,
-			LatestSide:             latestSide,
-			LatestDate:             latestDate,
-			MaxScore30d:            max30,
-			EntriesCount90d:        len(z90),
-			Trend:                  trend,
-		})
-	}
-
-	// Filter entries for the requested window and optional zone
-	var entries []analysis.BodyStressEntry
-	for _, e := range all90 {
-		if e.Date >= cutoffWindow {
-			if zoneFilter == "" || string(e.Zone) == zoneFilter {
-				entries = append(entries, e)
-			}
+		if shoe.Valid {
+			out[id] = shoe.Int64
 		}
 	}
+	return out, rows.Err()
+}
 
-	// Active zones for correlation engine
-	var activeZones []analysis.BodyZoneSummary
-	for _, z := range zones {
-		if z.EntriesCount90d > 0 && (zoneFilter == "" || string(z.Zone) == zoneFilter) {
-			activeZones = append(activeZones, z)
-		}
+// ownActivity returns ErrNotFound unless the activity exists and belongs to uid.
+func (s *Services) ownActivity(ctx context.Context, uid int64, id *int64) error {
+	if id == nil {
+		return nil
 	}
-
-	// Query shoes for shoe correlations
-	shoes, err := s.Shoes(ctx, uid)
-	if err != nil {
-		shoes = nil
+	var one int
+	err := s.db().QueryRowContext(ctx, `SELECT 1 FROM activities WHERE id = ? AND user_id = ?`, *id, uid).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
 	}
-	shoeSummaries := make([]analysis.ShoeBioSummary, 0, len(shoes))
-	for _, sh := range shoes {
-		shoeSummaries = append(shoeSummaries, analysis.ShoeBioSummary{
-			ID:         sh.ID,
-			Name:       sh.Name,
-			DropMm:     sh.DropMm,
-			DistanceKm: sh.DistanceKm,
-			Retired:    sh.Retired,
-		})
-	}
-
-	// Query running activities in the last 90 days for correlation baselines
-	acts, err := s.activitiesBetween(ctx, uid, cutoff90, today)
-	if err != nil {
-		acts = nil
-	}
-	actSummaries := make([]analysis.ActivityBioSummary, 0, len(acts))
-	for _, a := range acts {
-		actSummaries = append(actSummaries, analysis.ActivityBioSummary{
-			ID:         a.ID,
-			Date:       a.LocalDate,
-			IsRunning:  a.isRunning(),
-			ElevLossM:  a.ElevLoss,
-			GctMs:      a.AvgGCT,
-			ImpactLoad: a.Load,
-		})
-	}
-
-	corrs := analysis.ComputeCorrelations(activeZones, all90, shoeSummaries, actSummaries)
-
-	return &analysis.BodyMapOverview{
-		Zones:        zones,
-		Entries:      entries,
-		Correlations: corrs,
-		WindowDays:   days,
-	}, nil
+	return err
 }
 
 // CreateBodyStressEntry logs a new pain or discomfort score.
@@ -201,6 +197,9 @@ func (s *Services) CreateBodyStressEntry(ctx context.Context, uid int64, in anal
 	side := analysis.SideBoth
 	if in.Side != nil && (*in.Side == analysis.SideLeft || *in.Side == analysis.SideRight || *in.Side == analysis.SideBoth) {
 		side = *in.Side
+	}
+	if err := s.ownActivity(ctx, uid, in.ActivityID); err != nil {
+		return nil, err
 	}
 
 	note := ""
@@ -257,13 +256,10 @@ func (s *Services) PatchBodyStressEntry(ctx context.Context, uid, id int64, in a
 		}
 	}
 
-	painScore := entry.PainScore
-	if in.PainScore > 0 || in.PainScore == 0 {
-		if in.PainScore < 0 || in.PainScore > 10 {
-			return nil, badRequest("Score de douleur hors limites [0, 10].")
-		}
-		painScore = in.PainScore
+	if in.PainScore < 0 || in.PainScore > 10 {
+		return nil, badRequest("Score de douleur hors limites [0, 10].")
 	}
+	painScore := in.PainScore
 
 	coldScore := entry.ColdNextDayScore
 	if in.ColdNextDayScore != nil {
@@ -275,6 +271,9 @@ func (s *Services) PatchBodyStressEntry(ctx context.Context, uid, id int64, in a
 
 	actID := entry.ActivityID
 	if in.ActivityID != nil {
+		if err := s.ownActivity(ctx, uid, in.ActivityID); err != nil {
+			return nil, err
+		}
 		actID = in.ActivityID
 	}
 
@@ -309,11 +308,7 @@ func (s *Services) DeleteBodyStressEntry(ctx context.Context, uid, id int64) err
 }
 
 func (s *Services) getBodyStressEntry(ctx context.Context, uid, id int64) (*analysis.BodyStressEntry, error) {
-	row := s.db().QueryRowContext(ctx, `SELECT e.id, e.date, e.activity_id, a.name, e.zone, e.side, e.pain_score, e.cold_next_day_score, e.note, e.created_at, e.updated_at
-		FROM body_stress_entries e
-		LEFT JOIN activities a ON e.activity_id = a.id
-		WHERE e.user_id = ? AND e.id = ?`, uid, id)
-	e, err := scanBodyStressEntry(row)
+	e, err := scanBodyStressEntry(s.db().QueryRowContext(ctx, bodyEntrySelect+` WHERE e.user_id = ? AND e.id = ?`, uid, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -321,17 +316,20 @@ func (s *Services) getBodyStressEntry(ctx context.Context, uid, id int64) (*anal
 }
 
 func (s *Services) recentBodyStress(ctx context.Context, uid int64, days int) ([]analysis.BodyStressEntry, error) {
-	cutoff := addDays(s.now().Format("2006-01-02"), -days)
-	rows, err := s.db().QueryContext(ctx, `SELECT e.id, e.date, e.activity_id, a.name, e.zone, e.side, e.pain_score, e.cold_next_day_score, e.note, e.created_at, e.updated_at
-		FROM body_stress_entries e
-		LEFT JOIN activities a ON e.activity_id = a.id
-		WHERE e.user_id = ? AND e.date >= ?
-		ORDER BY e.date DESC, e.id DESC`, uid, cutoff)
+	p, err := s.profile(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return s.bodyStressSince(ctx, uid, addDays(s.today(p), -days))
+}
+
+// bodyStressSince lists the entries dated from since, newest first.
+func (s *Services) bodyStressSince(ctx context.Context, uid int64, since string) ([]analysis.BodyStressEntry, error) {
+	rows, err := s.db().QueryContext(ctx, bodyEntrySelect+` WHERE e.user_id = ? AND e.date >= ? ORDER BY e.date DESC, e.id DESC`, uid, since)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var out []analysis.BodyStressEntry
 	for rows.Next() {
 		e, err := scanBodyStressEntry(rows)

@@ -29,13 +29,14 @@ type Deps struct {
 }
 
 type api struct {
-	s   *domain.Services
-	log *slog.Logger
+	s          *domain.Services
+	log        *slog.Logger
+	shareLimit *ipLimiter
 }
 
 // Register mounts every domain route on mux (Go 1.22 patterns, e.g. "GET /api/activities/{id}").
 func Register(mux *http.ServeMux, d Deps) {
-	a := &api{s: d.Services, log: d.Log}
+	a := &api{s: d.Services, log: d.Log, shareLimit: newIPLimiter(shareRateLimit)}
 	if a.log == nil {
 		a.log = slog.Default()
 	}

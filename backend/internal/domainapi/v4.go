@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"stride/internal/analysis"
 	"stride/internal/domain"
@@ -131,9 +132,12 @@ func (a *api) bodyMap(w http.ResponseWriter, r *http.Request) {
 	a.withUser(w, r, func(uid int64) {
 		days := 90
 		if raw := r.URL.Query().Get("days"); raw != "" {
-			if d, err := strconv.Atoi(raw); err == nil && d > 0 {
-				days = d
+			d, err := strconv.Atoi(raw)
+			if err != nil || d < 7 || d > 365 {
+				badRequest(w, "days doit être un entier compris entre 7 et 365.")
+				return
 			}
+			days = d
 		}
 		zone := r.URL.Query().Get("zone")
 		v, err := a.s.BodyMap(r.Context(), uid, days, zone)
@@ -199,18 +203,21 @@ func (a *api) deleteShareLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) publicShare(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	v, err := a.s.GetPublicShare(r.Context(), token)
-	if err != nil {
-		if errors.Is(err, domain.ErrGone) {
-			httpx.Fail(w, http.StatusGone, "GONE", "Ce lien de partage a expiré.")
-			return
-		}
-		httpx.Fail(w, http.StatusNotFound, httpx.CodeNotFound, "Lien de partage introuvable ou révoqué.")
+	if !a.shareLimit.allow(clientIP(r), time.Now()) {
+		w.Header().Set("Retry-After", "60")
+		httpx.Fail(w, http.StatusTooManyRequests, httpx.CodeRateLimited, "Trop de consultations, réessayez dans une minute.")
 		return
 	}
-	w.Header().Set("Cache-Control", "private, no-store")
-	httpx.JSON(w, http.StatusOK, v)
+	v, err := a.s.GetPublicShare(r.Context(), r.PathValue("token"))
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		httpx.Fail(w, http.StatusNotFound, httpx.CodeNotFound, "Lien de partage introuvable ou révoqué.")
+	case err != nil:
+		a.fail(w, r, err)
+	default:
+		w.Header().Set("Cache-Control", "private, no-store")
+		httpx.JSON(w, http.StatusOK, v)
+	}
 }
 
 // ---------- Jobs ----------

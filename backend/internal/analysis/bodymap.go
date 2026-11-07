@@ -2,7 +2,12 @@
 package analysis
 
 import (
+	"fmt"
 	"math"
+	"sort"
+	"strings"
+
+	"stride/internal/frfmt"
 )
 
 // BodyZone identifies one of the 6 canonical anatomical zones monitored by Stride.
@@ -113,21 +118,24 @@ type BodyShoeHighlight struct {
 	PainEpisodes int      `json:"painEpisodes"`
 }
 
-// BodyCorrelationFactor represents a statistical cross-analysis factor.
+// BodyCorrelationFactor compares a factor between the runs linked to a zone's pain entries
+// (symptomatic) and the other runs of the window (baseline). Means, delta and summary are null
+// when either sample is too small (InsufficientData).
 type BodyCorrelationFactor struct {
-	Zone            BodyZone           `json:"zone"`
-	ZoneLabel       string             `json:"zoneLabel"`
-	Factor          string             `json:"factor"` // shoe_drop | shoe_wear | elev_loss | gct | impact_load
-	FactorLabel     string             `json:"factorLabel"`
-	Unit            string             `json:"unit"`
-	SymptomaticMean *float64           `json:"symptomaticMean"`
-	BaselineMean    *float64           `json:"baselineMean"`
-	DeltaPct        *float64           `json:"deltaPct"`
-	SymptomaticRuns int                `json:"symptomaticRuns"`
-	BaselineRuns    int                `json:"baselineRuns"`
-	Confidence      string             `json:"confidence"` // insufficient | low | moderate | high
-	ShoeHighlight   *BodyShoeHighlight `json:"shoeHighlight"`
-	Summary         string             `json:"summary"`
+	Zone             BodyZone           `json:"zone"`
+	ZoneLabel        string             `json:"zoneLabel"`
+	Factor           string             `json:"factor"` // elev_loss | shoe_wear | shoe_drop | gct
+	FactorLabel      string             `json:"factorLabel"`
+	Unit             string             `json:"unit"`
+	SymptomaticMean  *float64           `json:"symptomaticMean"`
+	BaselineMean     *float64           `json:"baselineMean"`
+	DeltaPct         *float64           `json:"deltaPct"`
+	SymptomaticRuns  int                `json:"symptomaticRuns"`
+	BaselineRuns     int                `json:"baselineRuns"`
+	Confidence       string             `json:"confidence"` // insufficient | low | moderate | high
+	InsufficientData bool               `json:"insufficientData"`
+	ShoeHighlight    *BodyShoeHighlight `json:"shoeHighlight"`
+	Summary          *string            `json:"summary"`
 }
 
 // BodyMapOverview encapsulates the complete body stress map response.
@@ -143,254 +151,220 @@ type ShoeBioSummary struct {
 	ID         int64
 	Name       string
 	DropMm     *float64
-	DistanceKm float64
-	Retired    bool
+	DistanceKm float64 // current total, all activities included
 }
 
-// ActivityBioSummary carries the minimal activity telemetry needed for correlation computation.
+// ActivityBioSummary carries the minimal activity data needed for correlation computation.
 type ActivityBioSummary struct {
 	ID         int64
 	Date       string
 	IsRunning  bool
+	DistanceKm *float64
 	ElevLossM  *float64
 	GctMs      *float64
-	ImpactLoad *float64
 	ShoeID     *int64
 }
 
-// ComputeCorrelations builds statistical biomechanical correlations across zones with pain episodes.
-func ComputeCorrelations(
-	activeZones []BodyZoneSummary,
-	entries90 []BodyStressEntry,
-	shoes []ShoeBioSummary,
-	acts []ActivityBioSummary,
-) []BodyCorrelationFactor {
-	corrs := make([]BodyCorrelationFactor, 0, len(activeZones)*2)
+// Sample sizes (runs with a value) for a correlation: below the minimum it is not computed.
+const (
+	corrMinSymptomatic, corrMinBaseline           = 2, 3
+	corrModerateSymptomatic, corrModerateBaseline = 3, 5
+	corrHighSymptomatic, corrHighBaseline         = 5, 10
+)
 
-	var primaryShoe *ShoeBioSummary
-	if len(shoes) > 0 {
-		s := shoes[0]
-		primaryShoe = &s
+func corrConfidence(sym, base int) string {
+	switch {
+	case sym < corrMinSymptomatic || base < corrMinBaseline:
+		return "insufficient"
+	case sym < corrModerateSymptomatic || base < corrModerateBaseline:
+		return "low"
+	case sym < corrHighSymptomatic || base < corrHighBaseline:
+		return "moderate"
 	}
+	return "high"
+}
 
-	// Index running activities by ID and by Date
-	actByID := make(map[int64]ActivityBioSummary, len(acts))
-	actByDate := make(map[string][]ActivityBioSummary, len(acts))
-	var allRuns []ActivityBioSummary
-	for _, a := range acts {
-		if a.IsRunning {
-			actByID[a.ID] = a
-			actByDate[a.Date] = append(actByDate[a.Date], a)
-			allRuns = append(allRuns, a)
+type corrFactor struct {
+	key, label, unit string
+	digits           int
+	value            func(ActivityBioSummary) *float64
+}
+
+// ComputeCorrelations compares, for each zone with pain entries, the runs linked to an entry
+// (same activity or same day) with the other runs of acts. Only measured values are used.
+func ComputeCorrelations(activeZones []BodyZoneSummary, entries []BodyStressEntry, shoes []ShoeBioSummary, acts []ActivityBioSummary) []BodyCorrelationFactor {
+	shoeByID := make(map[int64]ShoeBioSummary, len(shoes))
+	for _, sh := range shoes {
+		shoeByID[sh.ID] = sh
+	}
+	wear := shoeWearAtActivity(shoes, acts)
+	drop := func(a ActivityBioSummary) *float64 {
+		if a.ShoeID == nil {
+			return nil
+		}
+		return shoeByID[*a.ShoeID].DropMm
+	}
+	positive := func(get func(ActivityBioSummary) *float64) func(ActivityBioSummary) *float64 {
+		return func(a ActivityBioSummary) *float64 {
+			if v := get(a); v != nil && *v > 0 {
+				return v
+			}
+			return nil
 		}
 	}
+	elevLoss := corrFactor{"elev_loss", "Dénivelé négatif (D−)", "m", 0, func(a ActivityBioSummary) *float64 {
+		if a.ElevLossM != nil && *a.ElevLossM >= 0 {
+			return a.ElevLossM
+		}
+		return nil
+	}}
+	shoeWear := corrFactor{"shoe_wear", "Usure chaussure", "km", 0, positive(func(a ActivityBioSummary) *float64 { return wear[a.ID] })}
+	shoeDrop := corrFactor{"shoe_drop", "Drop chaussure", "mm", 1, positive(drop)}
+	gct := corrFactor{"gct", "Temps de contact au sol (GCT)", "ms", 0, positive(func(a ActivityBioSummary) *float64 { return a.GctMs })}
 
+	var runs []ActivityBioSummary
+	for _, a := range acts {
+		if a.IsRunning {
+			runs = append(runs, a)
+		}
+	}
+	corrs := []BodyCorrelationFactor{}
 	for _, z := range activeZones {
 		if z.EntriesCount90d <= 0 {
 			continue
 		}
-
-		// Filter entries for this zone
-		var zEntries []BodyStressEntry
-		symptomaticDates := make(map[string]bool)
-		symptomaticActIDs := make(map[int64]bool)
-		for _, e := range entries90 {
+		days, ids := map[string]bool{}, map[int64]bool{}
+		for _, e := range entries {
 			if e.Zone == z.Zone {
-				zEntries = append(zEntries, e)
-				symptomaticDates[e.Date] = true
+				days[e.Date] = true
 				if e.ActivityID != nil {
-					symptomaticActIDs[*e.ActivityID] = true
+					ids[*e.ActivityID] = true
 				}
 			}
 		}
-
-		// Partition running activities into symptomatic vs baseline
-		var symRuns []ActivityBioSummary
-		var baseRuns []ActivityBioSummary
-		for _, a := range allRuns {
-			if symptomaticActIDs[a.ID] || symptomaticDates[a.Date] {
-				symRuns = append(symRuns, a)
+		var sym, base []ActivityBioSummary
+		for _, a := range runs {
+			if ids[a.ID] || days[a.Date] {
+				sym = append(sym, a)
 			} else {
-				baseRuns = append(baseRuns, a)
+				base = append(base, a)
 			}
 		}
-
+		var factors []corrFactor
 		switch z.Zone {
 		case ZoneKneePFPS:
-			// 1. D- (elev_loss) correlation
-			symElevMean, baseElevMean, deltaElev := meanDiff(symRuns, baseRuns, func(a ActivityBioSummary) *float64 { return a.ElevLossM })
-			symCount := max(len(symRuns), max(2, len(zEntries)))
-			baseCount := max(len(baseRuns), 14)
-			if symElevMean == nil || baseElevMean == nil {
-				vSym := 168.0
-				vBase := 54.0
-				vDelta := 211.1
-				symElevMean = &vSym
-				baseElevMean = &vBase
-				deltaElev = &vDelta
-			}
-			conf := "low"
-			if z.EntriesCount90d >= 2 {
-				conf = "high"
-			}
-			corrs = append(corrs, BodyCorrelationFactor{
-				Zone:            ZoneKneePFPS,
-				ZoneLabel:       z.ZoneLabel,
-				Factor:          "elev_loss",
-				FactorLabel:     "Dénivelé négatif (D−)",
-				Unit:            "m",
-				SymptomaticMean: symElevMean,
-				BaselineMean:    baseElevMean,
-				DeltaPct:        deltaElev,
-				SymptomaticRuns: symCount,
-				BaselineRuns:    baseCount,
-				Confidence:      conf,
-				ShoeHighlight:   nil,
-				Summary:         "Les épisodes rotuliens surviennent sur des sorties comportant plus de 3× le D− habituel.",
-			})
-
-			// 2. Shoe wear correlation
-			wearSym := 540.0
-			if primaryShoe != nil {
-				wearSym = math.Round(primaryShoe.DistanceKm)
-			}
-			wearBase := 245.0
-			deltaWear := 120.4
-			var shoeHl *BodyShoeHighlight
-			if primaryShoe != nil {
-				shoeHl = &BodyShoeHighlight{
-					ShoeID:       primaryShoe.ID,
-					ShoeName:     primaryShoe.Name,
-					DropMm:       primaryShoe.DropMm,
-					DistanceKm:   primaryShoe.DistanceKm,
-					PainEpisodes: max(1, z.EntriesCount90d),
-				}
-			}
-			corrs = append(corrs, BodyCorrelationFactor{
-				Zone:            ZoneKneePFPS,
-				ZoneLabel:       z.ZoneLabel,
-				Factor:          "shoe_wear",
-				FactorLabel:     "Usure chaussure",
-				Unit:            "km",
-				SymptomaticMean: &wearSym,
-				BaselineMean:    &wearBase,
-				DeltaPct:        &deltaWear,
-				SymptomaticRuns: max(2, z.EntriesCount90d),
-				BaselineRuns:    14,
-				Confidence:      "moderate",
-				ShoeHighlight:   shoeHl,
-				Summary:         "Gêne plus fréquente avec les paires dépassant 500 km de roulage.",
-			})
-
+			factors = []corrFactor{elevLoss, shoeWear}
 		case ZoneAchilles, ZonePlantarFascia:
-			var lowDropShoe *ShoeBioSummary
-			for i := range shoes {
-				if shoes[i].DropMm != nil && *shoes[i].DropMm <= 6.0 {
-					s := shoes[i]
-					lowDropShoe = &s
-					break
-				}
-			}
-			if lowDropShoe == nil && primaryShoe != nil {
-				lowDropShoe = primaryShoe
-			}
-			dropSym := 4.0
-			if lowDropShoe != nil && lowDropShoe.DropMm != nil {
-				dropSym = *lowDropShoe.DropMm
-			}
-			dropBase := 8.5
-			deltaDrop := -52.9
-			var shoeHl *BodyShoeHighlight
-			if lowDropShoe != nil {
-				shoeHl = &BodyShoeHighlight{
-					ShoeID:       lowDropShoe.ID,
-					ShoeName:     lowDropShoe.Name,
-					DropMm:       lowDropShoe.DropMm,
-					DistanceKm:   lowDropShoe.DistanceKm,
-					PainEpisodes: max(1, z.EntriesCount90d),
-				}
-			}
-			conf := "low"
-			if z.EntriesCount90d >= 2 {
-				conf = "moderate"
-			}
-			corrs = append(corrs, BodyCorrelationFactor{
-				Zone:            z.Zone,
-				ZoneLabel:       z.ZoneLabel,
-				Factor:          "shoe_drop",
-				FactorLabel:     "Drop chaussure",
-				Unit:            "mm",
-				SymptomaticMean: &dropSym,
-				BaselineMean:    &dropBase,
-				DeltaPct:        &deltaDrop,
-				SymptomaticRuns: max(1, z.EntriesCount90d),
-				BaselineRuns:    15,
-				Confidence:      conf,
-				ShoeHighlight:   shoeHl,
-				Summary:         "Raideur matinale accrue après les séances courues avec un drop réduit.",
-			})
-
+			factors = []corrFactor{shoeDrop}
 		default:
-			// GCT or Impact Load factor
-			symGCTMean, baseGCTMean, deltaGCT := meanDiff(symRuns, baseRuns, func(a ActivityBioSummary) *float64 { return a.GctMs })
-			symCount := max(len(symRuns), max(1, z.EntriesCount90d))
-			baseCount := max(len(baseRuns), 14)
-			if symGCTMean == nil || baseGCTMean == nil {
-				vSym := 258.0
-				vBase := 241.0
-				vDelta := 7.1
-				symGCTMean = &vSym
-				baseGCTMean = &vBase
-				deltaGCT = &vDelta
+			factors = []corrFactor{gct}
+		}
+		for _, f := range factors {
+			c := compareFactor(z, f, sym, base)
+			if f.key == "shoe_wear" || f.key == "shoe_drop" {
+				c.ShoeHighlight = mostWornShoe(sym, shoeByID)
 			}
-			conf := "low"
-			if z.EntriesCount90d >= 3 {
-				conf = "moderate"
-			}
-			corrs = append(corrs, BodyCorrelationFactor{
-				Zone:            z.Zone,
-				ZoneLabel:       z.ZoneLabel,
-				Factor:          "gct",
-				FactorLabel:     "Temps de contact au sol (GCT)",
-				Unit:            "ms",
-				SymptomaticMean: symGCTMean,
-				BaselineMean:    baseGCTMean,
-				DeltaPct:        deltaGCT,
-				SymptomaticRuns: symCount,
-				BaselineRuns:    baseCount,
-				Confidence:      conf,
-				ShoeHighlight:   nil,
-				Summary:         "Temps d’appui légèrement rallongé lors des sorties associées à cette gêne.",
-			})
+			corrs = append(corrs, c)
 		}
 	}
-
 	return corrs
 }
 
-func meanDiff(sym, base []ActivityBioSummary, metric func(ActivityBioSummary) *float64) (*float64, *float64, *float64) {
-	sSum, sCount := 0.0, 0
-	for _, a := range sym {
-		if v := metric(a); v != nil && *v > 0 {
-			sSum += *v
-			sCount++
-		}
+func compareFactor(z BodyZoneSummary, f corrFactor, sym, base []ActivityBioSummary) BodyCorrelationFactor {
+	sMean, sN := meanOf(sym, f.value)
+	bMean, bN := meanOf(base, f.value)
+	c := BodyCorrelationFactor{Zone: z.Zone, ZoneLabel: z.ZoneLabel, Factor: f.key, FactorLabel: f.label, Unit: f.unit,
+		SymptomaticRuns: sN, BaselineRuns: bN, Confidence: corrConfidence(sN, bN)}
+	if c.Confidence == "insufficient" {
+		c.InsufficientData = true
+		return c
 	}
-	bSum, bCount := 0.0, 0
-	for _, a := range base {
-		if v := metric(a); v != nil && *v > 0 {
-			bSum += *v
-			bCount++
-		}
-	}
-	if sCount == 0 || bCount == 0 {
-		return nil, nil, nil
-	}
-	sMean := math.Round((sSum/float64(sCount))*10) / 10
-	bMean := math.Round((bSum/float64(bCount))*10) / 10
-	delta := 0.0
+	c.SymptomaticMean, c.BaselineMean = Num(sMean, f.digits), Num(bMean, f.digits)
 	if bMean > 0 {
-		delta = math.Round(((sMean-bMean)/bMean)*1000) / 10
+		c.DeltaPct = Num((sMean-bMean)/bMean*100, 1)
 	}
-	return &sMean, &bMean, &delta
+	summary := fmt.Sprintf("%s : %s en moyenne sur les %s liées à la gêne, contre %s sur les %s.",
+		f.label, frfmt.UnitDec(sMean, f.digits, f.unit), plural(sN, "sortie"), frfmt.UnitDec(bMean, f.digits, f.unit), plural(bN, "autre sortie"))
+	if c.DeltaPct != nil {
+		summary = strings.TrimSuffix(summary, ".") + fmt.Sprintf(" (%s %%).", frfmt.Signed(*c.DeltaPct, 0))
+	}
+	c.Summary = &summary
+	return c
+}
+
+func plural(n int, word string) string {
+	if n > 1 {
+		word = strings.ReplaceAll(word, " ", "s ") + "s"
+	}
+	return fmt.Sprintf("%d %s", n, word)
+}
+
+func meanOf(acts []ActivityBioSummary, value func(ActivityBioSummary) *float64) (float64, int) {
+	sum, n := 0.0, 0
+	for _, a := range acts {
+		if v := value(a); v != nil {
+			sum += *v
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, 0
+	}
+	return sum / float64(n), n
+}
+
+// shoeWearAtActivity returns each activity's shoe mileage at that activity: the shoe's current
+// total minus the distance of its later activities (acts must reach today).
+func shoeWearAtActivity(shoes []ShoeBioSummary, acts []ActivityBioSummary) map[int64]*float64 {
+	total := make(map[int64]float64, len(shoes))
+	for _, sh := range shoes {
+		total[sh.ID] = sh.DistanceKm
+	}
+	sorted := append([]ActivityBioSummary(nil), acts...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Date != sorted[j].Date {
+			return sorted[i].Date > sorted[j].Date
+		}
+		return sorted[i].ID > sorted[j].ID
+	})
+	out := map[int64]*float64{}
+	later := map[int64]float64{}
+	for _, a := range sorted {
+		if a.ShoeID == nil {
+			continue
+		}
+		t, ok := total[*a.ShoeID]
+		if !ok {
+			continue
+		}
+		w := math.Max(0, t-later[*a.ShoeID])
+		out[a.ID] = &w
+		if a.DistanceKm != nil {
+			later[*a.ShoeID] += *a.DistanceKm
+		}
+	}
+	return out
+}
+
+// mostWornShoe returns the shoe used on most symptomatic runs (nil when none is known).
+func mostWornShoe(sym []ActivityBioSummary, shoes map[int64]ShoeBioSummary) *BodyShoeHighlight {
+	counts := map[int64]int{}
+	var best int64
+	for _, a := range sym {
+		if a.ShoeID == nil {
+			continue
+		}
+		if _, ok := shoes[*a.ShoeID]; !ok {
+			continue
+		}
+		counts[*a.ShoeID]++
+		if c := counts[*a.ShoeID]; c > counts[best] || (c == counts[best] && *a.ShoeID < best) {
+			best = *a.ShoeID
+		}
+	}
+	if counts[best] == 0 {
+		return nil
+	}
+	sh := shoes[best]
+	return &BodyShoeHighlight{ShoeID: sh.ID, ShoeName: sh.Name, DropMm: sh.DropMm, DistanceKm: sh.DistanceKm, PainEpisodes: counts[best]}
 }
