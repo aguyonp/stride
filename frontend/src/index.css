@@ -303,7 +303,7 @@
 }
 @media (min-width: 1024px) {
   .app-header-grid {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 }
 

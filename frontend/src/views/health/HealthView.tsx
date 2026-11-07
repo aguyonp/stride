@@ -1,6 +1,7 @@
 import { Activity, HeartCrack, Loader2, Pencil, Plus, Stethoscope, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'wouter'
+import { useHealthStatus } from '../../api/queriesV41'
 import { useActivities, useBodyMap, useBodyMapMutations, useProfile } from '../../api/queries'
 import type { BodySide, BodyStressEntry, BodyStressInput, BodyZone } from '../../api/types'
 import { BodyAnatomySvg } from '../../components/bodymap/BodyAnatomySvg'
@@ -14,6 +15,9 @@ import {
   painScoreTone,
 } from '../../components/bodymap/bodyMapMeta'
 import { PainScale } from '../../components/feeling/PainScale'
+import { HealthStatusCard } from '../../components/health/HealthStatusCard'
+import { primaryZone } from '../../components/health/healthStatus'
+import { ShareLinksPanel } from '../../components/share/ShareLinksPanel'
 import { Card } from '../../components/ui/Card'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Dialog } from '../../components/ui/Dialog'
@@ -198,8 +202,8 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
   )
 }
 
-export default function BodyMapView() {
-  useDocumentTitle('Cartographie corporelle')
+export default function HealthView() {
+  useDocumentTitle('Santé & forme')
   const profile = useProfile()
   const today = todayISO(profile.data?.timezone)
   const [params, setParams] = useSearchParams()
@@ -213,18 +217,15 @@ export default function BodyMapView() {
   })
   const [deleteTarget, setDeleteTarget] = useState<BodyStressEntry | null>(null)
 
+  const health = useHealthStatus()
+  const defaults = primaryZone(health.data)
   const mapQuery = useBodyMap(windowDays, null)
   const mut = useBodyMapMutations()
   const { toast } = useToast()
 
   useEffect(() => {
     if (params.get('new') === '1') {
-      const defZone: BodyZone =
-        profile.data?.focusArea && ALL_BODY_ZONES.includes(profile.data.focusArea as BodyZone)
-          ? (profile.data.focusArea as BodyZone)
-          : 'knee_pfps'
-      const defSide: BodySide = profile.data?.injuredSide ?? 'left'
-      setDrawer({ open: true, entry: null, zone: defZone, side: defSide })
+      setDrawer({ open: true, entry: null, zone: defaults.zone, side: defaults.side })
       setParams(
         (prev) => {
           const next = new URLSearchParams(prev)
@@ -234,7 +235,7 @@ export default function BodyMapView() {
         { replace: true },
       )
     }
-  }, [params, profile.data?.focusArea, profile.data?.injuredSide, setParams])
+  }, [params, defaults.zone, defaults.side, setParams])
 
   const data = mapQuery.data
   const zones = data?.zones ?? []
@@ -249,20 +250,14 @@ export default function BodyMapView() {
   }, [data?.correlations, zoneFilter])
 
   const openNewForZone = (zone?: BodyZone, side?: BodySide) => {
-    const z =
-      zone ??
-      zoneFilter ??
-      (profile.data?.focusArea && ALL_BODY_ZONES.includes(profile.data.focusArea as BodyZone)
-        ? (profile.data.focusArea as BodyZone)
-        : 'knee_pfps')
-    setDrawer({ open: true, entry: null, zone: z, side: side ?? profile.data?.injuredSide ?? 'left' })
+    setDrawer({ open: true, entry: null, zone: zone ?? zoneFilter ?? defaults.zone, side: side ?? defaults.side })
   }
+
 
   return (
     <div className="animate-in space-y-5">
       <PageHeader
-        title="Cartographie corporelle"
-        subtitle="Suis tes zones de tension mécanique, le ressenti à froid J+1 et les facteurs de charge ou de chaussage associés."
+        title="Santé & forme"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <SegmentedControl<string>
@@ -282,6 +277,8 @@ export default function BodyMapView() {
           </div>
         }
       />
+
+      <HealthStatusCard today={today} />
 
       {mapQuery.isError && !data ? (
         <InlineError>{mapQuery.error.message}</InlineError>
@@ -474,6 +471,8 @@ export default function BodyMapView() {
           onClose={() => setDrawer((d) => ({ ...d, open: false, entry: null }))}
         />
       )}
+
+      <ShareLinksPanel />
 
       <ConfirmDialog
         open={deleteTarget !== null}

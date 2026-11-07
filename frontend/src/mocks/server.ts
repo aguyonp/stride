@@ -11,7 +11,7 @@
 //            pkcancel (passkey ceremony cancelled) · stravaerr (Strava OAuth returns an error)
 //   v3       see ./v3.ts (nollm, llmerr, pushok, importerr, notiferr, ready-*, noeff)
 //   3.1      see ./v31.ts (standalone, stravascope, longgoal)
-//   4.0      see ./v4.ts (sparse)
+//   4.0      see ./v4.ts (sparse) · 4.1 see ./v41.ts
 // Example: /?mock=user,strava,cooldown
 
 import type {
@@ -46,6 +46,7 @@ import { buildActivityView, buildDayView } from './view'
 import { enrichActivityView, enrichDayView, llmConfigured, registerV3 } from './v3'
 import { registerV31 } from './v31'
 import { registerV4, tryAsyncMockV4 } from './v4'
+import { registerV41 } from './v41'
 
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -462,7 +463,7 @@ route('GET', /^\/api\/admin\/logs$/, ({ url }) => {
   const page = rows.slice(0, 100)
   return json({ items: page, nextBefore: rows.length > 100 ? page[page.length - 1].id : null, dropped: 0 })
 })
-route('GET', /^\/api\/version$/, () => json({ version: '4.0.0', commit: 'v4mock01', builtAt: '2026-11-06T20:00:00Z', go: 'go1.27.1', label: '4.0.0 · v4mock01 · 2026-11-06T20:00:00Z' }))
+route('GET', /^\/api\/version$/, () => json({ version: '4.1.0', commit: 'v41mock1', builtAt: '2026-11-07T20:00:00Z', go: 'go1.27.1', label: '4.1.0 · v41mock1 · 2026-11-07T20:00:00Z' }))
 route('POST', /^\/api\/actions$/, () => new Response(null, { status: 204 }))
 route('POST', /^\/api\/admin\/cache\/flush$/, () => json({ removed: 37 + Math.floor(Math.random() * 120) }))
 route('GET', /^\/api\/admin\/connections$/, () => {
@@ -786,6 +787,7 @@ registerV3(route, (data, id) => {
 })
 registerV31(route, llmConfigured)
 registerV4(route, pub)
+registerV41(route)
 
 /* ---------------------------------- Entry point ---------------------------------- */
 

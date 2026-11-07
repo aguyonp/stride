@@ -22,6 +22,8 @@ import type {
   PublicShareView,
   ShareLink,
   ShareLinkInput,
+  SharePeriodWeeks,
+  ShareSection,
   TrainingCycleOverview,
   TrainingPhase,
   TrainingPhaseInput,
@@ -37,6 +39,7 @@ import type { CatalogItem } from './catalog'
 import { db, nextId, userData, type MockUser, type UserData } from './db'
 import { avgGct, gapSummary, loadRatio, notesOf, plannedWithMatch, sourceMode, summarize, visibleItems } from './domain'
 import { has } from './flags'
+import { records } from './v31'
 import { enrichActivityView, enrichDayView, llmConfigured } from './v3'
 import { buildActivityView, buildDayView } from './view'
 
@@ -200,7 +203,7 @@ function scaffoldPhasesForPlan(
   return { phases, weeks }
 }
 
-function v4Of(data: UserData, userId = 1): V4Data {
+export function v4Of(data: UserData, userId = 1): V4Data {
   if (!data.v4) {
     const today = todayISO()
     const seeded = !has('empty') && data.shoes.length > 0
@@ -297,6 +300,7 @@ function v4Of(data: UserData, userId = 1): V4Data {
             accessCount: 4,
             lastAccessedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
             createdAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+            ...DEFAULT_SCOPE,
           },
           {
             id: nextId(),
@@ -310,6 +314,7 @@ function v4Of(data: UserData, userId = 1): V4Data {
             accessCount: 2,
             lastAccessedAt: new Date(Date.now() - 12 * 86_400_000).toISOString(),
             createdAt: new Date(Date.now() - 45 * 86_400_000).toISOString(),
+            ...DEFAULT_SCOPE,
           },
         )
       }
@@ -721,6 +726,52 @@ function buildBodyMapOverview(
 
 /* ---------------------------------- Public Share View builder ---------------------------------- */
 
+const ALL_SECTIONS: ShareSection[] = ['activities', 'health', 'recovery', 'load', 'records', 'plan', 'shoes', 'notes']
+const DEFAULT_SCOPE = { periodWeeks: 12 as SharePeriodWeeks, sections: ALL_SECTIONS, anonymize: false }
+const PERIODS: SharePeriodWeeks[] = [4, 8, 12, 26, 52]
+
+function scopeOf(b: Partial<ShareLinkInput> | null) {
+  const sections = Array.isArray(b?.sections) ? ALL_SECTIONS.filter((x) => b.sections?.includes(x)) : ALL_SECTIONS
+  return {
+    periodWeeks: b?.periodWeeks && PERIODS.includes(b.periodWeeks) ? b.periodWeeks : DEFAULT_SCOPE.periodWeeks,
+    sections,
+    anonymize: b?.anonymize === true,
+  }
+}
+
+// Mirrors the backend contract: disallowed sections are absent, the period bounds the series and sessions.
+function applyShareScope(view: PublicShareView, share: StoredShare): PublicShareView {
+  const allow = new Set(share.sections)
+  const from = addDays(todayISO(), -share.periodWeeks * 7)
+  const out: PublicShareView = { ...view, periodWeeks: share.periodWeeks, sections: share.sections, athlete: { ...view.athlete } }
+  if (share.anonymize) out.athlete.displayName = 'Athlète'
+  if (!allow.has('health')) {
+    delete out.bodyMap
+    delete out.athlete.focusArea
+    delete out.athlete.focusLabel
+    delete out.athlete.injuredSide
+  }
+  if (!allow.has('recovery')) delete out.readiness
+  if (!allow.has('load')) {
+    delete out.loadSummary
+    delete out.loadSeries
+  } else out.loadSeries = out.loadSeries?.filter((p) => p.date >= from)
+  if (!allow.has('records')) delete out.records
+  if (!allow.has('plan')) delete out.cycles
+  if (!allow.has('shoes')) delete out.shoes
+  if (!allow.has('activities')) delete out.recentSessions
+  else {
+    out.recentSessions = out.recentSessions
+      ?.filter((r) => r.date >= from)
+      .map((r) => {
+        if (allow.has('notes')) return r
+        const { painDuring: _d, painNextMorning: _m, note: _n, ...rest } = r
+        return rest
+      })
+  }
+  return out
+}
+
 interface SessionHealth {
   date: string
   ef: number | null
@@ -826,12 +877,15 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
       shoeDropMm: shoe?.dropMm ?? null,
       painDuring: notes.painDuring,
       painNextMorning: notes.painNextMorning,
+      note: notes.note || null,
     }
   })
 
   return {
     generatedAt: isoNow(),
     shareLabel: share.label,
+    periodWeeks: share.periodWeeks,
+    sections: share.sections,
     expiresAt: share.expiresAt,
     athlete: {
       displayName: me.displayName,
@@ -863,8 +917,8 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
     cycles: buildCyclesOverview(data, me.id),
     recentSessions,
     bodyMap: buildBodyMapOverview(data, me.id, 90, null),
+    records: records(data),
     shoes: data.shoes.map((s) => ({
-      id: s.id,
       name: s.name,
       brand: s.brand,
       model: s.model,
@@ -873,6 +927,24 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
       distanceKm: s.distanceKm,
       retired: s.retired,
     })),
+  }
+}
+
+// Activity notes pains are a projection (max per activity) of the body entries linked to it.
+function projectPains(data: UserData, userId: number, activityId: number | null) {
+  if (activityId === null) return
+  const linked = v4Of(data, userId).bodyEntries.filter((e) => e.activityId === activityId)
+  const max = (xs: (number | null)[]) => {
+    const known = xs.filter(isNum)
+    return known.length ? Math.max(...known) : null
+  }
+  const key = String(activityId)
+  const cur = data.notes[key] ?? { painDuring: null, painCold: null, painNextMorning: null, rpe: null, shoeId: null, tags: [], note: '', updatedAt: null }
+  data.notes[key] = {
+    ...cur,
+    painDuring: max(linked.map((e) => e.painScore)),
+    painNextMorning: max(linked.map((e) => e.coldNextDayScore)),
+    updatedAt: isoNow(),
   }
 }
 
@@ -952,8 +1024,8 @@ export function tryAsyncMockV4(c: Ctx): Response | null {
 export function registerV4(route: RouteFn, pub: PubFn) {
   pub('GET', /^\/version$/, () =>
     json({
-      version: '4.0.0',
-      commit: 'v4mock01',
+      version: '4.1.0',
+      commit: 'v41mock1',
       builtAt: '2026-11-06T20:00:00Z',
     }),
   )
@@ -974,7 +1046,7 @@ export function registerV4(route: RouteFn, pub: PubFn) {
       }
       found.accessCount += 1
       found.lastAccessedAt = isoNow()
-      return json(buildPublicShareView(u, d, found), 200, {
+      return json(applyShareScope(buildPublicShareView(u, d, found), found), 200, {
         'Cache-Control': 'private, no-store',
       })
     }
@@ -1196,6 +1268,7 @@ export function registerV4(route: RouteFn, pub: PubFn) {
       updatedAt: isoNow(),
     }
     v4Of(data, me.id).bodyEntries.unshift(entry)
+    projectPains(data, me.id, entry.activityId)
     return json(entry, 201)
   })
 
@@ -1212,6 +1285,7 @@ export function registerV4(route: RouteFn, pub: PubFn) {
     if (b.side !== undefined && ['left', 'right', 'both'].includes(b.side)) entry.side = b.side
     if (b.painScore !== undefined) entry.painScore = b.painScore
     if (b.coldNextDayScore !== undefined) entry.coldNextDayScore = b.coldNextDayScore
+    const prevActivity = entry.activityId
     if (b.activityId !== undefined) {
       const act = b.activityId ? visibleItems(data).find((it) => it.id === b.activityId) ?? null : null
       entry.activityId = b.activityId
@@ -1219,15 +1293,19 @@ export function registerV4(route: RouteFn, pub: PubFn) {
     }
     if (b.note !== undefined) entry.note = b.note.trim()
     entry.updatedAt = isoNow()
+    projectPains(data, me.id, prevActivity)
+    projectPains(data, me.id, entry.activityId)
     return json(entry)
   })
 
   route('DELETE', /^\/api\/bodymap\/entries\/(\d+)$/, ({ me, data, params }) => {
     const st = v4Of(data, me.id)
     const id = Number(params[0])
-    const before = st.bodyEntries.length
+    const removed = st.bodyEntries.find((e) => e.id === id)
+    if (!removed) return err(404, 'NOT_FOUND', 'Entrée introuvable.')
     st.bodyEntries = st.bodyEntries.filter((e) => e.id !== id)
-    return st.bodyEntries.length === before ? err(404, 'NOT_FOUND', 'Entrée introuvable.') : noContent()
+    projectPains(data, me.id, removed.activityId)
+    return noContent()
   })
 
   /* --- Share Links --- */
@@ -1245,9 +1323,7 @@ export function registerV4(route: RouteFn, pub: PubFn) {
     }
     const token = `sh_${nextId()}_${Math.random().toString(36).slice(2, 10)}`
     let expiresAt: string | null = null
-    if (b?.expiresAt) {
-      expiresAt = b.expiresAt
-    } else if (typeof b?.expiresInDays === 'number' && b.expiresInDays > 0) {
+    if (typeof b?.expiresInDays === 'number' && b.expiresInDays > 0) {
       expiresAt = new Date(Date.now() + b.expiresInDays * 86_400_000).toISOString()
     }
     const created: StoredShare = {
@@ -1262,9 +1338,26 @@ export function registerV4(route: RouteFn, pub: PubFn) {
       accessCount: 0,
       lastAccessedAt: null,
       createdAt: isoNow(),
+      ...scopeOf(b),
     }
     v4Of(data, me.id).shares.unshift(created)
     return json(toShareLink(created), 201)
+  })
+
+  route('PATCH', /^\/api\/share\/(\d+)$/, ({ me, data, params, init }) => {
+    const found = v4Of(data, me.id).shares.find((s) => s.id === Number(params[0]))
+    if (!found) return err(404, 'NOT_FOUND', 'Lien de partage introuvable.')
+    const b = parseBody<Partial<ShareLinkInput>>(init) ?? {}
+    if (b.label !== undefined) {
+      const label = b.label.trim()
+      if (label.length < 2 || label.length > 80) return err(400, 'BAD_REQUEST', 'Intitulé du lien invalide (2 à 80 caractères).')
+      found.label = label
+    }
+    if (b.expiresInDays !== undefined) {
+      found.expiresAt = b.expiresInDays ? new Date(Date.now() + b.expiresInDays * 86_400_000).toISOString() : null
+    }
+    Object.assign(found, scopeOf({ ...found, ...b }))
+    return json(toShareLink(found))
   })
 
   route('DELETE', /^\/api\/share\/(\d+)$/, ({ me, data, params }) => {

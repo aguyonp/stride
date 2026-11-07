@@ -138,6 +138,7 @@ describe('cycle forms', () => {
       status: 'active',
     })
     expect(planFormDefaults(null, [], '2026-11-07')).toMatchObject({ name: 'Préparation course', goalId: null, endDate: '2027-01-24' })
+    expect(planFormDefaults(plan(6, { goalId: null, targetEventLabel: '' }), goals, '2026-11-07')).toMatchObject({ goalId: null, targetEventLabel: '' })
     expect(planFormDefaults(plan(5, { goalId: 7, sport: 'bike', note: 'n' }), goals, '2026-11-07')).toMatchObject({
       name: 'Plan 5',
       goalId: 7,

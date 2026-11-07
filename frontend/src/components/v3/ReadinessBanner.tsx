@@ -10,10 +10,21 @@ const TONE = {
   unknown: { cls: 'border-line bg-track/50', text: 'text-ink-3', Icon: CircleHelp, label: 'Non évaluée' },
 } as const
 
-/** Readiness traffic light: level + title + FR reasons, with the few numbers behind it. */
-export function ReadinessBanner({ r, label = 'Préparation du jour', compact, className }: { r: Readiness | null | undefined; label?: string; compact?: boolean; className?: string }) {
+/** Readiness traffic light: level + title + FR reasons, with the few numbers behind it; `brief` keeps one line. */
+export function ReadinessBanner({ r, label = 'Préparation du jour', compact, brief, className }: { r: Readiness | null | undefined; label?: string; compact?: boolean; brief?: boolean; className?: string }) {
   if (!r) return null
   const t = TONE[r.level] ?? TONE.unknown
+  if (brief) {
+    return (
+      <section aria-label={label} className={cn('animate-in flex items-center gap-2.5 rounded-[var(--radius-glass)] border px-4 py-2.5', t.cls, className)}>
+        <t.Icon className={cn('size-5 flex-none', t.text)} aria-hidden="true" />
+        <p className="min-w-0 truncate text-sm">
+          <span className="font-semibold text-ink">{r.title}</span>
+          {r.reasons[0] && <span className="text-ink-3"> · {r.reasons[0]}</span>}
+        </p>
+      </section>
+    )
+  }
   const facts: [string, string][] = []
   if (r.hrv7dAvg !== null) facts.push(['VFC 7 j', `${fmtNumber(r.hrv7dAvg)} ms${r.hrvBaselineLow !== null ? ` · base ≥ ${fmtNumber(r.hrvBaselineLow)}` : ''}`])
   if (r.sleep7dAvg !== null) facts.push(['Sommeil 7 j', `${fmtNumber(r.sleep7dAvg)}/100`])

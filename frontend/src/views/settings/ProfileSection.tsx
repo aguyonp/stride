@@ -1,8 +1,8 @@
-import { Loader2, Save, UserRound } from 'lucide-react'
+import { ArrowRight, Loader2, Save, UserRound } from 'lucide-react'
+import { Link } from 'wouter'
 import { useId, useMemo, useState } from 'react'
 import { useProfile, usePresets, useSaveProfile, useUpdateMe } from '../../api/queries'
-import type { AthleteProfile, FocusArea, FocusPreset, InjuredSide, Me } from '../../api/types'
-import { FocusPicker } from '../../components/profile/FocusPicker'
+import type { AthleteProfile, FocusPreset, Me } from '../../api/types'
 import { PaceTargetsEditor } from '../../components/profile/PaceTargetsEditor'
 import {
   draftToPaces,
@@ -15,10 +15,8 @@ import {
   TIMEZONES,
 } from '../../components/profile/profileUtils'
 import { ThresholdsEditor } from '../../components/profile/ThresholdsEditor'
-import { InlineError } from '../../components/ui/Misc'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
-import { FOCUS_FALLBACK } from '../../lib/labels'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
 
@@ -26,7 +24,7 @@ export function ProfileSection({ me }: { me: Me }) {
   const profile = useProfile()
   const presets = usePresets()
   return (
-    <Section id="profil" title="Profil & seuils" icon={<UserRound />} description="Zone surveillée, seuils d’alerte et allures cibles utilisés dans les analyses et les prompts.">
+    <Section id="profil" title="Profil & seuils" icon={<UserRound />} description="Seuils d’alerte et allures cibles utilisés dans les analyses et les prompts.">
       {profile.isError ? (
         <ErrorView error={profile.error} onRetry={() => void profile.refetch()} title="Profil indisponible" />
       ) : !profile.data ? (
@@ -48,51 +46,39 @@ function ProfileForm({ me, profile, presets }: { me: Me; profile: AthleteProfile
   const save = useSaveProfile()
   const updateMe = useUpdateMe()
   const [name, setName] = useState(me.displayName)
-  const [area, setArea] = useState<FocusArea>(profile.focusArea)
-  const [label, setLabel] = useState(profile.focusArea === 'other' ? profile.focusLabel : '')
-  const [side, setSide] = useState<InjuredSide | null>(profile.injuredSide)
   const [tz, setTz] = useState(profile.timezone)
   const initialTh = useMemo(() => thresholdsToDraft(profile.thresholds), [profile.thresholds])
   const initialPaces = useMemo(() => profile.paceTargets.map(paceToDraft), [profile.paceTargets])
   const [th, setTh] = useState(initialTh)
   const [paces, setPaces] = useState(initialPaces)
-  const [suggest, setSuggest] = useState<FocusArea | null>(null)
   const [showErrors, setShowErrors] = useState(false)
 
+  const area = profile.focusArea
   const preset = presetFor(presets, area)
   const thCheck = draftToThresholds(th)
   const paceCheck = draftToPaces(paces)
   const nameError = name.trim() === '' ? 'Nom requis' : null
   const tzError = !isValidTimezone(tz.trim()) ? 'Fuseau horaire inconnu (ex. Europe/Paris)' : null
-  const labelError = area === 'other' && !label.trim() ? 'Donne un nom à la zone surveillée' : null
 
   const dirty =
     name.trim() !== me.displayName ||
-    area !== profile.focusArea ||
-    (area === 'other' && label.trim() !== profile.focusLabel) ||
-    side !== profile.injuredSide ||
     tz.trim() !== profile.timezone ||
     JSON.stringify(th) !== JSON.stringify(initialTh) ||
     JSON.stringify(paces) !== JSON.stringify(initialPaces)
 
   const busy = save.isPending || updateMe.isPending
 
-  const changeArea = (a: FocusArea) => {
-    setArea(a)
-    const p = presetFor(presets, a)
-    if (p && JSON.stringify(thresholdsToDraft(p.thresholds)) !== JSON.stringify(th)) setSuggest(a)
-    else setSuggest(null)
-  }
+
 
   const submit = async () => {
     setShowErrors(true)
-    if (nameError || tzError || labelError || !thCheck.value || !paceCheck.value) return
+    if (nameError || tzError || !thCheck.value || !paceCheck.value) return
     try {
       if (name.trim() !== me.displayName) await updateMe.mutateAsync({ displayName: name.trim() })
       await save.mutateAsync({
-        focusArea: area,
-        focusLabel: area === 'other' ? label.trim() : (preset?.label ?? FOCUS_FALLBACK[area]),
-        injuredSide: area === 'none' ? null : side,
+        focusArea: profile.focusArea,
+        focusLabel: profile.focusLabel,
+        injuredSide: profile.injuredSide,
         timezone: tz.trim(),
         thresholds: thCheck.value,
         paceTargets: paceCheck.value,
@@ -134,30 +120,14 @@ function ProfileForm({ me, profile, presets }: { me: Me; profile: AthleteProfile
         </div>
       </div>
 
-      <FocusPicker presets={presets} area={area} customLabel={label} side={side} onArea={changeArea} onCustomLabel={setLabel} onSide={setSide} />
-      {showErrors && labelError && <InlineError>{labelError}</InlineError>}
-
-      {suggest && presetFor(presets, suggest) && (
-        <div role="status" className="flex flex-col gap-3 rounded-2xl border border-accent/35 bg-accent/10 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-ink">Appliquer les seuils recommandés pour « {focusTitle(presets, suggest)} » ?</p>
-          <div className="flex flex-none gap-2">
-            <button type="button" className="btn btn-ghost" onClick={() => setSuggest(null)}>
-              Garder mes seuils
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                const p = presetFor(presets, suggest)
-                if (p) setTh(thresholdsToDraft(p.thresholds))
-                setSuggest(null)
-              }}
-            >
-              Appliquer
-            </button>
-          </div>
-        </div>
-      )}
+      <p className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-track/35 px-3.5 py-2.5 text-sm text-ink-2">
+        <span>
+          Zone suivie : <span className="font-medium text-ink">{profile.focusArea === 'none' ? 'aucune (bonne santé)' : profile.focusLabel}</span>
+        </span>
+        <Link href="/health" className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
+          Gérer dans Santé & forme <ArrowRight className="size-3.5" aria-hidden="true" />
+        </Link>
+      </p>
 
       <div>
         <h3 className="mb-1 text-sm font-semibold text-ink">Seuils d’alerte</h3>

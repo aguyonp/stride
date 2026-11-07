@@ -1,6 +1,7 @@
 // In-memory mock database, persisted to sessionStorage and reseeded when the scenario flags or the day change.
 
 import type {
+  HealthStatus,
   LLMAnalysis,
   LLMConfig,
   NotificationTarget,
@@ -59,6 +60,7 @@ export interface UserData {
   v3?: V3Data
   v31?: V31Data
   v4?: unknown
+  health?: HealthStatus
 }
 
 export interface V3Data {

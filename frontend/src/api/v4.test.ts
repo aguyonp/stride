@@ -142,7 +142,7 @@ describe('Stride 4.0.0 architecture invariants, SSE controller & v4 mocks', () =
     expect(db().users.length).toBeGreaterThan(0)
 
     const ver = await (await mockCall('GET', '/version')).json()
-    expect(ver.version).toBe('4.0.0')
+    expect(ver.version).toBe('4.1.0')
 
     // Cycles
     const cycles = await (await mockCall('GET', '/api/cycles')).json()
@@ -193,7 +193,7 @@ describe('Stride 4.0.0 architecture invariants, SSE controller & v4 mocks', () =
     expect(pubOk.status).toBe(200)
     const pubPayload = (await pubOk.json()) as PublicShareView
     expect(pubPayload.shareLabel).toBe('Cabinet Kiné Sport')
-    expect(pubPayload.loadSummary.efLatest).not.toBeNull()
+    expect(pubPayload.loadSummary?.efLatest).not.toBeNull()
 
     // Expired link returns 410 GONE
     const pubExpired = await mockCall('GET', '/api/public/share/expired-token')
@@ -221,7 +221,7 @@ describe('Stride 4.0.0 architecture invariants, SSE controller & v4 mocks', () =
     const share = await (await mockCall('POST', '/api/share', { label: 'Coach', expiresInDays: 7 })).json()
     const view = (await (await mockCall('GET', `/api/public/share/${String(share.url).replace('/share/', '')}`)).json()) as PublicShareView
     expect(view.loadSummary).toMatchObject({ efLatest: null, efTrendPct: null, impactLoad7d: null, jointIndex7d: null })
-    expect(view.loadSeries.every((p) => p.efSpeed === null && p.impactLoad7d === null && p.jointIndex7d === null)).toBe(true)
-    expect(view.recentSessions.every((r) => r.efSpeed === null && r.impactLoad === null && r.jointIndex === null)).toBe(true)
+    expect(view.loadSeries?.every((p) => p.efSpeed === null && p.impactLoad7d === null && p.jointIndex7d === null)).toBe(true)
+    expect(view.recentSessions?.every((r) => r.efSpeed === null && r.impactLoad === null && r.jointIndex === null)).toBe(true)
   })
 })

@@ -1,5 +1,9 @@
 import type {
   ActivitySummary,
+  HealthStatus,
+  HealthStatusInput,
+  HistorySyncRequest,
+  SearchResponse,
   CalendarEvent,
   CalendarEventInput,
   ManualActivityInput,
@@ -354,6 +358,13 @@ export const api = {
   shareLinks: () => json<ShareLink[]>('/api/share'),
   createShareLink: (body: ShareLinkInput) => json<ShareLink>('/api/share', { method: 'POST', body }),
   revokeShareLink: (id: number) => json<void>(`/api/share/${id}`, { method: 'DELETE' }),
+  updateShareLink: (id: number, body: Partial<ShareLinkInput>) => json<ShareLink>(`/api/share/${id}`, { method: 'PATCH', body }),
+
+  /* 4.1.0 endpoints */
+  healthStatus: () => json<HealthStatus>('/api/health/status'),
+  saveHealthStatus: (body: HealthStatusInput) => json<HealthStatus>('/api/health/status', { method: 'PUT', body }),
+  syncHistory: (body: HistorySyncRequest) => json<JobStatus>('/api/sync/history', { method: 'POST', body }),
+  search: (q: string, limit = 20) => json<SearchResponse>(`/api/search${qs({ q, limit })}`),
   publicShare: (token: string) => json<PublicShareView>(`/api/public/share/${encodeURIComponent(token)}`),
 }
 

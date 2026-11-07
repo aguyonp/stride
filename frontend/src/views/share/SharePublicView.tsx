@@ -1,7 +1,7 @@
-import { Activity, CalendarRange, Eye, Footprints, Gauge, Link2Off, Moon, RotateCw, ShieldCheck, Stethoscope, Sun } from 'lucide-react'
+import { Activity, CalendarRange, Eye, Footprints, Gauge, Link2Off, Moon, RotateCw, ShieldCheck, Stethoscope, Sun, Trophy } from 'lucide-react'
 import { isApiError } from '../../api/client'
 import { usePublicShareView } from '../../api/queries'
-import type { PublicLoadPoint, PublicShareView } from '../../api/types'
+import type { PersonalRecord, PublicLoadPoint, PublicShareView } from '../../api/types'
 import { BodyAnatomySvg } from '../../components/bodymap/BodyAnatomySvg'
 import { BodyCorrelationList } from '../../components/bodymap/BodyCorrelationList'
 import { BODY_SIDE_LABEL, BODY_ZONE_META, effectiveZoneScore, painScoreTone, TREND_META } from '../../components/bodymap/bodyMapMeta'
@@ -15,7 +15,7 @@ import { ReadinessBanner } from '../../components/v3/ReadinessBanner'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { useTheme } from '../../hooks/useTheme'
 import { cn } from '../../lib/cn'
-import { fmtDateShort, fmtDateTime, fmtDayMonth, fmtKm, fmtNumber, fmtPace, fmtSigned, isNum } from '../../lib/format'
+import { fmtDateShort, fmtDateTime, fmtDayMonth, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtSigned, isNum } from '../../lib/format'
 import { ACWR_VERDICT, SHOE_TYPE_LABEL, SIDE_LABEL } from '../../lib/labels'
 
 function LoadTrendSvg({ series }: { series: PublicLoadPoint[] }) {
@@ -240,8 +240,9 @@ function PublicHeader({ data }: { data: PublicShareView | null }) {
 
 function ShareDossierContent({ data }: { data: PublicShareView }) {
   const { athlete, loadSummary, cycles, bodyMap } = data
-  const shoes = data.shoes ?? []
-  const recentSessions = data.recentSessions ?? []
+  const shoes = data.shoes
+  const recentSessions = data.recentSessions
+  const showNotes = data.sections.includes('notes')
   const phases = cycles?.phases ?? []
   const acwrMeta = loadSummary?.verdict ? ACWR_VERDICT[loadSummary.verdict] : null
   const activePlan = cycles?.activePlan
@@ -254,10 +255,12 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
           <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">{athlete.displayName}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="chip border border-accent/35 bg-accent/12 text-ink">
-                Focus : {athlete.focusLabel}
-                {athlete.injuredSide ? ` (${SIDE_LABEL[athlete.injuredSide]})` : ''}
-              </span>
+              {athlete.focusLabel && (
+                <span className="chip border border-accent/35 bg-accent/12 text-ink">
+                  Focus : {athlete.focusLabel}
+                  {athlete.injuredSide ? ` (${SIDE_LABEL[athlete.injuredSide]})` : ''}
+                </span>
+              )}
               <span className="chip border border-line bg-track/60 text-ink-2">
                 Destinataire : {data.shareLabel}
               </span>
@@ -273,6 +276,7 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
 
       <ReadinessBanner r={data.readiness} />
 
+      {loadSummary && (
       <Card
         title="Charge d’entraînement & Efficience"
         subtitle="Synthèse aiguë / chronique, facteur d’efficience aérobie et contrainte mécanique sur 7 jours"
@@ -340,10 +344,12 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
         </dl>
 
         <div className="glass-inset mt-4 p-4">
-          <LoadTrendSvg series={data.loadSeries} />
+          <LoadTrendSvg series={data.loadSeries ?? []} />
         </div>
       </Card>
+      )}
 
+      {cycles && (
       <Card
         title="Cycle d’entraînement actif"
         subtitle={
@@ -414,7 +420,10 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
         )}
       </Card>
 
+      )}
+
       <div className="grid gap-5 lg:grid-cols-12">
+        {bodyMap && (
         <Card
           className="lg:col-span-6"
           title="Cartographie corporelle"
@@ -454,17 +463,19 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
             )}
           </div>
         </Card>
-
-        <Card
-          className="lg:col-span-6"
-          title="Corrélations biomécaniques & Chaussures"
-          subtitle="Comparaison automatique des sorties avec gêne vs sorties de référence"
-          icon={<Footprints />}
-        >
-          <BodyCorrelationList correlations={bodyMap.correlations} />
-
-          <div className="mt-5 border-t border-line pt-4">
-            <h3 className="mb-2.5 text-sm font-semibold text-ink">Rotation chaussures</h3>
+        )}
+        {bodyMap && (
+          <Card
+            className="lg:col-span-6"
+            title="Corrélations biomécaniques"
+            subtitle="Sorties avec gêne comparées aux sorties de référence"
+            icon={<Footprints />}
+          >
+            <BodyCorrelationList correlations={bodyMap.correlations} />
+          </Card>
+        )}
+        {shoes && (
+          <Card className="lg:col-span-6" title="Chaussures" icon={<Footprints />}>
             {shoes.length === 0 ? (
               <p className="text-sm text-ink-3">Aucune paire enregistrée.</p>
             ) : (
@@ -479,8 +490,8 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {shoes.map((s) => (
-                      <tr key={s.id} className={cn(s.retired && 'opacity-60')}>
+                    {shoes.map((s, i) => (
+                      <tr key={`${s.name}-${i}`} className={cn(s.retired && 'opacity-60')}>
                         <td className="py-2 pr-3">
                           <span className="font-semibold text-ink">{s.name}</span>
                           {(s.brand || s.model) && (
@@ -501,10 +512,12 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
                 </table>
               </div>
             )}
-          </div>
-        </Card>
+          </Card>
+        )}
+        {data.records && <RecordsCard records={data.records} />}
       </div>
 
+      {recentSessions && (
       <Card
         title="Séances récentes"
         subtitle="Métriques physiologiques, biomécaniques, matériel et douleur rapportée"
@@ -526,7 +539,7 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
                   <th className="pb-2.5 px-2 text-right font-medium">D−</th>
                   <th className="pb-2.5 px-2 text-right font-medium">Charge</th>
                   <th className="pb-2.5 px-2 font-medium">Chaussure</th>
-                  <th className="pb-2.5 pl-2 text-right font-medium">Douleur / J+1</th>
+                  {showNotes && <th className="pb-2.5 pl-2 text-right font-medium">Douleur / J+1</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -571,16 +584,18 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
                           <span className="text-ink-3">—</span>
                         )}
                       </td>
+{showNotes && (
                       <td className="num whitespace-nowrap py-2.5 pl-2 text-right">
-                        {s.painDuring !== null || s.painNextMorning !== null ? (
+                        {isNum(s.painDuring) || isNum(s.painNextMorning) ? (
                           <span className={cn('chip h-5 border px-2 text-[11px]', painTone.badgeCls)}>
-                            {s.painDuring !== null ? fmtNumber(s.painDuring, 1, { trim: true }) : '—'} /{' '}
-                            {s.painNextMorning !== null ? fmtNumber(s.painNextMorning, 1, { trim: true }) : '—'}
+                            {isNum(s.painDuring) ? fmtNumber(s.painDuring, 1, { trim: true }) : '—'} /{' '}
+                            {isNum(s.painNextMorning) ? fmtNumber(s.painNextMorning, 1, { trim: true }) : '—'}
                           </span>
                         ) : (
                           <span className="text-ink-3">0 / 0</span>
                         )}
                       </td>
+                      )}
                     </tr>
                   )
                 })}
@@ -589,7 +604,29 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
           </div>
         )}
       </Card>
+      )}
     </div>
+  )
+}
+
+function RecordsCard({ records }: { records: PersonalRecord[] }) {
+  const known = records.filter((r) => r.timeS !== null || r.key === 'longest')
+  return (
+    <Card className="lg:col-span-6" title="Records personnels" icon={<Trophy />}>
+      {known.length === 0 ? (
+        <p className="text-sm text-ink-3">Aucun record enregistré.</p>
+      ) : (
+        <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {known.map((r) => (
+            <div key={r.key} className="glass-inset p-3">
+              <dt className="text-xs text-ink-3">{r.label}</dt>
+              <dd className="num mt-0.5 font-semibold text-ink">{r.timeS !== null ? fmtDuration(r.timeS) : fmtKm(r.distanceM)}</dd>
+              {r.date && <dd className="num text-[11px] text-ink-3">{fmtDateShort(r.date)}</dd>}
+            </div>
+          ))}
+        </dl>
+      )}
+    </Card>
   )
 }
 

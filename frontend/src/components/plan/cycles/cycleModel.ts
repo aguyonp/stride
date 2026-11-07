@@ -88,17 +88,30 @@ export function parseOptionalNumber(raw: string): number | null {
 
 export const numberField = (v: number | null | undefined) => (v !== null && v !== undefined ? String(v) : '')
 
+/** An edited plan keeps its own values (even an empty goal); only a new plan is prefilled from the next race goal. */
 export function planFormDefaults(plan: TrainingPlan | null, goals: Goal[], today: string) {
+  if (plan) {
+    return {
+      name: plan.name,
+      sport: plan.sport,
+      goalId: plan.goalId ?? null,
+      startDate: plan.startDate,
+      endDate: plan.endDate,
+      targetEventLabel: plan.targetEventLabel ?? '',
+      status: plan.status,
+      note: plan.note ?? '',
+    }
+  }
   const raceGoal = goals.find((g) => g.status === 'active' && g.targetDate && g.targetDate > today) ?? null
   return {
-    name: plan?.name ?? (raceGoal ? `Préparation ${raceGoal.title}` : 'Préparation course'),
-    sport: plan?.sport ?? ('run' as const),
-    goalId: plan?.goalId ?? raceGoal?.id ?? null,
-    startDate: plan?.startDate ?? mondayOf(today),
-    endDate: plan?.endDate ?? raceGoal?.targetDate ?? addDays(mondayOf(today), 83),
-    targetEventLabel: plan?.targetEventLabel ?? raceGoal?.title ?? '',
-    status: plan?.status ?? ('active' as CyclePlanStatus),
-    note: plan?.note ?? '',
+    name: raceGoal ? `Préparation ${raceGoal.title}` : 'Préparation course',
+    sport: 'run' as TrainingPlan['sport'],
+    goalId: raceGoal?.id ?? null,
+    startDate: mondayOf(today),
+    endDate: raceGoal?.targetDate ?? addDays(mondayOf(today), 83),
+    targetEventLabel: raceGoal?.title ?? '',
+    status: 'active' as CyclePlanStatus,
+    note: '',
   }
 }
 

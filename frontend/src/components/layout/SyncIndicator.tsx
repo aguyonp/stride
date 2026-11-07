@@ -137,7 +137,7 @@ export function SyncIndicator() {
           aria-label={`État de la synchronisation : ${text}`}
         >
           <Icon className={cn('size-[1.125rem]', color, tone === 'running' && 'animate-spin')} aria-hidden="true" />
-          <span className="num hidden max-w-[13rem] truncate text-xs font-semibold text-ink-2 xl:inline">{text}</span>
+          <span className="num hidden max-w-[13rem] truncate text-xs font-semibold text-ink-2 2xl:inline">{text}</span>
           {primaryPct !== null && (
             <span className="num hidden rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent sm:inline">
               {primaryPct} %

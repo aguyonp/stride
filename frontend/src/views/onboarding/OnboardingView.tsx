@@ -1,22 +1,24 @@
 import { ArrowRight, Check, CircleCheck, Info, Loader2, PartyPopper, Plug, UserRound, Watch, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation } from 'wouter'
-import { useIntegrations, useProfile, usePresets, useSaveProfile, useUpdateMe } from '../../api/queries'
-import type { FocusArea, InjuredSide, Me } from '../../api/types'
-import { FocusPicker } from '../../components/profile/FocusPicker'
+import { useIntegrations, useProfile, useUpdateMe } from '../../api/queries'
+import { useHealthStatus, useSaveHealthStatus } from '../../api/queriesV41'
+import type { HealthStatusInput, Me } from '../../api/types'
+import { HealthStatusForm } from '../../components/health/HealthStatusForm'
+import { draftFrom, healthSummary, toHealthInput, validateHealthDraft } from '../../components/health/healthStatus'
 import { GarminGuide, GarminKeyForm } from '../../components/profile/GarminKeyForm'
-import { focusTitle, profileForFocus } from '../../components/profile/profileUtils'
 import { clearStravaResult, readStravaResult, StravaConnectButton } from '../../components/profile/StravaConnect'
 import { StrideMark } from '../../components/ui/icons'
 import { InlineError } from '../../components/ui/Misc'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { cn } from '../../lib/cn'
+import { todayISO } from '../../lib/format'
 
 type Step = 0 | 1 | 2 | 3
 
 const STEPS: { title: string; short: string; icon: LucideIcon }[] = [
-  { title: 'Ton profil', short: 'Profil', icon: UserRound },
+  { title: 'Ton état de santé', short: 'Santé', icon: UserRound },
   { title: 'Garmin Connect', short: 'Garmin', icon: Watch },
   { title: 'Strava', short: 'Strava', icon: Plug },
   { title: 'C’est prêt', short: 'Terminé', icon: PartyPopper },
@@ -77,24 +79,20 @@ export default function OnboardingView({ me }: { me: Me }) {
   const [strava] = useState(readStravaResult)
   const [step, setStep] = useState<Step>(strava ? 2 : 0)
   const profile = useProfile()
-  const presets = usePresets()
+  const health = useHealthStatus()
   const integ = useIntegrations()
-  const saveProfile = useSaveProfile()
+  const saveHealth = useSaveHealthStatus()
   const updateMe = useUpdateMe()
 
-  const [area, setArea] = useState<FocusArea>('none')
-  const [label, setLabel] = useState('')
-  const [side, setSide] = useState<InjuredSide | null>(null)
+  const [draft, setDraft] = useState<HealthStatusInput>(() => draftFrom(null))
   const [seeded, setSeeded] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [finishError, setFinishError] = useState<string | null>(null)
   const firstRender = useRef(true)
 
-  if (!seeded && profile.data) {
+  if (!seeded && health.data) {
     setSeeded(true)
-    setArea(profile.data.focusArea)
-    setLabel(profile.data.focusArea === 'other' ? profile.data.focusLabel : '')
-    setSide(profile.data.injuredSide)
+    setDraft(draftFrom(health.data))
   }
 
   useEffect(() => clearStravaResult(), [])
@@ -122,10 +120,9 @@ export default function OnboardingView({ me }: { me: Me }) {
 
   const saveFocus = () => {
     setProfileError(null)
-    if (area === 'other' && !label.trim()) return setProfileError('Donne un nom à la zone surveillée (ou choisis une autre option).')
-    const body = profileForFocus(profile.data, presets.data, area, label, side)
-    if (!body) return next()
-    saveProfile.mutate(body, { onSuccess: next, onError: (e) => setProfileError(e.message) })
+    const invalid = validateHealthDraft(draft)
+    if (invalid) return setProfileError(invalid)
+    saveHealth.mutate(toHealthInput(draft), { onSuccess: next, onError: (e) => setProfileError(e.message) })
   }
 
   const g = integ.data?.garmin
@@ -163,18 +160,18 @@ export default function OnboardingView({ me }: { me: Me }) {
 
         {step === 0 && (
           <div className="mt-5">
-            <p className="mb-4 text-sm text-ink-2">Stride adapte ses alertes, ses seuils et les prompts IA à ta situation. Tu pourras tout ajuster plus tard dans Réglages.</p>
-            {(profile.isPending && !profile.isError) || presets.isPending ? (
+            <p className="mb-4 text-sm text-ink-2">Stride adapte ses alertes et les prompts IA à ton état. Modifiable ensuite dans Santé & forme.</p>
+            {health.isPending && !health.isError ? (
               <div className="space-y-2">
                 <Skeleton className="h-16" />
                 <Skeleton className="h-16" />
                 <Skeleton className="h-16" />
               </div>
             ) : (
-              <FocusPicker presets={presets.data} area={area} customLabel={label} side={side} onArea={setArea} onCustomLabel={setLabel} onSide={setSide} />
+              <HealthStatusForm value={draft} onChange={setDraft} today={todayISO(profile.data?.timezone)} />
             )}
             {profileError && <InlineError className="mt-3">{profileError}</InlineError>}
-            <Footer onSkip={next} onNext={saveFocus} busy={saveProfile.isPending} nextDisabled={profile.isPending || presets.isPending} />
+            <Footer onSkip={next} onNext={saveFocus} busy={saveHealth.isPending} nextDisabled={health.isPending} />
           </div>
         )}
 
@@ -227,7 +224,7 @@ export default function OnboardingView({ me }: { me: Me }) {
           <div className="mt-5">
             <p className="mb-4 text-sm text-ink-2">Ton espace est prêt. Voici ce qui est configuré :</p>
             <ul className="space-y-2">
-              <SummaryRow ok label="Profil" value={profile.data ? (profile.data.focusArea === 'other' ? profile.data.focusLabel : focusTitle(presets.data, profile.data.focusArea)) : 'Par défaut'} />
+              <SummaryRow ok label="Santé" value={health.data ? healthSummary(health.data) : 'Bonne santé · mode performance'} />
               <SummaryRow ok={!!g?.connected} label="Garmin Connect" value={g?.connected ? `Connecté · ${g.keyHint ?? ''}` : 'Non connecté'} />
               <SummaryRow ok={!!s?.connected} label="Strava" value={s?.connected ? `Connecté${s.athleteName ? ` · ${s.athleteName}` : ''}` : s?.available === false ? 'Indisponible sur ce serveur' : 'Non connecté'} />
             </ul>

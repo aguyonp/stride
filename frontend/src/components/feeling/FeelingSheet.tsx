@@ -23,7 +23,7 @@ export function FeelingSheet() {
       description={v ? `${v.activity.name} · ${capitalize(fmtRelative(v.activity.startLocal))}${v.activity.distanceM ? ` · ${fmtKm(v.activity.distanceM)}` : ''}` : 'Dernière séance'}
     >
       {v ? (
-        <FeelingForm activityId={v.activity.id} notes={v.notes} onSaved={ui.closeFeeling} stickyActions />
+        <FeelingForm activityId={v.activity.id} date={v.activity.date} notes={v.notes} onSaved={ui.closeFeeling} stickyActions />
       ) : open && list.isSuccess && id === null ? (
         <EmptyState title="Aucune séance à commenter">Synchronise une activité Garmin ou Strava, ou saisis une séance manuelle depuis le tableau de bord.</EmptyState>
       ) : (

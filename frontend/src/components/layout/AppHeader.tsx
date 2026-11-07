@@ -11,13 +11,12 @@ import { SyncIndicator } from './SyncIndicator'
 import { UserMenu } from './UserMenu'
 
 /**
- * Full-bleed sticky bar (top: 0, opaque glass, hairline border) so nothing scrolls visibly above or beside it.
- * Three-column grid (1fr auto 1fr) keeps the nav optically centred whatever the brand/actions widths.
+ * Full-bleed sticky bar. Brand and actions keep their natural width and the nav is centred in the
+ * remaining track, so the menu never overlaps the actions at any width.
  */
 export function AppHeader({ me }: { me: Me | null }) {
   const [path] = useLocation()
   const { theme, toggle } = useTheme()
-  const items = NAV.filter((n) => !n.admin || me?.role === 'admin')
   return (
     <header className="app-header">
       <div className="app-header-grid mx-auto h-14 max-w-[1440px] px-4 sm:px-6 lg:h-16 lg:px-8">
@@ -32,7 +31,7 @@ export function AppHeader({ me }: { me: Me | null }) {
         {me && (
           <nav aria-label="Navigation principale" className="hidden justify-self-center lg:block">
             <ul className="flex items-center gap-1 rounded-2xl border border-line bg-track/50 p-1">
-              {items.map((n) => {
+              {NAV.map((n) => {
                 const active = isActive(n.href, path)
                 const Icon = n.icon
                 return (
@@ -58,17 +57,8 @@ export function AppHeader({ me }: { me: Me | null }) {
 
         <div className="col-start-2 flex min-w-0 items-center justify-end gap-1.5 justify-self-end sm:gap-2 lg:col-start-3">
           {me && (
-            <button
-              type="button"
-              onClick={ui.openCommand}
-              aria-label="Ouvrir la palette de commandes (Ctrl+K)"
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-line bg-track/55 px-2.5 text-xs text-ink-2 transition-colors hover:bg-track hover:text-ink"
-            >
-              <Search className="size-3.5 flex-none text-ink-3" aria-hidden="true" />
-              <span className="hidden md:inline">Rechercher…</span>
-              <kbd className="hidden rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-ink-3 sm:inline">
-                ⌘K
-              </kbd>
+            <button type="button" className="icon-btn" onClick={ui.openCommand} aria-label="Rechercher (Ctrl+K)" title="Rechercher · Ctrl+K">
+              <Search className="size-[1.125rem]" />
             </button>
           )}
           {me && <SyncIndicator />}

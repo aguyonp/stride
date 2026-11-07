@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BodyMapOverview, BodyStressEntry } from '../../api/types'
 import { ALL_BODY_ZONES, BODY_ZONE_META } from '../../components/bodymap/bodyMapMeta'
 import { clickEl, installDomPolyfills, mountWithProviders, setInputValue, waitFor, type MountedApp } from '../../test/domHarness'
-import BodyMapView from './BodyMapView'
+import HealthView from './HealthView'
 
 function sampleOverview(entries: BodyStressEntry[]): BodyMapOverview {
   return {
@@ -62,7 +62,7 @@ function sampleOverview(entries: BodyStressEntry[]): BodyMapOverview {
   }
 }
 
-describe('BodyMapView', () => {
+describe('HealthView (Santé & forme)', () => {
   let mounted: MountedApp | null = null
   let entries: BodyStressEntry[] = []
   let createdPayloads: unknown[] = []
@@ -103,6 +103,16 @@ describe('BodyMapView', () => {
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           )
+        }
+        if (url.startsWith('/api/health/status')) {
+          const zones = [{ zone: 'achilles', side: 'right', since: '2026-10-01', note: '' }]
+          return new Response(JSON.stringify({ mode: 'tracking', zones, focusArea: 'achilles', updatedAt: null }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        if (url.startsWith('/api/share')) {
+          return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } })
         }
         if (url.startsWith('/api/activities')) {
           return new Response(
@@ -164,7 +174,7 @@ describe('BodyMapView', () => {
   })
 
   it('renders all 6 anatomical hotspots, biomechanical correlations, and submits a new pain entry', async () => {
-    mounted = await mountWithProviders(<BodyMapView />, '/body')
+    mounted = await mountWithProviders(<HealthView />, '/health')
 
     await waitFor(() => {
       for (const zone of ALL_BODY_ZONES) {
@@ -174,6 +184,9 @@ describe('BodyMapView', () => {
       expect(document.body.textContent).toContain('Dénivelé négatif (D−)')
       expect(document.body.textContent).toContain('Fiabilité élevée')
       expect(document.body.textContent).toContain('Pegasus 41')
+      expect(document.body.textContent).toContain('Souci suivi')
+      expect(document.body.textContent).toContain('Tendon d’Achille (droite)')
+      expect(document.body.textContent).toContain('Partage kiné & coach')
     })
 
     const items = Array.from(document.querySelectorAll('[aria-label="Facteurs de corrélation biomécanique"] > li'))

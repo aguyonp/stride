@@ -35,6 +35,10 @@ describe('CommandPalette', () => {
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           )
         }
+        if (url.startsWith('/api/search')) {
+          const hit = { id: 7, date: '2019-04-14', startLocal: '2019-04-14T08:30:00', name: 'Marathon de Paris', sport: 'run', typeLabel: 'Course', distanceM: 42195, durationS: 12600 }
+          return new Response(JSON.stringify({ query: '', items: [hit] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        }
         if (url.startsWith('/api/activities')) {
           return new Response(
             JSON.stringify({
@@ -101,23 +105,23 @@ describe('CommandPalette', () => {
     const input = document.querySelector<HTMLInputElement>('input[role="combobox"]')!
     expect(input).toBeTruthy()
 
-    // Filter to the Body Stress Map navigation entry
+    // Filter to the health navigation entry (old « cartographie » wording still matches)
     await setInputValue(input, 'cartographie')
     await waitFor(() => {
       const options = Array.from(document.querySelectorAll('[role="option"]'))
-      expect(options.some((o) => o.textContent?.includes('Cartographie corporelle'))).toBe(true)
+      expect(options.some((o) => o.textContent?.includes('Santé & forme'))).toBe(true)
     })
 
-    // Navigate down to "Cartographie corporelle" (second match after quick action or first if exact)
+    // Navigate down to "Santé & forme" (after the quick action when both match)
     const optionsAfterFilter = Array.from(document.querySelectorAll('[role="option"]'))
-    const navIdx = optionsAfterFilter.findIndex((o) => o.textContent?.includes('Cartographie corporelle'))
+    const navIdx = optionsAfterFilter.findIndex((o) => o.textContent?.includes('Santé & forme'))
     expect(navIdx).toBeGreaterThanOrEqual(0)
     for (let i = 0; i < navIdx; i++) {
       await keyDownEl(input, 'ArrowDown')
     }
     await keyDownEl(input, 'Enter')
 
-    expect(window.location.pathname).toBe('/body')
+    expect(window.location.pathname).toBe('/health')
     expect(document.querySelector('[role="dialog"]')).toBeNull()
 
     // Re-open with Meta+K, search for an activity by title, and jump to /activities/42
@@ -134,6 +138,16 @@ describe('CommandPalette', () => {
     })
     await keyDownEl(input2, 'Enter')
     expect(window.location.pathname).toBe('/activities/42')
+
+    // Whole-history search (GET /api/search) reaches sessions outside the loaded pages
+    await keyDownEl(window, 'k', { metaKey: true })
+    const input3 = document.querySelector<HTMLInputElement>('input[role="combobox"]')!
+    await setInputValue(input3, '14 avril')
+    await waitFor(() => {
+      const opts = Array.from(document.querySelectorAll('[role="option"]'))
+      expect(opts.some((o) => o.textContent?.includes('Marathon de Paris'))).toBe(true)
+    })
+    await keyDownEl(input3, 'Escape')
 
     // Re-open and close with Escape
     await keyDownEl(window, 'k', { ctrlKey: true })

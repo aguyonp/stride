@@ -10,6 +10,7 @@ import { SegmentedControl } from '../ui/SegmentedControl'
 import { Skeleton } from '../ui/Skeleton'
 import { ActivityRow } from './ActivityRow'
 import { MiniCalendar, monthBounds } from './MiniCalendar'
+import { clampMonth, MONTHS_FR, yearsBack } from './monthJump'
 
 interface SessionPickerProps {
   open: boolean
@@ -55,6 +56,22 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
 
   const calendar = (
     <div>
+      <div className="mb-3 flex gap-2">
+        <select className="field h-9 min-h-9 flex-1 py-1 text-sm" aria-label="Mois" value={ym.m} onChange={(e) => setYm(clampMonth(ym.y, Number(e.target.value), today))}>
+          {MONTHS_FR.map((label, i) => (
+            <option key={label} value={i}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <select className="field num h-9 min-h-9 w-28 py-1 text-sm" aria-label="Année" value={ym.y} onChange={(e) => setYm(clampMonth(Number(e.target.value), ym.m, today))}>
+          {yearsBack(today).map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
       <MiniCalendar year={ym.y} month0={ym.m} onMonthChange={(y, m) => setYm({ y, m })} byDate={byDate} selected={calDay ?? selectedDate} today={today} loading={month.isFetching} onSelect={setCalDay} />
       {calDay && (
         <div className="mt-4">
@@ -110,7 +127,7 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
   )
 
   return (
-    <Dialog open={open} onClose={onClose} title="Choisir une séance" description="Activités récentes ou calendrier" size="xl">
+    <Dialog open={open} onClose={onClose} title="Choisir une séance" description="Récentes, ou n’importe quel mois de ton historique" size="xl">
       {isDesktop ? (
         <div className="grid grid-cols-[minmax(0,300px)_minmax(0,1fr)] gap-6">
           <div>

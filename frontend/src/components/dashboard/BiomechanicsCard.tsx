@@ -217,7 +217,7 @@ export function BiomechanicsCard({ view, profile, className }: { view: ActivityV
   const voHigh = isNum(bio.verticalOscillationCm) && bio.verticalOscillationCm > voMax
   return (
     <Card title="Biomécanique & dérive de fatigue" icon={<Footprints className="size-4" />} subtitle="Temps de course uniquement (marche et arrêts exclus)" className={className}>
-      <div className="grid gap-3 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 [&>*]:min-w-0">
         <div className="space-y-3">
           <div className="glass-inset flex items-center gap-4 p-3.5">
             <Ring value={bio.cadenceInTargetPct} size={84} stroke={9} label={isNum(bio.cadenceInTargetPct) ? `${bio.cadenceInTargetPct} % du temps dans la cible ${tMin}–${tMax} spm` : 'Temps dans la cible non disponible'}>

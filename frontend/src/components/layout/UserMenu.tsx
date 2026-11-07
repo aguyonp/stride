@@ -1,8 +1,9 @@
-import { Footprints, KeyRound, LogOut, Settings, Share2, ShieldCheck, Sparkles } from 'lucide-react'
+import { Footprints, KeyRound, LogOut, Search, Settings, Share2, ShieldCheck } from 'lucide-react'
 import { useLocation } from 'wouter'
 import { useLogout } from '../../api/queries'
 import type { Me } from '../../api/types'
 import { initials } from '../../lib/format'
+import { ui } from '../../state/ui'
 import { MenuItem, Popover } from '../ui/Popover'
 
 export function UserMenu({ me }: { me: Me }) {
@@ -23,13 +24,13 @@ export function UserMenu({ me }: { me: Me }) {
             <p className="text-xs text-ink-3">{me.role === 'admin' ? 'Administrateur' : 'Athlète'}</p>
           </div>
           <div className="pt-1.5">
+            <MenuItem icon={<Search />} onSelect={() => (close(), ui.openCommand())}>
+              Rechercher
+            </MenuItem>
             <MenuItem icon={<Footprints />} onSelect={() => (close(), navigate('/shoes'))}>
               Chaussures
             </MenuItem>
-            <MenuItem icon={<Sparkles />} onSelect={() => (close(), navigate('/export'))}>
-              Export IA
-            </MenuItem>
-            <MenuItem icon={<Share2 />} onSelect={() => (close(), navigate('/settings#partage'))}>
+            <MenuItem icon={<Share2 />} onSelect={() => (close(), navigate('/health#partage'))}>
               Partage Kiné & Coach
             </MenuItem>
             <MenuItem icon={<Settings />} onSelect={() => (close(), navigate('/settings'))}>

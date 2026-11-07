@@ -6,6 +6,7 @@ import {
   Copy,
   CornerDownLeft,
   Footprints,
+  History,
   LayoutDashboard,
   Plus,
   RefreshCw,
@@ -22,6 +23,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as Reac
 import { useLocation } from 'wouter'
 import { api } from '../../api/client'
 import { useActivities, useProfile, useStartSync } from '../../api/queries'
+import { useActivitySearch } from '../../api/queriesV41'
 import type { Me } from '../../api/types'
 import { copyText } from '../../lib/clipboard'
 import { cn } from '../../lib/cn'
@@ -65,6 +67,12 @@ export function CommandPalette({ me }: { me: Me }) {
   const activities = useActivities({}, open)
 
   const [query, setQuery] = useState('')
+  const [debounced, setDebounced] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 200)
+    return () => clearTimeout(t)
+  }, [query])
+  const remote = useActivitySearch(open ? debounced : '')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -137,7 +145,7 @@ export function CommandPalette({ me }: { me: Me }) {
         subtitle: 'Noter une douleur ou un ressenti à froid J+1 sur la cartographie',
         keywords: 'douleur gene blessure corps genou achille periostite tfl aponevrose',
         icon: Stethoscope,
-        onSelect: () => navigate('/body?new=1'),
+        onSelect: () => navigate('/health?new=1'),
       },
       {
         id: 'act-share',
@@ -146,7 +154,16 @@ export function CommandPalette({ me }: { me: Me }) {
         subtitle: 'Générer un accès en lecture seule au dossier athlète',
         keywords: 'partage lien kine coach medecin lecture seule',
         icon: Share2,
-        onSelect: () => navigate('/settings#partage'),
+        onSelect: () => navigate('/health#partage'),
+      },
+      {
+        id: 'act-history',
+        group: 'Actions rapides',
+        label: 'Importer tout l’historique',
+        subtitle: 'Rapatrier les anciennes séances Garmin et Strava',
+        keywords: 'importer historique ancien annees backfill garmin strava',
+        icon: History,
+        onSelect: () => navigate('/settings#integrations'),
       },
       {
         id: 'act-prompt',
@@ -199,22 +216,22 @@ export function CommandPalette({ me }: { me: Me }) {
       {
         id: 'nav-plan',
         group: 'Navigation',
-        label: 'Planification & Cycles',
-        subtitle: 'Macrocycle, mésocycles, microcycles et calendrier',
+        label: 'Planning',
+        subtitle: 'Séances, cycles, calendrier et imprévus',
         keywords: 'plan planning cycles gantt macrocycle mesocycle semaine mois',
         icon: CalendarRange,
         meta: '/plan',
         onSelect: () => navigate('/plan'),
       },
       {
-        id: 'nav-body',
+        id: 'nav-health',
         group: 'Navigation',
-        label: 'Cartographie corporelle',
-        subtitle: 'Suivi anatomique des douleurs et corrélations biomécaniques',
-        keywords: 'corps cartographie anatomie douleur blessure kine correlation',
+        label: 'Santé & forme',
+        subtitle: 'État de santé, symptômes, corrélations et partage kiné',
+        keywords: 'sante forme corps cartographie anatomie douleur blessure kine correlation partage',
         icon: Stethoscope,
-        meta: '/body',
-        onSelect: () => navigate('/body'),
+        meta: '/health',
+        onSelect: () => navigate('/health'),
       },
       {
         id: 'nav-shoes',
@@ -227,14 +244,14 @@ export function CommandPalette({ me }: { me: Me }) {
         onSelect: () => navigate('/shoes'),
       },
       {
-        id: 'nav-export',
+        id: 'nav-coach',
         group: 'Navigation',
-        label: 'Export IA multi-séances',
-        subtitle: 'Assembler plusieurs semaines pour ton coach IA',
-        keywords: 'export ia markdown multi seances rapport',
+        label: 'Coach IA',
+        subtitle: 'Prompt, analyse IA, historique et export multi-séances',
+        keywords: 'coach ia export prompt analyse markdown multi seances rapport',
         icon: Sparkles,
-        meta: '/export',
-        onSelect: () => navigate('/export'),
+        meta: '/coach',
+        onSelect: () => navigate('/coach'),
       },
       {
         id: 'nav-settings',
@@ -300,8 +317,27 @@ export function CommandPalette({ me }: { me: Me }) {
       if (sessionItems.length >= maxSessions) break
     }
 
+    // Whole-history matches from GET /api/search (older months and years), after the loaded ones.
+    if (tokens.length > 0) {
+      for (const h of remote.data?.items ?? []) {
+        if (sessionItems.length >= maxSessions) break
+        if (sessionItems.some((x) => x.id === `session-${h.id}`)) continue
+        const sportFr = SPORT_LABEL[h.sport] ?? h.sport
+        sessionItems.push({
+          id: `session-${h.id}`,
+          group: 'Séances',
+          label: h.name,
+          subtitle: `${sportFr} · ${h.typeLabel}`,
+          keywords: h.name,
+          icon: Activity,
+          meta: `${fmtDateShort(h.date)} · ${fmtKm(h.distanceM)}`,
+          onSelect: () => navigate(`/activities/${h.id}`),
+        })
+      }
+    }
+
     return [...matchedStatic, ...sessionItems]
-  }, [allActivities, navigate, query, staticItems])
+  }, [allActivities, navigate, query, remote.data, staticItems])
 
   const safeIndex = filteredItems.length === 0 ? -1 : Math.min(activeIndex, filteredItems.length - 1)
 

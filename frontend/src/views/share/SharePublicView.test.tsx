@@ -11,6 +11,8 @@ function sampleShareView(): PublicShareView {
     generatedAt: '2026-11-06T18:00:00Z',
     shareLabel: 'Kiné du sport',
     expiresAt: '2026-12-06T18:00:00Z',
+    periodWeeks: 12,
+    sections: ['activities', 'health', 'recovery', 'load', 'records', 'plan', 'shoes', 'notes'],
     athlete: {
       displayName: 'Camille Laurent',
       focusArea: 'knee_pfps',
@@ -159,7 +161,6 @@ function sampleShareView(): PublicShareView {
     },
     shoes: [
       {
-        id: 1,
         name: 'Clifton 9',
         brand: 'Hoka',
         model: 'Clifton 9',
@@ -220,7 +221,7 @@ describe('SharePublicView & unauthenticated /share/:token routing', () => {
 
   it('shows « Données insuffisantes » instead of numbers when EF, impact or joint index are unknown', async () => {
     const view = sampleShareView()
-    view.loadSummary = { ...view.loadSummary, efLatest: null, efTrendPct: 3.1, impactLoad7d: null, jointIndex7d: null }
+    view.loadSummary = { ...view.loadSummary!, efLatest: null, efTrendPct: 3.1, impactLoad7d: null, jointIndex7d: null }
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -235,6 +236,32 @@ describe('SharePublicView & unauthenticated /share/:token routing', () => {
     await waitFor(() => expect(cell('Efficiency Factor')).toBe('Efficiency FactorDonnées insuffisantes'))
     expect(cell('Impact Load (7 j)')).toBe('Impact Load (7 j)Données insuffisantes')
     expect(cell('Indice articulaire (7 j)')).toBe('Indice articulaire (7 j)Données insuffisantes')
+  })
+
+  it('renders only the sections the link allows and never shows an internal shoe id', async () => {
+    const full = sampleShareView()
+    const view: PublicShareView = { ...full, sections: ['shoes'], athlete: { displayName: 'Athlète' } }
+    delete view.readiness
+    delete view.loadSummary
+    delete view.loadSeries
+    delete view.cycles
+    delete view.recentSessions
+    delete view.bodyMap
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(view), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    )
+
+    mounted = await mountWithProviders(<SharePublicView token="scoped" />, '/share/scoped')
+
+    await waitFor(() => expect(document.body.textContent).toContain('Clifton 9'))
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('Athlète')
+    expect(text).not.toContain('Séances récentes')
+    expect(text).not.toContain('Charge d’entraînement')
+    expect(text).not.toContain('Corrélations biomécaniques')
+    expect(text).not.toContain('Focus :')
+    expect(document.querySelectorAll('[data-zone]')).toHaveLength(0)
   })
 
   it('renders a dedicated French unavailable screen when the token is revoked (404) or expired (410)', async () => {

@@ -7,7 +7,7 @@ import { LEVEL_LABEL, LevelIcon } from '../ui/Badge'
 const ORDER: Record<AlertLevel, number> = { danger: 0, warn: 1, info: 2, ok: 3 }
 
 /** Top N alerts (danger first), the rest behind « voir plus »; an alert linked to a section opens it. */
-export function TopAlerts({ alerts, max = 3, sectionOf, onOpen }: { alerts: Alert[]; max?: number; sectionOf: (code: string) => string | null; onOpen: (section: string) => void }) {
+export function TopAlerts({ alerts, max = 2, sectionOf, onOpen }: { alerts: Alert[]; max?: number; sectionOf: (code: string) => string | null; onOpen: (section: string) => void }) {
   const [expanded, setExpanded] = useState(false)
   const all = [...alerts].filter((a) => a.level !== 'ok').sort((a, b) => ORDER[a.level] - ORDER[b.level])
   const serious = all.filter((a) => a.level !== 'info')
@@ -41,7 +41,9 @@ export function TopAlerts({ alerts, max = 3, sectionOf, onOpen }: { alerts: Aler
                   {a.title}
                   <span className="sr-only"> — niveau {LEVEL_LABEL[a.level]}</span>
                 </span>
-                <span className="block text-sm text-ink-3">{a.message}</span>
+                <span className="block truncate text-sm text-ink-3" title={a.message}>
+                  {a.message}
+                </span>
               </span>
               {target && <ChevronRight className="mt-0.5 size-4 flex-none text-ink-3" aria-hidden="true" />}
             </>

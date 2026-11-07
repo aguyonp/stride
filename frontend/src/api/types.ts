@@ -611,7 +611,7 @@ export interface DayView {
 }
 
 export type FocusArea = 'none' | 'knee_pfps' | 'achilles' | 'shin_splints' | 'other'
-export type InjuredSide = 'left' | 'right' | 'both'
+type InjuredSide = 'left' | 'right' | 'both'
 export interface Thresholds {
   cadenceMinSpm: number
   cadenceTargetMin: number
@@ -936,6 +936,7 @@ type JobKind =
   | 'sync.provider'
   | 'sync.strava_webhook'
   | 'sync.resync'
+  | 'sync.history'
   | 'import.activity'
   | 'llm.analyze'
   | 'llm.plan_generate'
@@ -1208,12 +1209,21 @@ export interface ShareLink {
   accessCount: number
   lastAccessedAt: string | null
   createdAt: string
+  periodWeeks: SharePeriodWeeks
+  sections: ShareSection[]
+  anonymize: boolean
 }
+
+export type ShareSection = 'activities' | 'health' | 'recovery' | 'load' | 'records' | 'plan' | 'shoes' | 'notes'
+export type ShareExpiryDays = 1 | 7 | 30 | 90
+export type SharePeriodWeeks = 4 | 8 | 12 | 26 | 52
 
 export interface ShareLinkInput {
   label: string
-  expiresInDays?: number | null
-  expiresAt?: string | null
+  expiresInDays: ShareExpiryDays | null
+  periodWeeks: SharePeriodWeeks
+  sections: ShareSection[]
+  anonymize: boolean
 }
 
 export interface PublicActivityItem {
@@ -1238,8 +1248,9 @@ export interface PublicActivityItem {
   efSpeed: number | null
   shoeName: string | null
   shoeDropMm: number | null
-  painDuring: number | null
-  painNextMorning: number | null
+  painDuring?: number | null
+  painNextMorning?: number | null
+  note?: string | null
 }
 
 export interface PublicLoadPoint {
@@ -1253,7 +1264,6 @@ export interface PublicLoadPoint {
 }
 
 interface PublicShoeItem {
-  id: number
   name: string
   brand: string
   model: string
@@ -1263,18 +1273,21 @@ interface PublicShoeItem {
   retired: boolean
 }
 
+// Sections the link does not allow are absent from the payload (never empty placeholders).
 export interface PublicShareView {
   generatedAt: string
   shareLabel: string
   expiresAt: string | null
+  periodWeeks: SharePeriodWeeks
+  sections: ShareSection[]
   athlete: {
     displayName: string
-    focusArea: string
-    focusLabel: string
-    injuredSide: 'left' | 'right' | 'both' | null
+    focusArea?: string
+    focusLabel?: string
+    injuredSide?: 'left' | 'right' | 'both' | null
   }
-  readiness: ReadinessBanner
-  loadSummary: {
+  readiness?: ReadinessBanner
+  loadSummary?: {
     acute: number
     chronic: number
     acwr: number | null
@@ -1284,9 +1297,49 @@ export interface PublicShareView {
     impactLoad7d: number | null
     jointIndex7d: number | null
   }
-  loadSeries: PublicLoadPoint[]
-  cycles: TrainingCycleOverview
-  recentSessions: PublicActivityItem[]
-  bodyMap: BodyMapOverview
-  shoes: PublicShoeItem[]
+  loadSeries?: PublicLoadPoint[]
+  cycles?: TrainingCycleOverview
+  recentSessions?: PublicActivityItem[]
+  bodyMap?: BodyMapOverview
+  records?: PersonalRecord[]
+  shoes?: PublicShoeItem[]
+}
+
+/* ---------------------------------- 4.1.0 (§14) ---------------------------------- */
+
+export interface HealthZone {
+  zone: BodyZone
+  side: BodySide
+  since: string | null
+  note: string
+}
+
+export interface HealthStatusInput {
+  mode: 'performance' | 'tracking'
+  zones: HealthZone[]
+}
+
+export interface HealthStatus extends HealthStatusInput {
+  focusArea: FocusArea
+  updatedAt: string | null
+}
+
+export interface HistorySyncRequest {
+  from: string | null
+}
+
+export interface ActivitySearchHit {
+  id: number
+  date: string
+  startLocal: string
+  name: string
+  sport: Sport
+  typeLabel: string
+  distanceM: number | null
+  durationS: number | null
+}
+
+export interface SearchResponse {
+  query: string
+  items: ActivitySearchHit[]
 }

@@ -10,12 +10,18 @@ import { BootErrorView, ForbiddenView, NotFoundView } from './views/StateViews'
 
 const OnboardingView = lazy(() => import('./views/onboarding/OnboardingView'))
 const PlanView = lazy(() => import('./views/plan/PlanView'))
-const BodyMapView = lazy(() => import('./views/bodymap/BodyMapView'))
+const HealthView = lazy(() => import('./views/health/HealthView'))
 const ShoesView = lazy(() => import('./views/shoes/ShoesView'))
-const ExportView = lazy(() => import('./views/export/ExportView'))
+const CoachView = lazy(() => import('./views/coach/CoachView'))
 const SettingsView = lazy(() => import('./views/settings/SettingsView'))
 const AdminView = lazy(() => import('./views/admin/AdminView'))
 const SharePublicView = lazy(() => import('./views/share/SharePublicView'))
+
+/** 4.0 routes kept as redirects so bookmarks and query strings survive the 4.1 navigation. */
+function Moved({ to }: { to: string }) {
+  const search = useSearch()
+  return <Redirect to={search ? `${to}?${search}` : to} replace />
+}
 
 const PUBLIC = new Set(['/login', '/register'])
 
@@ -108,14 +114,20 @@ export default function App() {
           <Route path="/plan">
             <PlanView />
           </Route>
+          <Route path="/health">
+            <HealthView />
+          </Route>
           <Route path="/body">
-            <BodyMapView />
+            <Moved to="/health" />
           </Route>
           <Route path="/shoes">
             <ShoesView />
           </Route>
+          <Route path="/coach">
+            <CoachView />
+          </Route>
           <Route path="/export">
-            <ExportView />
+            <Moved to="/coach" />
           </Route>
           <Route path="/settings">
             <SettingsView me={me} />

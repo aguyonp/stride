@@ -96,6 +96,10 @@ export function useShareMutations() {
   return {
     create: useMutation({ mutationFn: (b: ShareLinkInput) => api.createShareLink(b), onSuccess: done }),
     revoke: useMutation({ mutationFn: (id: number) => api.revokeShareLink(id), onSuccess: done }),
+    update: useMutation({
+      mutationFn: ({ id, ...b }: Partial<ShareLinkInput> & { id: number }) => api.updateShareLink(id, b),
+      onSuccess: done,
+    }),
   }
 }
 
