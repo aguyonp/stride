@@ -227,20 +227,6 @@ func (s *Services) loadRatio(ctx context.Context, uid int64, p athlete.Profile, 
 	return analysis.ComputeLoadRatio(loads, today, "", p.Thresholds.LoadRatioMax), nil
 }
 
-// askLLM sends a plan prompt to the athlete's LLM.
-func (s *Services) askLLM(ctx context.Context, uid int64, prompt string) (string, error) {
-	c, err := s.llmConfig(ctx, uid)
-	if err != nil {
-		return "", err
-	}
-	if c == nil {
-		return "", ErrLLMNotConfigured
-	}
-	ctx, cancel := context.WithTimeout(ctx, llmTimeout)
-	defer cancel()
-	return s.callLLM(ctx, uid, c, llmRequest{system: systemDirective(), prompt: prompt, maxTokens: llmMaxTokens})
-}
-
 // ImportPlan parses an AI answer (or any stride-plan JSON) into drafts, without saving.
 func (s *Services) ImportPlan(text string) (*PlanDraftsResult, error) {
 	if strings.TrimSpace(text) == "" {
