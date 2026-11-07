@@ -30,6 +30,9 @@ open http://localhost:8080
 - Health status as the single source of the injury focus; symptoms recorded once, in the body map.
 - Full history import from Garmin and Strava (resumable job) and search over all sessions.
 - Share links scoped by period and sections, with anonymization.
+- Pathology catalog per body zone (ankle, hip, lower back, forefoot…) plus a custom condition.
+- Real shoe mileage from Strava gear; pairs retired or deleted on Strava show as retired.
+- Admin control center (overview, users, jobs, share links, maintenance) and in-app user feedback.
 
 **4.0.0**
 - Macro / méso / micro training cycles with planned vs actual tracking.
