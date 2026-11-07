@@ -72,9 +72,13 @@ func (s *Services) DeleteEvent(ctx context.Context, uid, id int64) error {
 	return repoErr(s.repo().DeleteEvent(ctx, uid, id))
 }
 
-// Phases serves GET /api/plan/phases.
+// Phases serves GET /api/plan/phases: the phases of the plan /api/cycles shows by default.
 func (s *Services) Phases(ctx context.Context, uid int64) ([]athlete.PlanPhase, error) {
-	return s.repo().Phases(ctx, uid, "", "")
+	planID, err := s.defaultPlanID(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo().Phases(ctx, uid, planID, "", "")
 }
 
 // ---------- shift ----------

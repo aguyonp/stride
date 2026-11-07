@@ -45,9 +45,12 @@ func (a *api) cycles(w http.ResponseWriter, r *http.Request) {
 	a.withUser(w, r, func(uid int64) {
 		var planID *int64
 		if raw := r.URL.Query().Get("planId"); raw != "" {
-			if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
-				planID = &id
+			id, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				badRequest(w, "planId doit être un entier.")
+				return
 			}
+			planID = &id
 		}
 		v, err := a.s.Cycles(r.Context(), uid, planID)
 		a.reply(w, r, v, err)

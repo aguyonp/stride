@@ -167,3 +167,91 @@ func TestShareLinkValidationAndRateLimit(t *testing.T) {
 		t.Fatalf("rate limit: %v", codes)
 	}
 }
+
+func TestCyclesRejectForeignIDs(t *testing.T) {
+	e := setup(t)
+	var ov domain.TrainingCycleOverview
+	if code, body := e.do(2, "POST", "/api/cycles/plans", m{"name": "Marathon", "startDate": "2026-01-05", "endDate": "2026-04-12"}, &ov); code != 201 {
+		t.Fatalf("plan: %d %s", code, body)
+	}
+	planID, phaseID := ov.ActivePlan.ID, ov.Phases[0].ID
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{"POST", "/api/cycles/phases", m{"planId": planID, "name": "Intrus", "startDate": "2026-05-04", "endDate": "2026-05-10"}},
+		{"PUT", "/api/cycles/weeks", m{"planId": planID, "weekStart": "2026-01-12", "note": "x"}},
+		{"PUT", "/api/cycles/weeks", m{"phaseId": phaseID, "weekStart": "2026-01-12", "note": "x"}},
+		{"GET", fmt.Sprintf("/api/cycles?planId=%d", planID), nil},
+		{"PATCH", fmt.Sprintf("/api/cycles/plans/%d", planID), m{"name": "x"}},
+		{"PATCH", fmt.Sprintf("/api/cycles/phases/%d", phaseID), m{"name": "x"}},
+		{"DELETE", fmt.Sprintf("/api/cycles/phases/%d", phaseID), nil},
+		{"DELETE", fmt.Sprintf("/api/cycles/plans/%d", planID), nil},
+	} {
+		if code, body := e.do(3, c.method, c.path, c.body, nil); code != http.StatusNotFound || strings.Contains(body, "Marathon") {
+			t.Fatalf("%s %s by another user: %d %s", c.method, c.path, code, body)
+		}
+	}
+	var n int
+	if err := e.st.DB.QueryRow(`SELECT COUNT(*) FROM plan_phases WHERE plan_id = ? AND user_id <> 2`, planID).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("foreign rows attached to the plan: %d (%v)", n, err)
+	}
+	var goal m
+	if code, body := e.do(2, "POST", "/api/goals", m{"title": "10 km", "kind": "race"}, &goal); code != 201 {
+		t.Fatalf("goal: %d %s", code, body)
+	}
+	if code, _ := e.do(3, "POST", "/api/cycles/plans", m{"name": "x", "startDate": "2026-01-05", "endDate": "2026-02-01", "goalId": goal["id"]}, nil); code != 404 {
+		t.Fatalf("foreign goal accepted: %d", code)
+	}
+	// a phase of another plan of the same user is refused for a week
+	var other domain.TrainingCycleOverview
+	e.do(2, "POST", "/api/cycles/plans", m{"name": "Trail", "startDate": "2026-06-01", "endDate": "2026-08-30", "status": "archived"}, &other)
+	if code, _ := e.do(2, "PUT", "/api/cycles/weeks", m{"planId": other.ActivePlan.ID, "phaseId": phaseID, "weekStart": "2026-06-01"}, nil); code != 400 {
+		t.Fatalf("phase of another plan accepted: %d", code)
+	}
+}
+
+// Review case: importing phases while a scaffolded plan is active used to delete the plan's
+// overlapping phases and insert unattached ones, so /api/cycles and /api/plan/phases disagreed.
+func TestImportedPhasesJoinTheActivePlan(t *testing.T) {
+	e := setup(t)
+	if _, err := e.st.DB.Exec(`INSERT INTO plan_phases (user_id, name, start_date, end_date, created_at, updated_at) VALUES (2, 'Ancienne', '2026-02-02', '2026-02-15', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	var ov domain.TrainingCycleOverview
+	e.do(2, "POST", "/api/cycles/plans", m{"name": "Marathon", "startDate": "2026-01-05", "endDate": "2026-04-12"}, &ov)
+	planID := ov.ActivePlan.ID
+	phases := []m{
+		{"name": "Bloc seuil", "startDate": "2026-02-02", "endDate": "2026-02-22", "focus": "Seuil", "weeklyVolumeKm": 60},
+	}
+	if code, body := e.do(2, "POST", "/api/plan/bulk", m{"sessions": []m{}, "phases": phases}, nil); code >= 300 {
+		t.Fatalf("bulk: %d %s", code, body)
+	}
+	var cycles domain.TrainingCycleOverview
+	e.do(2, "GET", "/api/cycles", nil, &cycles)
+	var flat []m
+	e.do(2, "GET", "/api/plan/phases", nil, &flat)
+	if len(cycles.Phases) != len(flat) {
+		t.Fatalf("cycles has %d phases, /api/plan/phases %d", len(cycles.Phases), len(flat))
+	}
+	imported := false
+	for i, ph := range cycles.Phases {
+		if ph.PlanID == nil || *ph.PlanID != planID || int64(flat[i]["id"].(float64)) != ph.ID {
+			t.Fatalf("phase %d: %+v vs %v", i, ph, flat[i])
+		}
+		if ph.Name == "Bloc seuil" {
+			imported = true
+		}
+		if ph.Name != "Bloc seuil" && ph.StartDate <= "2026-02-22" && ph.EndDate >= "2026-02-02" {
+			t.Fatalf("overlapping plan phase kept: %+v", ph)
+		}
+		if i > 0 && ph.StartDate < cycles.Phases[i-1].StartDate {
+			t.Fatalf("phases not ordered by date: %+v", cycles.Phases)
+		}
+	}
+	var orphan int
+	_ = e.st.DB.QueryRow(`SELECT COUNT(*) FROM plan_phases WHERE user_id = 2 AND plan_id IS NULL`).Scan(&orphan)
+	if !imported || orphan != 1 {
+		t.Fatalf("imported=%v, phases outside the plan touched (orphans=%d)", imported, orphan)
+	}
+}

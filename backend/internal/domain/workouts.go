@@ -186,7 +186,11 @@ func (s *Services) preparePlanGenerate(ctx context.Context, uid int64, in *PlanG
 	if req.Events, err = r.Events(ctx, uid, req.StartDate, req.EndDate); err != nil {
 		return "", "", err
 	}
-	if req.Phases, err = r.Phases(ctx, uid, req.StartDate, req.EndDate); err != nil {
+	planID, err := s.defaultPlanID(ctx, uid)
+	if err != nil {
+		return "", "", err
+	}
+	if req.Phases, err = r.Phases(ctx, uid, planID, req.StartDate, req.EndDate); err != nil {
 		return "", "", err
 	}
 	if req.LoadRatio, err = s.loadRatio(ctx, uid, p, today); err != nil {
@@ -320,7 +324,11 @@ func (s *Services) replacePlan(ctx context.Context, uid int64, removeIds []int64
 				return validation(err)
 			}
 		}
-		return r.ReplacePhases(ctx, uid, phs)
+		planID, err := activePlanID(ctx, tx, uid)
+		if err != nil {
+			return err
+		}
+		return r.ReplacePhases(ctx, uid, planID, phs)
 	})
 	if err != nil {
 		return nil, err
