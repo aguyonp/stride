@@ -101,6 +101,30 @@ func (p *OpenMeteo) At(ctx context.Context, lat, lon float64, t time.Time) (*Con
 	if now.Sub(t) > time.Duration(p.o.RecentDays)*24*time.Hour {
 		base, endpoint = p.o.ArchiveURL, "GET /v1/archive"
 	}
+	return p.hourly(ctx, base, endpoint, lat, lon, t)
+}
+
+// forecastHorizon is how far ahead Open-Meteo forecasts hourly conditions.
+const forecastHorizon = 15 * 24 * time.Hour
+
+// Forecast returns the forecast conditions at a future time (Smart Workout Morphing, §15.5).
+func (p *OpenMeteo) Forecast(ctx context.Context, lat, lon float64, t time.Time) (*Conditions, error) {
+	if math.IsNaN(lat) || math.IsNaN(lon) || math.Abs(lat) > 90 || math.Abs(lon) > 180 || (lat == 0 && lon == 0) {
+		return nil, ErrInvalidCoordinate
+	}
+	t = t.UTC()
+	if now := p.o.Now().UTC(); t.Before(now.Add(-time.Hour)) || t.After(now.Add(forecastHorizon)) {
+		return nil, ErrNoData
+	}
+	c, err := p.hourly(ctx, p.o.ForecastURL, "GET /v1/forecast", Round2(lat), Round2(lon), t)
+	if c != nil {
+		c.Source = "open-meteo-forecast"
+	}
+	return c, err
+}
+
+// hourly reads the hourly conditions around t from base (coordinates already rounded).
+func (p *OpenMeteo) hourly(ctx context.Context, base, endpoint string, lat, lon float64, t time.Time) (*Conditions, error) {
 	q := url.Values{
 		"latitude":        {strconv.FormatFloat(lat, 'f', 2, 64)},
 		"longitude":       {strconv.FormatFloat(lon, 'f', 2, 64)},

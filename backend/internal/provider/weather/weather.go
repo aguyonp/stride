@@ -25,3 +25,8 @@ type Conditions struct {
 type Provider interface {
 	At(ctx context.Context, lat, lon float64, t time.Time) (*Conditions, error)
 }
+
+// Forecaster is implemented by providers that forecast conditions at a future time (Open-Meteo).
+type Forecaster interface {
+	Forecast(ctx context.Context, lat, lon float64, t time.Time) (*Conditions, error)
+}
