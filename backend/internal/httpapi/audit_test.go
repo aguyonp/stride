@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"stride/internal/applog"
@@ -31,8 +33,10 @@ func TestAuditRecordsRequestsAndActions(t *testing.T) {
 	mux.Handle("POST /api/sync", authed(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	mux.Handle("PUT /api/llm", authed(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadRequest) }))
 	mux.Handle("GET /api/activities", authed(func(w http.ResponseWriter, _ *http.Request) {}))
+	mux.HandleFunc("GET /api/public/share/{token}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
 	h := withAudit(l, mux)
 	for _, req := range []*http.Request{
+		httptest.NewRequest("GET", "/api/public/share/st4_SECRETtokenValue", nil),
 		httptest.NewRequest("POST", "/api/sync", nil),
 		httptest.NewRequest("PUT", "/api/llm", nil),
 		httptest.NewRequest("GET", "/api/activities?limit=5", nil),
@@ -43,8 +47,13 @@ func TestAuditRecordsRequestsAndActions(t *testing.T) {
 	l.Close()
 
 	req, _ := l.Query(ctx, applog.Filter{Category: applog.CategoryRequest})
-	if len(req.Items) != 3 {
+	if len(req.Items) != 4 {
 		t.Fatalf("requests: %d (static files must be skipped)", len(req.Items))
+	}
+	for _, it := range req.Items {
+		if strings.Contains(it.Target, "SECRET") {
+			t.Fatalf("share token stored in the audit log: %s", it.Target)
+		}
 	}
 	acts, _ := l.Query(ctx, applog.Filter{Category: applog.CategoryAction})
 	if len(acts.Items) != 2 || acts.Items[1].Action != "sync.start" || acts.Items[0].Action != "settings.llm" || acts.Items[0].Level != applog.LevelError {
@@ -53,7 +62,19 @@ func TestAuditRecordsRequestsAndActions(t *testing.T) {
 	if acts.Items[1].UserID == nil || *acts.Items[1].UserID != 3 {
 		t.Fatal("user not attributed")
 	}
-	if errs, _ := l.Query(ctx, applog.Filter{Level: applog.LevelError}); len(errs.Items) != 2 {
+	if errs, _ := l.Query(ctx, applog.Filter{Level: applog.LevelError}); len(errs.Items) != 3 {
 		t.Fatalf("error filter: %d", len(errs.Items))
+	}
+}
+
+func TestLoggingRedactsShareTokens(t *testing.T) {
+	var buf strings.Builder
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	h := withLogging(log, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
+	for _, path := range []string{"/api/public/share/st4_SECRETtokenValue", "/share/st4_SECRETtokenValue"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", path, nil))
+	}
+	if out := buf.String(); strings.Contains(out, "SECRET") || !strings.Contains(out, "/api/public/share/st4_SECR…") {
+		t.Fatalf("share token logged: %s", out)
 	}
 }

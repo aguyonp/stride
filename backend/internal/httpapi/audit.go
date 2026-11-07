@@ -94,7 +94,7 @@ func withAudit(l *applog.Log, next http.Handler) http.Handler {
 			level = applog.LevelError
 		}
 		uid := meta.UserID()
-		l.Add(applog.Entry{Category: applog.CategoryRequest, Level: level, UserID: uid, Method: r.Method, Target: r.URL.Path,
+		l.Add(applog.Entry{Category: applog.CategoryRequest, Level: level, UserID: uid, Method: r.Method, Target: redactPath(r.URL.Path),
 			Status: status, DurationMs: time.Since(start).Milliseconds()})
 		if action, ok := actions[r.Pattern]; ok && uid != nil && status != http.StatusUnauthorized {
 			l.Add(applog.Entry{Category: applog.CategoryAction, Level: level, UserID: uid, Method: r.Method, Target: r.URL.Path,
