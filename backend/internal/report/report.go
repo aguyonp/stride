@@ -546,11 +546,18 @@ func sortedAlertCounts(in []view.AlertCount) []view.AlertCount {
 	return out
 }
 
-func writeBodyStress(b *builder, entries []analysis.BodyStressEntry) {
-	if len(entries) == 0 {
+var confidenceFR = map[string]string{"low": "faible", "moderate": "modérée", "high": "élevée"}
+
+// writeBodyStress lists the pain entries and, when some are conclusive, the measured correlations.
+func writeBodyStress(b *builder, entries []analysis.BodyStressEntry, corrs []analysis.BodyCorrelationFactor) {
+	if len(entries) == 0 && len(corrs) == 0 {
 		return
 	}
-	b.section("CARTOGRAPHIE CORPORELLE & CORRÉLATIONS")
+	if len(corrs) == 0 {
+		b.section("CARTOGRAPHIE CORPORELLE")
+	} else {
+		b.section("CARTOGRAPHIE CORPORELLE & CORRÉLATIONS")
+	}
 	for _, e := range entries {
 		coldStr := ""
 		if e.ColdNextDayScore != nil {
@@ -573,5 +580,12 @@ func writeBodyStress(b *builder, entries []analysis.BodyStressEntry) {
 		}
 		label := analysis.BodyZoneReportLabel(e.Zone)
 		b.line("- **%s%s :** Douleur %s/10%s le %s%s", label, sideStr, f.Num(e.PainScore, 1), coldStr, f.Date(e.Date), noteStr)
+	}
+	for _, c := range corrs {
+		if c.InsufficientData || c.Summary == nil {
+			continue
+		}
+		b.line("- **Corrélation %s — %s :** %s (confiance %s, %d sorties liées / %d autres)", analysis.BodyZoneReportLabel(c.Zone),
+			c.FactorLabel, *c.Summary, confidenceFR[c.Confidence], c.SymptomaticRuns, c.BaselineRuns)
 	}
 }

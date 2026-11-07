@@ -46,7 +46,9 @@ func numOr(v *float64, n int) string {
 // Multi renders the multi-session export (§6.4, no splits).
 func Multi(m *view.MultiExport, prof athlete.Profile, inc Include) string {
 	b := newBuilder()
-	writeBodyStress(b, m.BodyStress)
+	if inc.Has(ChipPain) {
+		writeBodyStress(b, m.BodyStress, m.BodyCorrelations)
+	}
 	if inc.Has(ChipPlan) {
 		b.section("CONTEXTE & OBJECTIFS DE L'ATHLÈTE")
 		macro, others := splitGoals(m.Goals)

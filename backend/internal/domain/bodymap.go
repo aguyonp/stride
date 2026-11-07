@@ -315,14 +315,6 @@ func (s *Services) getBodyStressEntry(ctx context.Context, uid, id int64) (*anal
 	return &e, err
 }
 
-func (s *Services) recentBodyStress(ctx context.Context, uid int64, days int) ([]analysis.BodyStressEntry, error) {
-	p, err := s.profile(ctx, uid)
-	if err != nil {
-		return nil, err
-	}
-	return s.bodyStressSince(ctx, uid, addDays(s.today(p), -days))
-}
-
 // bodyStressSince lists the entries dated from since, newest first.
 func (s *Services) bodyStressSince(ctx context.Context, uid int64, since string) ([]analysis.BodyStressEntry, error) {
 	rows, err := s.db().QueryContext(ctx, bodyEntrySelect+` WHERE e.user_id = ? AND e.date >= ? ORDER BY e.date DESC, e.id DESC`, uid, since)
@@ -390,4 +382,19 @@ func isValidZone(z analysis.BodyZone) bool {
 		}
 	}
 	return false
+}
+
+// bodyPromptContext returns the pain entries of the last 30 days and the conclusive correlations.
+func (s *Services) bodyPromptContext(ctx context.Context, uid int64) ([]analysis.BodyStressEntry, []analysis.BodyCorrelationFactor, error) {
+	bm, err := s.BodyMap(ctx, uid, 30, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	var corrs []analysis.BodyCorrelationFactor
+	for _, c := range bm.Correlations {
+		if !c.InsufficientData {
+			corrs = append(corrs, c)
+		}
+	}
+	return bm.Entries, corrs, nil
 }
