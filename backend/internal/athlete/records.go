@@ -69,10 +69,21 @@ type Shoe struct {
 	Type         string   `json:"type"`
 	StravaGearID *string  `json:"stravaGearId"`
 	Retired      bool     `json:"retired"`
-	DistanceKm   float64  `json:"distanceKm"`
+	// DistanceKm is the pair's real total: Strava's all-time gear distance when known (linked pair),
+	// else AnalyzedKm. Never a partial sum presented as the total.
+	DistanceKm float64 `json:"distanceKm"`
+	// AnalyzedKm sums the activities Stride holds for this pair (notes shoe, else matching Strava gear).
+	AnalyzedKm float64 `json:"analyzedKm"`
+	// DistanceSource tells where DistanceKm comes from: strava | stride.
+	DistanceSource string `json:"distanceSource"`
 	// StravaDistanceKm is the total distance reported by Strava for this gear (all-time).
 	StravaDistanceKm *float64 `json:"stravaDistanceKm"`
-	Note             string   `json:"note"`
+	// StravaPrimary marks the athlete's default pair on Strava.
+	StravaPrimary bool `json:"stravaPrimary"`
+	// StravaState is the gear state seen at the last Strava sync: active | retired | deleted (nil: never synced).
+	StravaState    *string `json:"stravaState"`
+	StravaSyncedAt *string `json:"stravaSyncedAt"`
+	Note           string  `json:"note"`
 }
 
 type ActivityNotes struct {
@@ -344,7 +355,7 @@ var (
 	CheckinFields   = []string{"trainingReadiness", "readinessStatus", "note"}
 	GoalReadOnly    = []string{"id"}
 	PlanReadOnly    = []string{"id", "match", "garmin"}
-	ShoeReadOnly    = []string{"id", "distanceKm", "stravaDistanceKm"}
+	ShoeReadOnly    = []string{"id", "distanceKm", "analyzedKm", "distanceSource", "stravaDistanceKm", "stravaPrimary", "stravaState", "stravaSyncedAt"}
 	NotesReadOnly   = []string{"shoe", "shoeAuto", "updatedAt"}
 	CheckinReadOnly = []string{"date", "updatedAt"}
 )

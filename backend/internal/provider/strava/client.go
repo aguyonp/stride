@@ -357,6 +357,7 @@ type apiGear struct {
 	Name        string  `json:"name"`
 	BrandName   string  `json:"brand_name"`
 	ModelName   string  `json:"model_name"`
+	Nickname    string  `json:"nickname"`
 	Description string  `json:"description"`
 	Distance    float64 `json:"distance"`
 	Retired     bool    `json:"retired"`
@@ -371,7 +372,11 @@ func (g apiGear) gear(kind string) Gear {
 			kind = "bike"
 		}
 	}
-	return Gear{ID: g.ID, Name: g.Name, BrandName: g.BrandName, ModelName: g.ModelName, Description: g.Description,
+	name := strings.TrimSpace(g.Name)
+	if name == "" {
+		name = strings.TrimSpace(g.Nickname)
+	}
+	return Gear{ID: g.ID, Name: name, BrandName: g.BrandName, ModelName: g.ModelName, Description: g.Description,
 		DistanceM: g.Distance, Retired: g.Retired, Primary: g.Primary, Kind: kind}
 }
 
@@ -524,13 +529,19 @@ func (c *Client) GetGear(ctx context.Context, accessToken, gearID string) (*Gear
 	return &g, nil
 }
 
+// ListAthleteGear lists the active gear of the detailed athlete (Strava leaves retired gear out).
+// A summary athlete (resource_state < 3) means the token lacks profile:read_all: ErrGearScope.
 func (c *Client) ListAthleteGear(ctx context.Context, accessToken string) ([]Gear, error) {
 	var raw struct {
-		Shoes []apiGear `json:"shoes"`
-		Bikes []apiGear `json:"bikes"`
+		ResourceState int       `json:"resource_state"`
+		Shoes         []apiGear `json:"shoes"`
+		Bikes         []apiGear `json:"bikes"`
 	}
 	if err := c.do(ctx, request{method: http.MethodGet, endpoint: "GET /athlete", path: "/api/v3/athlete", token: accessToken}, &raw); err != nil {
 		return nil, err
+	}
+	if raw.ResourceState > 0 && raw.ResourceState < 3 {
+		return nil, ErrGearScope
 	}
 	out := make([]Gear, 0, len(raw.Shoes)+len(raw.Bikes))
 	for _, g := range raw.Shoes {

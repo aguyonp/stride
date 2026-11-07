@@ -140,10 +140,15 @@ type ErrUnauthorized struct{ Msg string }
 
 func (e *ErrUnauthorized) Error() string { return "strava unauthorized: " + e.Msg }
 
-// MissingScope reports a 401 caused by a scope the token does not carry (e.g. activity:read_permission).
+// ErrGearScope: /athlete answered with the summary representation, so the token lacks the
+// profile:read_all scope the gear list needs.
+var ErrGearScope = errors.New("strava: gear needs the profile:read_all scope")
+
+// MissingScope reports a 401 caused by a scope the token does not carry (e.g. activity:read_permission),
+// or ErrGearScope.
 func MissingScope(err error) bool {
 	var ue *ErrUnauthorized
-	return errors.As(err, &ue) && strings.Contains(ue.Msg, "_permission")
+	return errors.Is(err, ErrGearScope) || (errors.As(err, &ue) && strings.Contains(ue.Msg, "_permission"))
 }
 
 // TokenRejected reports a 401 on an API call caused by an invalid or expired access token.

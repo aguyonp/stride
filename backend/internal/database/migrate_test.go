@@ -124,9 +124,11 @@ func TestLegacyV31UpgradePreservesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srcs := p.ListSources()
+	want := srcs[len(srcs)-1].Version
 	ver, err := p.GetDBVersion(ctx)
-	if err != nil || ver != 7 {
-		t.Fatalf("expected goose version 7, got %d (%v)", ver, err)
+	if err != nil || ver != want || want < 8 {
+		t.Fatalf("expected goose version %d, got %d (%v)", want, ver, err)
 	}
 }
 

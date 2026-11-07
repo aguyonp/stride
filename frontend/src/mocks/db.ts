@@ -22,6 +22,7 @@ import type {
 } from '../api/types'
 import { addDays, todayISO } from '../lib/format'
 import { getCatalog } from './catalog'
+import { seedShoes } from './gear'
 import { flagsKey, has } from './flags'
 import type { V31Data } from './manual'
 
@@ -216,11 +217,7 @@ function richData(st: { seq: number }, today: string): UserData {
     { id: next(), title: 'Cadence 172–178 spm sur toutes les sorties', kind: 'cadence', targetValue: 175, targetUnit: 'spm', targetDate: null, status: 'active', note: '' },
     { id: next(), title: 'Volume 25 km / semaine', kind: 'weekly_volume', targetValue: 25, targetUnit: 'km', targetDate: null, status: 'done', note: '' },
   ]
-  const shoes: Shoe[] = [
-    { id: next(), name: 'Souple du quotidien', brand: 'Vela', model: 'Cloudline 3', dropMm: 10, type: 'soft', stravaGearId: 'g2741001', retired: false, distanceKm: 412.6, note: 'Footings et run/walk' },
-    { id: next(), name: 'Tempo', brand: 'Kairo', model: 'Swift 2', dropMm: 8, type: 'tempo', stravaGearId: null, retired: false, distanceKm: 186.2, note: '' },
-    { id: next(), name: 'Carbone compétition', brand: 'Kairo', model: 'Apex Elite', dropMm: 6, type: 'carbon', stravaGearId: null, retired: false, distanceKm: 64.0, note: 'Courses et séances clés uniquement' },
-  ]
+  const shoes: Shoe[] = seedShoes(next, new Date(Date.now() - 2 * 3600_000).toISOString())
   const run = (daysAgo: number) => getCatalog(today).find((it) => it.isRunning && it.date === addDays(today, -daysAgo))
   const notes: Record<string, StoredNotes> = {}
   const addNote = (daysAgo: number, n: Omit<StoredNotes, 'updatedAt'>) => {
