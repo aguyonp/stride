@@ -30,7 +30,7 @@ func TestMigrateUpDownReUpAndVerify(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t, "fresh.db")
 
-	// 1. Fresh Up to v6 + VerifySchema
+	// 1. Fresh Up to the latest version + VerifySchema
 	if err := database.Migrate(ctx, db); err != nil {
 		t.Fatalf("fresh migrate up: %v", err)
 	}
@@ -48,6 +48,7 @@ func TestMigrateUpDownReUpAndVerify(t *testing.T) {
 		`INSERT INTO body_stress_entries (user_id, date, zone, side, pain_score, created_at, updated_at) VALUES (1, '2026-11-03', 'knee_pfps', 'left', 4, 100, 100)`,
 		`INSERT INTO share_links (user_id, label, token_hash, token_prefix, url_ciphertext, created_at) VALUES (1, 'Kiné', x'01020304', 'st4_abcd', x'0908', 100)`,
 		`INSERT INTO async_jobs (id, user_id, kind, queue, state, created_at, updated_at) VALUES ('job-1', 1, 'sync.provider', 'default', 'completed', 100, 100)`,
+		`INSERT INTO health_status (user_id, zones, updated_at) VALUES (1, '[{"zone":"achilles","side":"left"}]', 100)`,
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("seed stmt %s: %v", stmt, err)
@@ -124,8 +125,8 @@ func TestLegacyV31UpgradePreservesData(t *testing.T) {
 		t.Fatal(err)
 	}
 	ver, err := p.GetDBVersion(ctx)
-	if err != nil || ver != 6 {
-		t.Fatalf("expected goose version 6, got %d (%v)", ver, err)
+	if err != nil || ver != 7 {
+		t.Fatalf("expected goose version 7, got %d (%v)", ver, err)
 	}
 }
 

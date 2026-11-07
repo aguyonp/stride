@@ -19,8 +19,8 @@ func (s *Services) BodyMap(ctx context.Context, uid int64, days int, zoneFilter 
 	if days == 0 {
 		days = 90
 	}
-	if days < 7 || days > 365 {
-		return nil, badRequest("days doit être compris entre 7 et 365.")
+	if days < 7 || days > 3650 {
+		return nil, badRequest("days doit être compris entre 7 et 3650.")
 	}
 	if zoneFilter != "" && !isValidZone(analysis.BodyZone(zoneFilter)) {
 		return nil, badRequest("Zone anatomique inconnue.")
@@ -179,7 +179,8 @@ func (s *Services) ownActivity(ctx context.Context, uid int64, id *int64) error 
 	return err
 }
 
-// CreateBodyStressEntry logs a new pain or discomfort score.
+// CreateBodyStressEntry logs a pain score; an entry linked to an activity replaces the one of the
+// same activity and zone (the Ressenti form writes one entry per zone).
 func (s *Services) CreateBodyStressEntry(ctx context.Context, uid int64, in analysis.BodyStressInput) (*analysis.BodyStressEntry, error) {
 	if !isValidDate(in.Date) {
 		return nil, badRequest("Date invalide (format AAAA-MM-JJ attendu).")
@@ -200,6 +201,14 @@ func (s *Services) CreateBodyStressEntry(ctx context.Context, uid int64, in anal
 	}
 	if err := s.ownActivity(ctx, uid, in.ActivityID); err != nil {
 		return nil, err
+	}
+	if in.ActivityID != nil {
+		in.Side = &side
+		id, err := s.upsertActivityEntry(ctx, uid, in)
+		if err != nil {
+			return nil, err
+		}
+		return s.getBodyStressEntry(ctx, uid, id)
 	}
 
 	note := ""

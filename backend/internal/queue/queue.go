@@ -46,6 +46,7 @@ const (
 	KindSyncProvider      = "sync.provider"
 	KindSyncStravaWebhook = "sync.strava_webhook"
 	KindSyncResync        = "sync.resync"
+	KindSyncHistory       = "sync.history"
 	KindImportActivity    = "import.activity"
 	KindLLMAnalyze        = "llm.analyze"
 	KindLLMPlanGenerate   = "llm.plan_generate"
@@ -407,7 +408,7 @@ func normalizeQueue(q, kind string) string {
 	switch kind {
 	case KindImportActivity, KindLLMAnalyze, KindLLMPlanGenerate, KindLLMPlanAdapt:
 		return QueueCritical
-	case KindSyncResync:
+	case KindSyncResync, KindSyncHistory:
 		return QueueLow
 	}
 	return QueueDefault
@@ -421,6 +422,8 @@ func defaultLabel(kind string) string {
 		return "Synchronisation webhook Strava"
 	case KindSyncResync:
 		return "Resynchronisation complète"
+	case KindSyncHistory:
+		return "Import de l'historique complet"
 	case KindImportActivity:
 		return "Import de fichier d'activité"
 	case KindLLMAnalyze:

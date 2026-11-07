@@ -329,7 +329,8 @@ var expectedSchema = map[string][]string{
 	"training_weeks":       {"id", "user_id", "plan_id", "phase_id", "week_start", "week_end", "week_number", "is_assimilation", "target_volume_km", "target_load", "target_duration_s", "note", "created_at", "updated_at"},
 	"planned_sessions":     {"id", "user_id", "date", "sport", "title", "steps", "source", "garmin_status", "plan_id", "phase_id", "week_id"},
 	"body_stress_entries":  {"id", "user_id", "date", "activity_id", "zone", "side", "pain_score", "cold_next_day_score", "note", "created_at", "updated_at"},
-	"share_links":          {"id", "user_id", "label", "token_hash", "token_prefix", "url_ciphertext", "expires_at", "revoked_at", "access_count", "last_accessed_at", "created_at"},
+	"share_links":          {"id", "user_id", "label", "token_hash", "token_prefix", "url_ciphertext", "expires_at", "revoked_at", "access_count", "last_accessed_at", "created_at", "scope_json"},
+	"health_status":        {"user_id", "zones", "updated_at"},
 	"async_jobs":           {"id", "user_id", "kind", "queue", "state", "label", "progress_pct", "processed", "total", "attempts", "max_attempts", "error", "result_json", "created_at", "updated_at"},
 }
 

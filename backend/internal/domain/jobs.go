@@ -171,6 +171,8 @@ func (s *Services) registerJobs() {
 		return map[string]any{"resynced": true}, nil
 	})
 
+	s.queue.Register(queue.KindSyncHistory, s.runHistory)
+
 	s.queue.Register(queue.KindSyncStravaWebhook, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p stravaWebhookPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {

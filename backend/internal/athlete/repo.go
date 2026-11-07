@@ -400,8 +400,13 @@ func (r Repo) Notes(ctx context.Context, uid int64, aids []int64) (map[int64]Act
 	for _, id := range aids {
 		args = append(args, id)
 	}
-	rows, err := r.DB.QueryContext(ctx, `SELECT activity_id, pain_during, pain_cold, pain_next_morning, rpe, shoe_id, tags, note, updated_at, shoe_auto
-		FROM activity_notes WHERE user_id = ? AND activity_id IN (`+ph+`)`, args...)
+	// Pains linked to the activity in the body map win over the legacy note columns (projection).
+	rows, err := r.DB.QueryContext(ctx, `SELECT n.activity_id,
+		COALESCE((SELECT MAX(e.pain_score) FROM body_stress_entries e WHERE e.user_id = n.user_id AND e.activity_id = n.activity_id), n.pain_during),
+		n.pain_cold,
+		COALESCE((SELECT MAX(e.cold_next_day_score) FROM body_stress_entries e WHERE e.user_id = n.user_id AND e.activity_id = n.activity_id), n.pain_next_morning),
+		n.rpe, n.shoe_id, n.tags, n.note, n.updated_at, n.shoe_auto
+		FROM activity_notes n WHERE n.user_id = ? AND n.activity_id IN (`+ph+`)`, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -43,9 +43,30 @@ func (s *Services) Profile(ctx context.Context, uid int64) (athlete.Profile, err
 
 func (s *Services) Presets() []athlete.Preset { return athlete.Presets() }
 
-// PutProfile applies the body onto the current profile; switching focus area without thresholds
-// resets them to the new preset.
+// PutProfile applies the body onto the current profile. focusArea / injuredSide are derived from the
+// health status: a change sent here updates the health status, which drives the profile.
 func (s *Services) PutProfile(ctx context.Context, uid int64, body []byte) (athlete.Profile, error) {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(body, &keys); err != nil {
+		return athlete.Profile{}, badRequest("Corps JSON invalide.")
+	}
+	_, area := keys["focusArea"]
+	_, side := keys["injuredSide"]
+	if area || side {
+		if err := s.healthFromProfileBody(ctx, uid, keys); err != nil {
+			return athlete.Profile{}, err
+		}
+	}
+	delete(keys, "focusArea")
+	delete(keys, "injuredSide")
+	delete(keys, "focusLabel")
+	rest, _ := json.Marshal(keys)
+	return s.saveProfile(ctx, uid, rest)
+}
+
+// saveProfile applies the body onto the current profile; switching focus area without thresholds
+// resets them to the new preset.
+func (s *Services) saveProfile(ctx context.Context, uid int64, body []byte) (athlete.Profile, error) {
 	cur, err := s.profile(ctx, uid)
 	if err != nil {
 		return cur, err
@@ -59,7 +80,7 @@ func (s *Services) PutProfile(ctx context.Context, uid int64, body []byte) (athl
 	if _, hasTh := keys["thresholds"]; !hasTh && next.FocusArea != cur.FocusArea {
 		next.Thresholds = athlete.PresetFor(next.FocusArea).Thresholds
 	}
-	if _, hasLabel := keys["focusLabel"]; !hasLabel && next.FocusArea != cur.FocusArea {
+	if label := keys["focusLabel"]; next.FocusArea != cur.FocusArea && (label == nil || string(label) == `""`) {
 		next.FocusLabel = ""
 	}
 	if err := next.Normalize(); err != nil {
@@ -70,8 +91,6 @@ func (s *Services) PutProfile(ctx context.Context, uid int64, body []byte) (athl
 	}
 	return s.profile(ctx, uid)
 }
-
-// ---------- goals ----------
 
 func (s *Services) Goals(ctx context.Context, uid int64) ([]athlete.Goal, error) {
 	return s.repo().Goals(ctx, uid, false)
@@ -190,8 +209,10 @@ func (s *Services) DeleteShoe(ctx context.Context, uid, id int64) error {
 // ---------- notes & check-ins ----------
 
 // PutNotes merges the partial body into the notes of an activity owned by uid.
+// Pains sent here become body entries of the tracked zones (the notes only project them back).
 func (s *Services) PutNotes(ctx context.Context, uid, aid int64, body []byte) (athlete.ActivityNotes, error) {
-	if _, err := s.activity(ctx, uid, aid); err != nil {
+	a, err := s.activity(ctx, uid, aid)
+	if err != nil {
 		return athlete.ActivityNotes{}, err
 	}
 	n, err := s.repo().NotesFor(ctx, uid, aid)
@@ -203,6 +224,19 @@ func (s *Services) PutNotes(ctx context.Context, uid, aid int64, body []byte) (a
 	}
 	if err := n.Normalize(); err != nil {
 		return n, validation(err)
+	}
+	var keys map[string]json.RawMessage
+	_ = json.Unmarshal(body, &keys)
+	_, d := keys["painDuring"]
+	_, nm := keys["painNextMorning"]
+	if d || nm {
+		mapped, err := s.putActivityPains(ctx, uid, a, n.PainDuring, n.PainNextMorning)
+		if err != nil {
+			return n, err
+		}
+		if mapped {
+			n.PainDuring, n.PainNextMorning = nil, nil
+		}
 	}
 	if err := s.repo().PutNotes(ctx, uid, aid, &n); err != nil {
 		return n, validation(err)
