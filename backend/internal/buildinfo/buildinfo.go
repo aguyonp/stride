@@ -1,5 +1,5 @@
 // Package buildinfo exposes the build identity injected with
-// -ldflags "-X stride/internal/buildinfo.Version=4.0.0 -X ...Commit=abc1234 -X ...Date=2026-11-05T20:00:00Z".
+// -ldflags "-X stride/internal/buildinfo.Version=$(cat VERSION) -X ...Commit=abc1234 -X ...Date=2026-11-05T20:00:00Z".
 package buildinfo
 
 import (
@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	Version = "4.0.0"
+	Version = "dev"
 	Commit  = ""
 	Date    = ""
 )
@@ -20,10 +20,6 @@ type Info struct {
 	BuiltAt string `json:"builtAt"`
 	Go      string `json:"go"`
 	Label   string `json:"label"`
-}
-
-func Current() Info {
-	return Get()
 }
 
 func Get() Info {

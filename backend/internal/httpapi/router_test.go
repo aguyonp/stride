@@ -168,7 +168,7 @@ func TestPlatformEndpoints(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("version code: %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `"version":"4.0.0"`) {
+	if !strings.Contains(rec.Body.String(), `"version":"dev"`) {
 		t.Fatalf("version body: %s", rec.Body.String())
 	}
 
