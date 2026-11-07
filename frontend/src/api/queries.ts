@@ -14,6 +14,7 @@ import { ADMIN_METER_POLL_MS, fallbackPollInterval } from './polling'
 import { resetEventStore, useHasActiveJob, useStreamConnected } from '../state/events'
 import type {
   LogFilter,
+  ActivityListResponse,
   ActivityNotesInput,
   ActivityView,
   AdminSettings,
@@ -227,10 +228,25 @@ export function useActivities(params: Omit<ListActivitiesParams, 'before' | 'lim
   })
 }
 
+/** Server cap of `GET /api/activities?limit=` (1..100); a larger value is rejected with a 400. */
+export const ACTIVITIES_MAX_LIMIT = 100
+const RANGE_MAX_PAGES = 20
+
+/** Every activity dated within [from, to], paging with `before` past the server cap. */
+export async function fetchActivitiesInRange(from: string, to: string): Promise<ActivityListResponse> {
+  let res = await api.activities({ from, to, limit: ACTIVITIES_MAX_LIMIT })
+  const items = [...res.items]
+  for (let page = 1; res.hasMore && res.items.length > 0 && page < RANGE_MAX_PAGES; page++) {
+    res = await api.activities({ from, to, limit: ACTIVITIES_MAX_LIMIT, before: res.items[res.items.length - 1].startLocal })
+    items.push(...res.items)
+  }
+  return { items, hasMore: res.hasMore, freshness: res.freshness }
+}
+
 export function useActivitiesInRange(from: string, to: string, enabled = true) {
   return useQuery({
     queryKey: qk.activitiesRange(from, to),
-    queryFn: () => api.activities({ from, to, limit: 200 }),
+    queryFn: () => fetchActivitiesInRange(from, to),
     enabled,
     placeholderData: keepPreviousData,
   })
@@ -407,3 +423,4 @@ export function useAdminMutations() {
 }
 
 export * from './queriesV4'
+export * from './queriesAdmin'

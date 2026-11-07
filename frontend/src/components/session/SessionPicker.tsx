@@ -1,5 +1,5 @@
 import { CalendarDays, List, Loader2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useActivities, useActivitiesInRange } from '../../api/queries'
 import type { ActivitySummary } from '../../api/types'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
@@ -41,6 +41,7 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
   const recent = useActivities(runsOnly ? { sport: 'run' } : {}, open)
   const bounds = monthBounds(ym.y, ym.m)
   const month = useActivitiesInRange(bounds.from, bounds.to, open)
+  const monthReady = month.isSuccess && !month.isPlaceholderData
   const byDate = useMemo(() => {
     const map = new Map<string, ActivitySummary[]>()
     for (const a of month.data?.items ?? []) map.set(a.date, [...(map.get(a.date) ?? []), a])
@@ -48,7 +49,20 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
   }, [month.data])
 
   const items = (recent.data?.pages.flatMap((p) => p.items) ?? []).filter((a) => !runsOnly || a.isRunning)
-  const dayItems = calDay ? (byDate.get(calDay) ?? []) : []
+  // A day picked in another month stays remembered but only shows while its month is displayed.
+  const shownDay = calDay && calDay >= bounds.from && calDay <= bounds.to ? calDay : null
+  const dayItems = shownDay ? (byDate.get(shownDay) ?? []) : []
+  const dayRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!calDay) return
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    dayRef.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [calDay])
+  const goToday = () => {
+    const t = parseLocal(today)
+    if (t) setYm({ y: t.y, m: t.mo - 1 })
+    setCalDay(today)
+  }
   const pick = (a: ActivitySummary) => {
     onSelect(a)
     onClose()
@@ -72,11 +86,31 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
           ))}
         </select>
       </div>
-      <MiniCalendar year={ym.y} month0={ym.m} onMonthChange={(y, m) => setYm({ y, m })} byDate={byDate} selected={calDay ?? selectedDate} today={today} loading={month.isFetching} onSelect={setCalDay} />
-      {calDay && (
-        <div className="mt-4">
-          <p className="label-caps mb-1.5">{capitalize(fmtDateLong(calDay))}</p>
-          {dayItems.length === 0 ? (
+      <MiniCalendar
+        year={ym.y}
+        month0={ym.m}
+        onMonthChange={(y, m) => setYm({ y, m })}
+        byDate={byDate}
+        selected={shownDay ?? selectedDate}
+        today={today}
+        loading={month.isFetching}
+        onSelect={setCalDay}
+        onToday={goToday}
+      />
+      {month.isError && !month.isFetching && (
+        <div role="alert" className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+          <span className="min-w-0">Impossible de charger les activités de ce mois.</span>
+          <button type="button" className="btn btn-ghost h-8 min-h-8 flex-none px-2.5 text-xs" onClick={() => void month.refetch()}>
+            Réessayer
+          </button>
+        </div>
+      )}
+      {shownDay && (
+        <div ref={dayRef} className="mt-4 scroll-mb-4">
+          <p className="label-caps mb-1.5">{capitalize(fmtDateLong(shownDay))}</p>
+          {!monthReady && !month.isError ? (
+            <Skeleton className="h-14" />
+          ) : dayItems.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-sm text-ink-3">Aucune activité ce jour-là.</p>
           ) : (
             <ul className="space-y-1">
