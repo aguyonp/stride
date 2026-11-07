@@ -37,3 +37,13 @@ func registrationMode(ctx context.Context, q pfQuerier) (string, error) {
 	}
 	return v, err
 }
+
+// Setting reads a raw setting (ok false when never set).
+func (s *Store) Setting(ctx context.Context, key string) (string, bool, error) {
+	var v string
+	err := s.R.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return v, err == nil, err
+}

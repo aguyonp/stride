@@ -41,8 +41,8 @@ scrape_configs:
 
 | Metric | Type | Labels | Buckets / Unit | Description |
 | --- | --- | --- | --- | --- |
-| `stride_worker_jobs_queued` | Gauge | `queue` | jobs | Jobs waiting for a worker or a retry, by priority (`queue` ∈ `critical\|default\|low`; workers are pooled per group: sync, llm, webhook). |
-| `stride_worker_jobs_active` | Gauge | `queue`, `job_type` | jobs | Jobs currently executing in worker goroutines (`job_type` ∈ `sync.provider\|sync.strava_webhook\|sync.resync\|sync.history\|import.activity\|llm.analyze\|llm.plan_generate\|llm.plan_adapt\|webhook.deliver`). |
+| `stride_worker_jobs_queued` | Gauge | `queue` | jobs | Jobs waiting for a worker or a retry, by priority (`queue` ∈ `critical\|default\|low`; workers are pooled per group: sync, llm, webhook, backup). |
+| `stride_worker_jobs_active` | Gauge | `queue`, `job_type` | jobs | Jobs currently executing in worker goroutines (`job_type` ∈ `sync.provider\|sync.strava_webhook\|sync.resync\|sync.history\|import.activity\|llm.analyze\|llm.plan_generate\|llm.plan_adapt\|llm.morph_refine\|webhook.deliver\|backup.run\|backup.upload`). |
 | `stride_worker_jobs_processed_total` | Counter | `queue`, `job_type`, `status` | jobs | Total worker executions by outcome (`status` ∈ `completed\|retried\|failed`). |
 | `stride_worker_job_duration_seconds` | Histogram | `queue`, `job_type` | `0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120` (s) | Execution duration of a single worker attempt in seconds. |
 
@@ -60,7 +60,15 @@ scrape_configs:
 | `stride_external_api_requests_total` | Counter | `provider`, `status_class` | requests | Outbound HTTP requests to external providers (`provider` ∈ `garmin\|strava\|open-meteo\|llm\|webhook`; `status_class` ∈ `2xx\|4xx\|429\|5xx\|network_error`). |
 | `stride_external_api_duration_seconds` | Histogram | `provider` | `0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120` (s) | End-to-end outbound call duration by external provider. |
 
-### 2.6 Go Runtime & OS Process Collectors
+### 2.6 Backups (4.2.0)
+
+| Metric | Type | Labels | Unit | Description |
+| --- | --- | --- | --- | --- |
+| `stride_backup_last_success_timestamp_seconds` | Gauge | `target` | Unix seconds | Time of the last successful backup per `target` ∈ `local\|s3` (local snapshot written, S3 upload acknowledged). Restored from the sidecars at boot; absent until a first success. |
+| `stride_backup_last_size_bytes` | Gauge | — | bytes | Size of the last successful local snapshot (gzip). |
+| `stride_backup_total` | Counter | `target`, `status` | backups | Backup attempts per `target` ∈ `local\|s3` and `status` ∈ `success\|error` (each S3 retry counts). |
+
+### 2.7 Go Runtime & OS Process Collectors
 
 Stride also registers standard Prometheus collectors on the same registry:
 - `go_goroutines`, `go_memstats_alloc_bytes`, `go_gc_duration_seconds`, `go_threads`
@@ -133,3 +141,6 @@ sum by (provider, status_class) (rate(stride_external_api_requests_total{status_
 | `StrideWorkerJobFailures` | `increase(stride_worker_jobs_processed_total{status="failed"}[15m]) >= 3` | `0m` | `warning` | Background jobs exhausted exponential backoff retries and entered terminal `failed` state. |
 | `StrideProviderRateLimited` | `increase(stride_external_api_requests_total{status_class="429"}[15m]) >= 1` | `0m` | `info` | Strava, Garmin, or LLM provider returned HTTP 429; Stride enters automatic quota cooldown. |
 | `StrideProviderUpstreamDown` | `sum by (provider) (rate(stride_external_api_requests_total{status_class=~"5xx|network_error"}[10m])) / clamp_min(sum by (provider) (rate(stride_external_api_requests_total[10m])), 1e-9) > 0.25` | `10m` | `warning` | External provider error rate exceeds 25 % over 10 minutes. |
+| `StrideBackupStale` | `time() - stride_backup_last_success_timestamp_seconds{target="local"} > 26 * 3600` | `30m` | `critical` | No local snapshot for more than 26 hours: the daily backup (03:00) failed or the data volume is full. |
+| `StrideBackupS3Stale` | `time() - stride_backup_last_success_timestamp_seconds{target="s3"} > 26 * 3600` | `1h` | `warning` | Auto-upload is on but no snapshot reached S3 for more than 26 hours (credentials, endpoint or egress). |
+| `StrideBackupErrors` | `increase(stride_backup_total{status="error"}[1h]) >= 3` | `0m` | `warning` | Repeated snapshot or upload failures (the upload job retries 10 s, 1 min, 6 min). |

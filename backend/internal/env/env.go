@@ -53,6 +53,16 @@ type Config struct {
 	SyncHour      int
 	SyncJitterMin time.Duration
 	SyncJitterMax time.Duration
+
+	// S3 seeds the backup target once, when the admin settings hold none (§15.4).
+	S3 S3Seed
+}
+
+// S3Seed is the STRIDE_S3_* environment (empty Endpoint and Bucket: nothing to seed).
+type S3Seed struct {
+	Endpoint, Region, Bucket, Prefix, AccessKeyID, SecretAccessKey string
+	PathStyle, AutoUpload                                          bool
+	RetentionDays                                                  int
 }
 
 func (c Config) StravaEnabled() bool { return c.StravaClientID != "" && c.StravaClientSecret != "" }
@@ -124,6 +134,17 @@ func Load() (Config, error) {
 	}
 	if c.AllowPrivateEgress, err = strconv.ParseBool(get("STRIDE_ALLOW_PRIVATE_EGRESS", "false")); err != nil {
 		return Config{}, fmt.Errorf("STRIDE_ALLOW_PRIVATE_EGRESS must be true|false")
+	}
+	c.S3 = S3Seed{Endpoint: os.Getenv("STRIDE_S3_ENDPOINT"), Region: get("STRIDE_S3_REGION", "us-east-1"), Bucket: os.Getenv("STRIDE_S3_BUCKET"),
+		Prefix: os.Getenv("STRIDE_S3_PREFIX"), AccessKeyID: os.Getenv("STRIDE_S3_ACCESS_KEY_ID"), SecretAccessKey: os.Getenv("STRIDE_S3_SECRET_ACCESS_KEY")}
+	if c.S3.PathStyle, err = strconv.ParseBool(get("STRIDE_S3_PATH_STYLE", "false")); err != nil {
+		return Config{}, fmt.Errorf("STRIDE_S3_PATH_STYLE must be true|false")
+	}
+	if c.S3.AutoUpload, err = strconv.ParseBool(get("STRIDE_S3_AUTO_UPLOAD", "false")); err != nil {
+		return Config{}, fmt.Errorf("STRIDE_S3_AUTO_UPLOAD must be true|false")
+	}
+	if c.S3.RetentionDays, err = strconv.Atoi(get("STRIDE_S3_RETENTION_DAYS", "30")); err != nil || c.S3.RetentionDays < 0 || c.S3.RetentionDays > 3650 {
+		return Config{}, fmt.Errorf("STRIDE_S3_RETENTION_DAYS must be 0-3650")
 	}
 	return c, nil
 }

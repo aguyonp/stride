@@ -35,6 +35,9 @@ type Metrics struct {
 	ActivitiesSyncedTotal *prometheus.CounterVec
 	ExternalRequestsTotal *prometheus.CounterVec
 	ExternalRequestDur    *prometheus.HistogramVec
+	BackupLastSuccess     *prometheus.GaugeVec
+	BackupLastSize        prometheus.Gauge
+	BackupTotal           *prometheus.CounterVec
 }
 
 // New creates an isolated Prometheus registry with Go, Process, and all 14 stride_* collectors.
@@ -107,6 +110,18 @@ func New() *Metrics {
 			Help:    "Outbound external API request duration in seconds.",
 			Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
 		}, []string{"provider"}),
+		BackupLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "stride_backup_last_success_timestamp_seconds",
+			Help: "Unix time of the last successful backup per target (local snapshot, S3 upload).",
+		}, []string{"target"}),
+		BackupLastSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "stride_backup_last_size_bytes",
+			Help: "Size in bytes of the last successful local snapshot (gzip).",
+		}),
+		BackupTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "stride_backup_total",
+			Help: "Backups attempted per target and outcome.",
+		}, []string{"target", "status"}),
 	}
 
 	reg.MustRegister(
@@ -124,6 +139,9 @@ func New() *Metrics {
 		m.ActivitiesSyncedTotal,
 		m.ExternalRequestsTotal,
 		m.ExternalRequestDur,
+		m.BackupLastSuccess,
+		m.BackupLastSize,
+		m.BackupTotal,
 	)
 
 	// Pre-initialize baseline series so /metrics exposes core families immediately at boot.
@@ -137,6 +155,11 @@ func New() *Metrics {
 	}
 	for _, src := range []string{"garmin", "strava", "fusion", "manual", "import"} {
 		m.ActivitiesSyncedTotal.WithLabelValues(src).Add(0)
+	}
+	for _, target := range []string{"local", "s3"} {
+		for _, status := range []string{"success", "error"} {
+			m.BackupTotal.WithLabelValues(target, status).Add(0)
+		}
 	}
 
 	return m
@@ -297,4 +320,34 @@ func (m *Metrics) ObserveExternalAPI(provider string, status int, err error, dur
 	}
 	m.ExternalRequestsTotal.WithLabelValues(provider, StatusClass(status, err)).Inc()
 	m.ExternalRequestDur.WithLabelValues(provider).Observe(dur.Seconds())
+}
+
+// ObserveBackup counts a backup attempt; a success also records its time (and its size, local only).
+func (m *Metrics) ObserveBackup(target, status string, size int64, at time.Time) {
+	if m == nil {
+		return
+	}
+	m.BackupTotal.WithLabelValues(target, status).Inc()
+	if status != "success" {
+		return
+	}
+	m.SetBackupLastSuccess(target, at)
+	if target == "local" {
+		m.SetBackupSize(size)
+	}
+}
+
+// SetBackupLastSuccess records the last successful backup of a target (local | s3).
+func (m *Metrics) SetBackupLastSuccess(target string, at time.Time) {
+	if m == nil || at.IsZero() {
+		return
+	}
+	m.BackupLastSuccess.WithLabelValues(target).Set(float64(at.Unix()))
+}
+
+func (m *Metrics) SetBackupSize(size int64) {
+	if m == nil {
+		return
+	}
+	m.BackupLastSize.Set(float64(size))
 }
