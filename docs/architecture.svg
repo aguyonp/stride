@@ -12,7 +12,7 @@
 
   <!-- Header -->
   <text x="40" y="52" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e1e1e">Stride 4.0.0 — Architecture</text>
-  <text x="40" y="76" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#495057">compose.yml : stride (Go API + Worker Asynq + SPA embarquée) · valkey (Cache TTL + Queue + Pub/Sub) · SQLite WAL (Goose)</text>
+  <text x="40" y="76" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#495057">compose.yml : stride (Go API + tâches en processus + SPA embarquée) · valkey (Cache TTL + Pub/Sub SSE) · SQLite WAL (Goose)</text>
 
   <!-- React PWA -->
   <rect x="40" y="135" width="225" height="150" rx="14" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.8"/>
@@ -20,7 +20,7 @@
   <text x="152.5" y="188" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Dashboard · Cycles Gantt (/plan)</text>
   <text x="152.5" y="207" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Cartographie Corporelle (/body)</text>
   <text x="152.5" y="226" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Command Palette (Cmd+K)</text>
-  <text x="152.5" y="245" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Client typé OpenAPI · Passkeys</text>
+  <text x="152.5" y="245" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Client typé · Passkeys</text>
   <text x="152.5" y="266" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#1864ab" text-anchor="middle">Zéro polling · SSE temps réel</text>
 
   <!-- Public Physio / Coach Share View -->
@@ -32,15 +32,15 @@
   <!-- Prometheus Scraper -->
   <rect x="40" y="440" width="225" height="74" rx="14" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="1.5"/>
   <text x="152.5" y="468" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Observabilité</text>
-  <text x="152.5" y="489" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">GET /metrics · /version · /openapi.yaml</text>
+  <text x="152.5" y="489" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">GET /version · /metrics (écoute dédiée)</text>
 
   <!-- Go API + Worker Core -->
   <rect x="365" y="125" width="300" height="295" rx="14" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="515" y="156" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Go Server (HTTP + Worker)</text>
   <text x="515" y="180" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">WebAuthn Passkeys · AES-256-GCM · SHA-256</text>
-  <text x="515" y="200" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Contrat OpenAPI v3 généré par réflexion</text>
+  <text x="515" y="200" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Contrat : SPEC.md + types.ts</text>
   <text x="515" y="220" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Hub SSE (/api/events/stream + LLM tokens)</text>
-  <text x="515" y="240" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Worker Asynq (critical · default · low)</text>
+  <text x="515" y="240" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Tâches : sync · llm · webhook</text>
   <text x="515" y="260" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Cycles Macro / Méso / Micro &amp; prévu/réalisé</text>
   <text x="515" y="280" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Body Map &amp; corrélations (drop, usure, D-, GCT)</text>
   <text x="515" y="300" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Biomécanique · EF · Impact · Readiness</text>
@@ -60,7 +60,7 @@
   <!-- Valkey -->
   <rect x="530" y="485" width="185" height="96" rx="14" fill="#ffc9c9" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="622.5" y="514" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Valkey 9</text>
-  <text x="622.5" y="535" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Queues Asynq prioritaires</text>
+  <text x="622.5" y="535" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Pools par groupe de tâches</text>
   <text x="622.5" y="553" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#495057" text-anchor="middle">Cache TTL · Pub/Sub SSE</text>
   <text x="622.5" y="570" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">(fallback mémoire en dev)</text>
 
@@ -85,11 +85,11 @@
 
   <rect x="780" y="490" width="255" height="74" rx="14" fill="#e9ecef" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="907.5" y="520" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Webhooks sortants</text>
-  <text x="907.5" y="542" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Discord · Telegram · JSON (Asynq retry)</text>
+  <text x="907.5" y="542" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Discord · Telegram · JSON (retry 429/5xx)</text>
 
   <!-- Connections: Left -> Go Core -->
   <path d="M268,190 L361,190" fill="none" stroke="#1e1e1e" stroke-width="1.7" marker-end="url(#ah)" marker-start="url(#ahs)"/>
-  <text x="315" y="181" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#495057" text-anchor="middle">REST OpenAPI</text>
+  <text x="315" y="181" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#495057" text-anchor="middle">REST JSON</text>
 
   <path d="M361,226 L268,226" fill="none" stroke="#1864ab" stroke-width="1.8" marker-end="url(#ah)"/>
   <text x="315" y="242" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#1864ab" text-anchor="middle">SSE stream</text>
@@ -105,7 +105,7 @@
   <text x="418" y="456" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#495057" text-anchor="middle">SQL WAL</text>
 
   <path d="M572,422 L605,481" fill="none" stroke="#1e1e1e" stroke-width="1.7" marker-end="url(#ah)" marker-start="url(#ahs)"/>
-  <text x="626" y="456" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#495057" text-anchor="middle">Asynq · Cache</text>
+  <text x="626" y="456" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#495057" text-anchor="middle">Pub/Sub · Cache</text>
 
   <!-- Connections: Go Worker -> External Providers -->
   <path d="M667,255 C715,255 730,159 776,159" fill="none" stroke="#1e1e1e" stroke-width="1.6" marker-end="url(#ah)"/>

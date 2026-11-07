@@ -1,6 +1,6 @@
-# Stride — Prometheus Observability & Metrics (`GET /metrics`)
+# Stride — Prometheus metrics
 
-Stride exposes a native Prometheus endpoint at `GET /metrics` (`text/plain; version=0.0.4; charset=utf-8`) backed by an isolated `prometheus.Registry` in `backend/internal/observability`.
+Stride serves `GET /metrics` (Prometheus text format, isolated registry in `backend/internal/observability`) on a dedicated listener enabled by `STRIDE_METRICS_ADDR` (e.g. `:9090`); it is never exposed on the public listener and compose does not publish it.
 
 Every metric uses bounded, low-cardinality labels (HTTP routes are normalized via Go `http.Request.Pattern`, e.g. `GET /api/activities/{id}`, falling back to `unmatched` on unknown paths) so time-series cardinality stays deterministic regardless of traffic or user count.
 
@@ -14,10 +14,8 @@ scrape_configs:
     scrape_interval: 15s
     metrics_path: /metrics
     static_configs:
-      - targets: ["127.0.0.1:8080"]
+      - targets: ["stride:9090"] # STRIDE_METRICS_ADDR=:9090, same Docker network as Prometheus
 ```
-
-When exposing Stride behind a public reverse proxy (Caddy, Nginx, Traefik), restrict `/metrics` to your internal monitoring network or Basic Auth / mTLS scraper while keeping `/health` and `/version` reachable as needed.
 
 ---
 
@@ -37,30 +35,30 @@ When exposing Stride behind a public reverse proxy (Caddy, Nginx, Traefik), rest
 | Metric | Type | Labels | Buckets / Unit | Description |
 | --- | --- | --- | --- | --- |
 | `stride_cache_operations_total` | Counter | `backend`, `operation`, `result` | operations | Cache operations executed. `backend` ∈ `valkey\|memory`; `operation` ∈ `get\|set\|del\|del_prefix`; `result` ∈ `hit\|miss\|ok\|error`. |
-| `stride_cache_operation_duration_seconds` | Histogram | `backend`, `operation` | `0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5` (s) | Round-trip latency of cache operations against Valkey or the in-memory store. |
+| `stride_cache_operation_duration_seconds` | Histogram | `backend`, `operation` | `0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 1` (s) | Round-trip latency of cache operations against Valkey or the in-memory store. |
 
-### 2.3 Async Worker & Priority Queue (`Asynq` / Valkey)
+### 2.3 In-process jobs
 
 | Metric | Type | Labels | Buckets / Unit | Description |
 | --- | --- | --- | --- | --- |
-| `stride_worker_jobs_queued` | Gauge | `queue` | jobs | Pending jobs waiting in each priority queue (`queue` ∈ `critical\|default\|low`). |
-| `stride_worker_jobs_active` | Gauge | `queue`, `job_type` | jobs | Jobs currently executing in worker goroutines (`job_type` ∈ `sync.provider\|sync.strava_webhook\|sync.resync\|import.activity\|llm.analyze\|llm.plan_generate\|llm.plan_adapt\|webhook.deliver`). |
+| `stride_worker_jobs_queued` | Gauge | `queue` | jobs | Jobs waiting for a worker or a retry, by priority (`queue` ∈ `critical\|default\|low`; workers are pooled per group: sync, llm, webhook). |
+| `stride_worker_jobs_active` | Gauge | `queue`, `job_type` | jobs | Jobs currently executing in worker goroutines (`job_type` ∈ `sync.provider\|sync.strava_webhook\|sync.resync\|sync.history\|import.activity\|llm.analyze\|llm.plan_generate\|llm.plan_adapt\|webhook.deliver`). |
 | `stride_worker_jobs_processed_total` | Counter | `queue`, `job_type`, `status` | jobs | Total worker executions by outcome (`status` ∈ `completed\|retried\|failed`). |
-| `stride_worker_job_duration_seconds` | Histogram | `queue`, `job_type` | `0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 15, 30, 60, 120` (s) | Execution duration of a single worker attempt in seconds. |
+| `stride_worker_job_duration_seconds` | Histogram | `queue`, `job_type` | `0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120` (s) | Execution duration of a single worker attempt in seconds. |
 
 ### 2.4 Sports Telemetry & Activity Ingestion
 
 | Metric | Type | Labels | Unit | Description |
 | --- | --- | --- | --- | --- |
-| `stride_telemetry_points_ingested_total` | Counter | `format` | points | Individual GPS / biometric time-series samples parsed and ingested (`format` ∈ `fit\|gpx\|tcx\|strava_stream\|garmin_details`). |
-| `stride_activities_synced_total` | Counter | `source` | activities | Activities persisted or fused into SQLite (`source` ∈ `garmin\|strava\|fusion\|manual\|import`). |
+| `stride_telemetry_points_ingested_total` | Counter | `format` | points | Individual GPS / biometric time-series samples parsed and ingested (`format` ∈ `fit\|gpx\|tcx` for rescue imports, `strava_stream`). |
+| `stride_activities_synced_total` | Counter | `source` | activities | Activities persisted or fused into SQLite (`source` ∈ `garmin\|strava\|fusion\|import`). |
 
 ### 2.5 Outbound Third-Party APIs
 
 | Metric | Type | Labels | Buckets / Unit | Description |
 | --- | --- | --- | --- | --- |
 | `stride_external_api_requests_total` | Counter | `provider`, `status_class` | requests | Outbound HTTP requests to external providers (`provider` ∈ `garmin\|strava\|open-meteo\|llm\|webhook`; `status_class` ∈ `2xx\|4xx\|429\|5xx\|network_error`). |
-| `stride_external_api_duration_seconds` | Histogram | `provider` | `0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120` (s) | End-to-end outbound call duration by external provider. |
+| `stride_external_api_duration_seconds` | Histogram | `provider` | `0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120` (s) | End-to-end outbound call duration by external provider. |
 
 ### 2.6 Go Runtime & OS Process Collectors
 

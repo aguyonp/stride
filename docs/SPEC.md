@@ -40,12 +40,12 @@ compose.yml
 ```
 
 - SQLite (`modernc.org/sqlite`, pure Go, WAL, `foreign_keys=1`) holds users, credentials, sessions, invitations, provider connections, **immutable activity bundles**, final wellness days, and all manual athlete data. Migrations are embedded and applied at startup.
-- Valkey holds only disposable data with TTL: provider list responses, today's wellness, computed analyses, WebAuthn ceremonies, OAuth states, sync locks. `POST /api/admin/cache/flush` deletes `stride:cache:*` only (sessions live in SQLite, so nobody is logged out).
+- Valkey holds only disposable data with TTL: provider list responses, today's wellness, computed analyses, public share views, WebAuthn ceremonies, OAuth states, sync locks; it also relays SSE events between instances (Pub/Sub). Jobs run in process. `POST /api/admin/cache/flush` deletes `stride:cache:*` only (sessions live in SQLite, so nobody is logged out).
 - Without `STRIDE_VALKEY_URL` (local dev), the in-memory cache is used.
 
 ### 2.1 Backend packages
 
-`cmd/stride` (serve, healthcheck, version) · `env` · `store` (SQLite + migrations) · `cache` · `secret` (AES-GCM) · `auth` (passkeys, sessions) · `admin` · `scheduler` · `apimeter` · `httpapi` / `httpx` / `web` (router, middlewares, embedded SPA) · `domain` / `domainapi` (sync, views, athlete data, HTTP) · `garmin`, `provider/strava`, `provider/weather` · `fitdata` · `analysis` · `athlete` · `view` · `report` · `frfmt` · `logx`.
+`cmd/stride` (serve, healthcheck, version, doctor) · `env` · `store` (SQLite) · `database` (goose migrations, schema check) · `queue` (in-process jobs) · `sse` · `observability` (Prometheus) · `cache` · `secret` (AES-GCM) · `auth` (passkeys, sessions) · `admin` · `scheduler` · `apimeter` · `httpapi` / `httpx` / `web` (router, middlewares, embedded SPA) · `domain` / `domainapi` (sync, views, athlete data, HTTP) · `garmin`, `provider/strava`, `provider/weather` · `fitdata` · `analysis` · `athlete` · `view` · `report` · `frfmt` · `logx`.
 
 ---
 
@@ -407,6 +407,7 @@ No splits. Structure:
 | `STRIDE_REGISTRATION` | `invite` | initial registration mode (`open`/`invite`) |
 | `STRIDE_SESSION_TTL` | `720h` | session lifetime |
 | `STRIDE_LISTEN_ADDR` | `:8080` | listen address |
+| `STRIDE_METRICS_ADDR` | — (disabled) | separate listener for `GET /metrics` (e.g. `:9090`); never the public listener, not published by compose |
 | `STRIDE_DATA_DIR` / `STRIDE_DB_PATH` | `./data` / `<data>/stride.db` | SQLite location |
 | `STRIDE_VALKEY_URL` | — (memory) | `redis://valkey:6379/0` in compose |
 | `STRIDE_ADMIN_GARMIN_KEY` (alias `GARMIN_API_TOKEN`) | — | auto-connect Garmin for the first admin |
@@ -606,39 +607,72 @@ Responses gain `phases: PlanPhase[]` (drafts with `id: 0`); `POST /api/plan/bulk
 
 ---
 
-## 13. 4.0.0 — Goose Migrations, OpenAPI v3, Valkey Worker, Native SSE, Prometheus, Cycles, Body Map, Share View & Cmd+K
+## 13. 4.0.0 — Goose migrations, in-process jobs, SSE, Prometheus, cycles, body map, share view, Cmd+K
 
-### 13.1 Platform & Observability Endpoints
+### 13.1 Platform & observability
 | Method & path | Auth | Response |
 | --- | --- | --- |
-| `GET /version` | Public | `BuildInfo` (`{version, commit, builtAt, go, label}`), identical payload to authenticated `GET /api/version` |
-| `GET /metrics` | Public | Prometheus text exposition (`stride_http_*`, `stride_cache_*`, `stride_worker_*`, `stride_telemetry_*`, `stride_activities_synced_total`, `stride_external_api_*`, `stride_sse_clients_connected`; full spec in [METRICS.md](METRICS.md)) |
-| `GET /openapi.json` · `GET /openapi.yaml` | Public | OpenAPI 3.0.3 specification reflected from Go structs & routes (`stride openapi ../docs` → `npm run generate:api`) |
-| `GET /api/jobs` · `GET /api/jobs/{id}` | User | Async worker job list & per-job status (`critical`, `default`, `low` Valkey `Asynq` queues + in-memory fallback) |
-| `GET /api/events/stream` | User | Native SSE stream (`connected`, `job.updated`, `sync.updated`, `alert.triggered`, `llm.token`, `llm.done`, `meter.updated`; 20 s heartbeat; replaces all frontend polling) |
+| `GET /version` | Public | `BuildInfo` (`{version, commit, builtAt, go, label}`), same payload as `GET /api/version` |
+| `GET /metrics` | metrics listener only (`STRIDE_METRICS_ADDR`) | Prometheus exposition, series in [METRICS.md](METRICS.md) |
+| `GET /api/jobs` · `GET /api/jobs/{id}` | User | the user's jobs (`JobStatus`), another user's job is 404 |
+| `GET /api/events/stream` | User | SSE: `connected`, `job.updated`, `sync.updated`, `alert.triggered`, `llm.token`, `llm.done`; 20 s heartbeat; Valkey Pub/Sub fans events out across instances |
 
-### 13.2 Versioned SQL Migrations (`internal/database`)
-- Powered by `pressly/goose/v3` with embedded `.up.sql` and `.down.sql` pairs (`00001_platform` .. `00006_v4`).
-- Legacy v3.x `schema_migrations` rows are automatically bridged into `goose_db_version` before applying `00006_v4.up.sql`.
-- Startup `VerifySchema` enforces `PRAGMA quick_check = "ok"`, zero `PRAGMA foreign_key_check` violations, and presence of all core + v4 tables/columns.
+SPEC.md and `frontend/src/api/types.ts` are the API contract (no generated OpenAPI document).
 
-### 13.3 Three-Tier Training Cycles (`/api/cycles`)
-- Relational hierarchy: `training_plans` (Macrocycle) → `plan_phases` (Mesocycle: `foundation | build | threshold | specific | assimilation | taper | recovery`, volume & load targets) → `training_weeks` (Microcycle, Monday-aligned, `isAssimilation` flag) → `planned_sessions` (`plan_id`, `phase_id`, `week_id`).
-- `GET /api/cycles`, `POST /api/cycles/plans` (supports `autoScaffold`), `PATCH` / `DELETE /api/cycles/plans/{id}`, `POST` / `PATCH` / `DELETE /api/cycles/phases/{id}`, `PUT /api/cycles/weeks`.
-- Computes `CycleActuals` comparing planned vs actual volume (`km`), training load, duration, and session count across Macro, Méso, and Micro tiers, rendered in `/plan` as a zoomable Gantt timeline.
+**Jobs (in-process).** One worker pool per kind group so slow LLM calls never starve sync: `sync` (sync, Strava webhooks, imports, history; 2 workers), `llm` (2), `webhook` (4); inside a group `critical` > `default` > `low`. Retries: 10 s, 1 min, 6 min, then 15 min. Webhooks are retried only on refused connections, 429 and 5xx, never after a timeout (the request may have been delivered). `async_jobs.error` and `job.updated` carry public French messages only, never raw error texts (they may hold webhook URLs or bot tokens). At startup, `queued` / `running` / `retrying` jobs left by the previous process are marked failed (« Tâche interrompue par un redémarrage du serveur. »); on shutdown queued jobs are dropped and running ones get the remaining grace period. `POST /api/llm/analyze`, `/api/plan/generate`, `/api/plan/adapt` and `/api/imports` wait at most 100 s (below the 150 s `WriteTimeout`) and answer **202 + `JobStatus`** past that or with `?async=1`; the result then arrives through `job.updated` / `llm.done`. The hourly maintenance purges finished jobs and revoked or expired share links after 14 days.
 
-### 13.4 Body Stress Map & Correlation Engine (`/api/bodymap`)
-- 6 canonical anatomical zones: `knee_pfps`, `achilles`, `plantar_fascia`, `shin_splints`, `iliotibial_band`, `hamstrings_calves`, scored `0–10` (`painScore`) plus optional next-day cold feeling (`coldNextDayScore`, `0–10`).
-- `internal/analysis/bodymap.go` correlates symptomatic episodes (`>= 3`) vs asymptomatic baseline runs across `shoe_drop` (`mm`), `shoe_wear` (`km`), `elev_loss` (`D-`), `gct` (`ms`), and `impact_load`, identifying suspect shoes (`shoeHighlight`) and confidence levels.
-- When entries exist, `internal/report` injects `### CARTOGRAPHIE CORPORELLE & CORRÉLATIONS` into activity, daily, and multi-session AI prompts after the mandatory objectivity directive.
+### 13.2 Versioned SQL migrations (`internal/database`)
+- `pressly/goose/v3`, embedded `.up.sql` / `.down.sql` pairs (`00001_platform` .. `00007_v41`); applied files are never edited.
+- Legacy 3.x `schema_migrations` rows are bridged into `goose_db_version` before the newer migrations run.
+- Boot only asserts that the expected tables and columns exist; orphan rows (`PRAGMA foreign_key_check`) are logged as warnings in the background. `stride doctor` runs the full `integrity_check` + `foreign_key_check` (exit 1 on problems).
 
-### 13.5 Encrypted Read-Only Physio & Coach Share View (`/api/share` & `/share/:token`)
-- `POST /api/share`, `GET /api/share`, `DELETE /api/share/{id}` manage named, optionally expiring, 1-click revocable share links.
-- Raw `st4_<base64url>` tokens use 256 bits of `crypto/rand`; SQLite stores `SHA-256(token)` for lookup and `AES-256-GCM` (`secret.Sealer`) ciphertext of the share URL for the owner.
-- `GET /api/public/share/{token}` (`Cache-Control: private, no-store`) exposes only clinical load (`ACWR`, `EF`, `Impact Load`), Macro/Méso cycles, sanitized recent sessions, Body Stress Map, and shoe wear correlations — never credentials, GPS tracks, settings, or write actions.
+### 13.3 Training cycles (`/api/cycles`)
+- `training_plans` (macro) → `plan_phases` (méso: `foundation | build | threshold | specific | assimilation | taper | recovery`) → `training_weeks` (micro, Monday-aligned overrides).
+- `GET /api/cycles[?planId=]` (unknown or foreign plan → 404; default: the active plan, else the latest), `POST /api/cycles/plans` (`autoScaffold`; load targets only from `peakWeeklyLoad`), `PATCH`/`DELETE /api/cycles/plans/{id}`, `POST`/`PATCH`/`DELETE /api/cycles/phases[/{id}]`, `PUT /api/cycles/weeks`. `planId`, `phaseId`, `goalId` must belong to the user (404); a week's phase must belong to its plan (400).
+- One phase model: imported / bulk / replaced plan phases (`/api/plan/bulk`, `/api/plan/replace`, LLM import) attach to the active plan (else to no plan) and replace only that plan's overlapping phases; `GET /api/plan/phases` returns the phases `/api/cycles` shows.
+- `CycleActuals`: planned volume/duration from the week targets, else the planned sessions; planned load only from targets; actual load = measured training load; completed sessions = planned sessions matched to an activity.
 
-### 13.6 Universal Command Palette (`Cmd+K` / `Ctrl+K`)
-- 100 % keyboard-driven modal palette across the SPA providing instant navigation, session search (title, date, sport, tag), and direct actions (sync, manual session, body stress log, physio share link, AI prompt copy, streaming LLM analysis).
+### 13.4 Body map & correlations (`/api/bodymap`)
+- 6 zones (`knee_pfps`, `achilles`, `plantar_fascia`, `shin_splints`, `iliotibial_band`, `hamstrings_calves`), `painScore` 0–10, optional `coldNextDayScore` (J+1). `GET /api/bodymap?days=7..3650&zone=`. `activityId` must belong to the user (404).
+- Correlations compare runs linked to a zone's entries (same activity or day) with the other runs of 90 days, on measured values only: `elev_loss` (m), `shoe_wear` (km of the pair at the run), `shoe_drop` (mm), `gct` (ms). Below 2 symptomatic or 3 baseline runs with a value, `symptomaticMean`, `baselineMean`, `deltaPct`, `summary` are `null` and `insufficientData` is `true`; `confidence` is `insufficient | low (≥2/≥3) | moderate (≥3/≥5) | high (≥5/≥10)`; `summary` quotes the computed numbers; `shoeHighlight` is the pair most used on symptomatic runs.
+- Prompts: with the `pain` chip, `### CARTOGRAPHIE CORPORELLE` lists the 30-day entries and becomes `… & CORRÉLATIONS` only when conclusive correlations exist (listed with their sample sizes).
+
+### 13.5 Read-only share links (`/api/share`, `/share/:token`)
+- `GET`/`POST /api/share`, `DELETE /api/share/{id}` (revocation), `PATCH` in 4.1 (§14.4). Tokens `st4_<base64url>` (256 bits); SQLite stores `SHA-256(token)` and the URL sealed with AAD `share:<uid>:url`. `expiresAt` must be RFC 3339 (400 otherwise).
+- `GET /api/public/share/{token}` (`Cache-Control: private, no-store`): unknown, revoked or disabled-owner link → 404, expired → 410; 30 views per client IP and minute (429). The computed view is cached 5 min under the token hash and dropped on revoke or edit. Metrics come from stored data only (EF and joint index from `activity_metrics`, Garmin impact load, shoe from notes/gear, pains from notes); missing values are `null`. Request logs and audit entries keep only the 8-character token prefix.
+
+### 13.6 Command palette (`Cmd+K` / `Ctrl+K`)
+Keyboard navigation, session search (`GET /api/search`, §14.3) and direct actions.
 
 ### 13.7 Version
 `VERSION` = `4.0.0` (no `v`, see release cycle).
+
+## 14. 4.1.0 — Navigation, health golden source, full history, share options
+
+`VERSION` = `4.1.0`. Migrations additive (`00007_*`), a 4.0 database upgrades losslessly.
+
+### 14.1 Navigation (five menus)
+| Menu | Route | Content |
+| --- | --- | --- |
+| Tableau de bord | `/` | essential only: readiness, session hero, top alerts, Ressenti, AI actions; details in collapsed sections |
+| Planning | `/plan` | sessions, cycles, calendar, imprévus |
+| Santé & forme | `/health` (old `/body` redirects) | health status (bonne santé / mode performance vs souci suivi), body map, symptoms history, correlations, physio share links |
+| Coach IA | `/coach` (old `/export` redirects) | prompt export (copy/multi-session) and, when an LLM is configured, AI analysis and history |
+| Réglages | `/settings` | account, integrations, LLM, notifications, shoes, backup, version |
+Admin stays in the user menu. Search (Cmd/Ctrl+K) is an icon button in the header actions (and in the mobile menu) opening the palette; it never overlaps the main navigation at any width.
+
+### 14.2 Health golden source
+- `body_stress_entries` is the single source of truth for symptoms. Health status (`performance` = bonne santé, or `tracking` with one or more zones + side) is managed only in Santé & forme; the profile `focusArea` / `injuredSide` are derived from it (kept for prompts/presets compatibility) and removed from Réglages (replaced by a link).
+- `GET /api/health/status` → `{ mode: "performance" | "tracking", zones: { zone, side, since, note }[], focusArea, updatedAt }`; `PUT /api/health/status` same body (without derived fields). Zone → preset: `knee_pfps`→`knee_pfps`, `achilles`→`achilles`, `shin_splints`→`shin_splints`, others→`other` (label = zone label); several zones → the most recent as `focusArea`.
+- Declaring a symptom on an activity (Ressenti form) writes body entries linked to that activity (one per zone; `pain_score` = during, `cold_next_day_score` = next morning/J+1). `activity notes` pain fields (`painDuring`, `painCold`, `painNextMorning`) become a projection of those entries (max per activity) so reports, history and prompts keep working; writing pains through the notes endpoint maps to the active zone(s). No double source.
+- Implementation: table `health_status` (zones JSON); without a row the status is derived from a 4.0 profile (`knee_pfps`, `achilles`, `shin_splints` → that zone, else performance). PUT → 400 for an unknown mode, `tracking` without zone, duplicated or unknown zone, invalid `since`. The profile focus follows the most recent zone (by `since`, undated zones last); unmapped zones give `other` labelled with the zone label. A focus sent to `PUT /api/profile` is converted into a health status. Body entries linked to an activity are unique per activity and zone (POST updates the existing one). Pains written through the notes endpoint without any tracked zone stay on the notes (legacy).
+
+### 14.3 Full history sync
+- `POST /api/sync/history` `{ from: "YYYY-MM-DD" | null }` (`null` = everything the provider returns) → `JobStatus` (in-process queue, low priority). Paginates Garmin activity list (and Strava when the scope allows) backwards, stores summaries only (bundles stay lazy on view/export), dedup/fusion rules unchanged, progress `processed/total` on the job, resumable (`history_from` updated per page), meter + backoff respected (429 → pause, resume).
+- Implementation: job kind `sync.history`, Garmin listed in 180-day windows from the covered history down to `from` (`null`: down to 2008 or three empty windows in a row), `history_from` advanced per window; Strava pages of 100 summaries before the covered history; the job retries (10 s, 1 min, 6 min…) on 429, timeouts and 5xx and resumes; it waits while another sync of the user runs. Answer **202**; user without provider → 412.
+- `GET /api/activities` keeps paging (`before`) and date filters; `GET /api/search?q=` (palette) matches activity names and dates over the whole stored history (e.g. « marathon », « 14 avril »). `GET /api/search?q=&limit=20` (max 50) → `{ query, items: [{ id, date, startLocal, name, sport, typeLabel, distanceM, durationS }] }`, newest first; dates: ISO prefixes, `14/04[/2019|/19]`, `14 avril`, `1er mai 2025`, `avril 2025`.
+
+### 14.4 Share options
+- `share_links` gains `scope_json` (default = everything, so existing links keep their behaviour). Create/patch body: `{ label, expiresInDays: 1 | 7 | 30 | 90 | null, periodWeeks: 4 | 8 | 12 | 26 | 52, sections: ("activities" | "health" | "recovery" | "load" | "records" | "plan" | "shoes" | "notes")[], anonymize: boolean }`; `PATCH /api/share/{id}` edits label/expiry/scope. The public payload only contains the allowed sections (others absent, not empty) and the period window; `anonymize` replaces the display name by « Athlète ».
+- Shoes in the public view show `name`, `brand`, `model` (never an internal id).
+- Implementation: `scope_json` `{periodWeeks, sections, anonymize}`; `{}` (4.0 links) = every section over 12 weeks. Create/PATCH accept any subset; `expiresInDays` restarts from now (`null` or `0` = never); `sections` are returned in the canonical order; unknown fields → 400. Payload keys per section: `recovery` → `readiness`, `load` → `loadSummary` + `loadSeries` (one point per day of the period), `plan` → `cycles`, `health` → `bodyMap` + athlete `focusArea` / `focusLabel` / `injuredSide`, `records` → `records`, `shoes` → `shoes`, `activities` → `recentSessions` (period, newest first, 200 max), `notes` → per-session `painDuring`, `painNextMorning`, `note`. `periodWeeks` and `sections` are always present.

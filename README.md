@@ -18,21 +18,26 @@ open http://localhost:8080
 - **Back up `STRIDE_MASTER_KEY`**: it encrypts every stored credential and share link (`AES-256-GCM`).
 - Passkeys need HTTPS except on `localhost`. Private image: `docker login ghcr.io` (`read:packages`).
 
-## Highlights in 4.0.0
+## Highlights
 
-- **Versioned SQL Migrations (`pressly/goose`)**: Embedded `.up.sql` / `.down.sql` migrations with lossless v3.x upgrades and startup SQLite `PRAGMA` schema verification.
-- **End-to-End OpenAPI v3 Contract**: Reflection-driven OpenAPI 3.0.3 generation (`GET /openapi.yaml`, `docs/openapi.yaml`) paired with `openapi-typescript` (`npm run generate:api`).
-- **Valkey Async Worker (`Asynq`) & Native SSE (`/api/events/stream`)**: Weighted priority queues (`critical`, `default`, `low`) with exponential backoff retries for Garmin/Strava sync, `.FIT`/`.GPX`/`.TCX` imports, outbound webhooks, and **token-by-token LLM streaming** — zero frontend polling.
-- **Prometheus Observability & Version Endpoint**: Native `GET /metrics` (HTTP P50/P95/P99, cache hits/latency, worker queues, GPS/FIT point ingestion, external API error rates) and public `GET /version`.
-- **Macro / Méso / Micro Periodization (`/plan`)**: Three-tier relational cycles with assimilation weeks, zoomable Gantt timeline, and Planned vs Actual volume & load tracking.
-- **Body Stress Map & Correlations (`/body`)**: 6 runner anatomical zones (`0–10` pain + `J+1` cold stiffness), automatic shoe drop/wear, `D-`, `GCT`, and impact correlation engine, plus automatic AI prompt injection.
-- **Physio & Coach Read-Only Share (`/share/:token`) & Command Palette (`Cmd+K`)**: Encrypted, expiring, 1-click revocable clinical share links and 100 % keyboard-driven universal search/actions.
+**4.1.0**
+- Five menus (Tableau de bord, Planning, Santé & forme, Coach IA, Réglages) and a header search button (`Cmd+K`).
+- Health status as the single source of the injury focus; symptoms recorded once, in the body map.
+- Full history import from Garmin and Strava (resumable job) and search over all sessions.
+- Share links scoped by period and sections, with anonymization.
+
+**4.0.0**
+- Macro / méso / micro training cycles with planned vs actual tracking.
+- Body map (6 zones) with correlations computed only from measured data.
+- Revocable read-only share links for a physio or a coach.
+- Real-time updates over SSE (job progress, AI token streaming), in-process background jobs.
+- Goose migrations, `stride doctor`, Prometheus metrics on a private listener.
 
 ## Architecture
 
 ![Architecture](docs/architecture.svg)
 
-Detailed guides: [Architecture & Data Flows](docs/ARCHITECTURE.md) · [Prometheus Metrics & Alerts](docs/METRICS.md) · [Specification](docs/SPEC.md) · [OpenAPI v3 Schema](docs/openapi.yaml) · [Garmin API Facts](docs/GARMIN_API.md).
+Detailed guides: [Architecture & Data Flows](docs/ARCHITECTURE.md) · [Prometheus Metrics & Alerts](docs/METRICS.md) · [Specification](docs/SPEC.md) · [Garmin API Facts](docs/GARMIN_API.md).
 
 ## Release cycle
 
@@ -40,12 +45,12 @@ One SemVer string, no `v`: `VERSION` file = git tag = image tag = `GET /version`
 
 | Trigger | Image `ghcr.io/aguyonp/stride` | Version |
 | --- | --- | --- |
-| push to a branch | `dev` | `4.0.0-dev` |
-| merge into `main` | `prerelease` | `4.0.0-pre` |
-| tag `4.0.0` | `latest` + `4.0.0` + GitHub release | `4.0.0` |
+| push to a branch | `dev` | `4.1.0-dev` |
+| merge into `main` | `prerelease` | `4.1.0-pre` |
+| tag `4.1.0` | `latest` + `4.1.0` + GitHub release | `4.1.0` |
 
 1. Bump `VERSION` in your PR (`make changelog` previews the notes), merge, validate `prerelease`.
-2. On an up-to-date `main`, `make release` pushes the tag with its changelog; CI builds `latest` + `4.0.0` and publishes the release (a tag ≠ `VERSION` fails).
+2. On an up-to-date `main`, `make release` pushes the tag with its changelog; CI builds `latest` + `4.1.0` and publishes the release (a tag ≠ `VERSION` fails).
 3. Deploy or roll back: `STRIDE_TAG=<tag> docker compose up -d`.
 
 ## Configuration (`.env`)
@@ -54,7 +59,8 @@ One SemVer string, no `v`: `VERSION` file = git tag = image tag = `GET /version`
 | --- | --- | --- |
 | `STRIDE_MASTER_KEY` | **required** | AES-256-GCM key for credentials and share links at rest |
 | `STRIDE_PUBLIC_URL` | `http://localhost:8080` | Public URL (passkeys, OAuth, invite & share links) |
-| `STRIDE_VALKEY_URL` | — (`redis://valkey:6379/0` in Compose) | Valkey URL for TTL cache, Asynq worker queues, and SSE Pub/Sub |
+| `STRIDE_VALKEY_URL` | — (`redis://valkey:6379/0` in Compose) | Valkey URL for the TTL cache and SSE Pub/Sub |
+| `STRIDE_METRICS_ADDR` | — (disabled) | Private listener for `GET /metrics` (e.g. `:9090`, not published) |
 | `STRIDE_REGISTRATION` | `invite` | `invite` or `open` |
 | `STRIDE_STRAVA_CLIENT_ID` / `_SECRET` / `_WEBHOOK_TOKEN` | — | Enable Strava OAuth & webhooks |
 | `STRIDE_HOST_BIND` / `STRIDE_HOST_PORT` | `127.0.0.1` / `8080` | Published address |
@@ -65,9 +71,8 @@ Full list: [docs/SPEC.md](docs/SPEC.md) §9.
 ## Development
 
 ```bash
-make dev            # Go API + in-memory worker on :8080
+make dev            # Go API on :8080 (in-memory cache)
 make dev-frontend   # Vite on :5173 (npm run dev:mock for mocked data)
-make openapi        # Regenerate docs/openapi.{json,yaml} + frontend/src/api/schema.d.ts
 make test           # Go race tests + frontend Vitest suite
 make docker-up      # Build locally and start docker compose (stride + valkey)
 ```
