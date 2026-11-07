@@ -10,7 +10,7 @@ import (
 	"stride/internal/frfmt"
 )
 
-// BodyZone identifies one of the 6 canonical anatomical zones monitored by Stride.
+// BodyZone identifies one of the canonical anatomical zones monitored by Stride.
 type BodyZone string
 
 const (
@@ -20,9 +20,13 @@ const (
 	ZoneShinSplints      BodyZone = "shin_splints"
 	ZoneIliotibialBand   BodyZone = "iliotibial_band"
 	ZoneHamstringsCalves BodyZone = "hamstrings_calves"
+	ZoneAnkle            BodyZone = "ankle"
+	ZoneForefoot         BodyZone = "forefoot"
+	ZoneHip              BodyZone = "hip"
+	ZoneLowerBack        BodyZone = "lower_back"
 )
 
-// Canonical list of all 6 body zones.
+// AllBodyZones is the canonical zone order (4.0 zones first, 4.1 additions appended).
 var AllBodyZones = []BodyZone{
 	ZoneKneePFPS,
 	ZoneShinSplints,
@@ -30,6 +34,10 @@ var AllBodyZones = []BodyZone{
 	ZoneAchilles,
 	ZonePlantarFascia,
 	ZoneHamstringsCalves,
+	ZoneAnkle,
+	ZoneForefoot,
+	ZoneHip,
+	ZoneLowerBack,
 }
 
 // BodySide defines anatomical laterality.
@@ -56,6 +64,14 @@ func BodyZoneLabel(z BodyZone) string {
 		return "Aponévrose plantaire"
 	case ZoneHamstringsCalves:
 		return "Ischio-jambiers / Mollets"
+	case ZoneAnkle:
+		return "Cheville"
+	case ZoneForefoot:
+		return "Avant-pied / Métatarses"
+	case ZoneHip:
+		return "Hanche / Bassin"
+	case ZoneLowerBack:
+		return "Bas du dos (lombaires)"
 	default:
 		return string(z)
 	}
@@ -256,6 +272,10 @@ func ComputeCorrelations(activeZones []BodyZoneSummary, entries []BodyStressEntr
 			factors = []corrFactor{elevLoss, shoeWear}
 		case ZoneAchilles, ZonePlantarFascia:
 			factors = []corrFactor{shoeDrop}
+		case ZoneAnkle:
+			factors = []corrFactor{elevLoss}
+		case ZoneForefoot:
+			factors = []corrFactor{shoeDrop, shoeWear}
 		default:
 			factors = []corrFactor{gct}
 		}

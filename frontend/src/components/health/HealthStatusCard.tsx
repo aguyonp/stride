@@ -68,8 +68,12 @@ export function HealthStatusCard({ today }: { today: string }) {
           <span className={cn('chip border', s.mode === 'performance' ? 'border-ok/35 bg-ok/12 text-ok' : 'border-warn/35 bg-warn/12 text-warn')}>{HEALTH_MODE_LABEL[s.mode]}</span>
           {s.mode === 'tracking' &&
             s.zones.map((z) => (
-              <span key={z.zone} className="chip border border-line bg-track/60 text-ink-2">
-                {zoneText(z)}
+              <span
+                key={z.zone}
+                className="chip h-auto min-h-6.5 max-w-full flex-wrap gap-x-1.5 gap-y-0 whitespace-normal border border-line bg-track/60 py-1 text-ink-2 [overflow-wrap:anywhere]"
+              >
+                {z.conditionLabel && <span className="text-ink">{z.conditionLabel}</span>}
+                <span className={z.conditionLabel ? 'font-medium text-ink-3' : undefined}>{zoneText(z)}</span>
               </span>
             ))}
         </div>

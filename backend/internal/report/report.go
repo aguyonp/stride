@@ -503,13 +503,21 @@ func writeAlerts(b *builder, title string, alerts []analysis.Alert) {
 	}
 }
 
-func writeContext(b *builder, prof athlete.Profile, goals []athlete.Goal, today string, upcoming []athlete.PlannedSession, records []athlete.PersonalRecord) {
+func writeContext(b *builder, prof athlete.Profile, health []analysis.HealthZone, goals []athlete.Goal, today string, upcoming []athlete.PlannedSession, records []athlete.PersonalRecord) {
 	b.section("CONTEXTE & OBJECTIFS DE L'ATHLÈTE")
 	b.raw("- **Profil / Mode actif :** " + prof.ModeLabel())
+	writeHealthLine(b, health)
 	b.raw("- **Objectif Macro :** " + macroText(goals))
 	b.raw("- **Records personnels :** " + recordsText(records))
 	b.raw("- **Séance prévue aujourd'hui :** " + today)
 	b.raw("- **Prochaines séances prévues :** " + upcomingText(upcoming))
+}
+
+// writeHealthLine states the tracked zones with their condition, side and start date (§14.7).
+func writeHealthLine(b *builder, health []analysis.HealthZone) {
+	if len(health) > 0 {
+		b.raw("- **Suivi santé :** " + analysis.HealthZonesText(health))
+	}
 }
 
 // recordsText lists the known records: "5 km 22:41 (12/10/2026) · Plus longue sortie 21,4 km".

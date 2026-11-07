@@ -8,11 +8,17 @@ import type { HealthStatus, HealthStatusInput } from './types'
 
 const qk41 = {
   health: ['health', 'status'] as const,
+  conditions: ['health', 'conditions'] as const,
   search: (q: string) => ['search', q] as const,
 }
 
 export function useHealthStatus(enabled = true) {
   return useQuery({ queryKey: qk41.health, queryFn: api.healthStatus, enabled })
+}
+
+/** Pathology catalog per zone (static for a release: fetched once per session). */
+export function useHealthConditions(enabled = true) {
+  return useQuery({ queryKey: qk41.conditions, queryFn: api.healthConditions, enabled, staleTime: Infinity, gcTime: Infinity })
 }
 
 export function useSaveHealthStatus() {

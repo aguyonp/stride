@@ -1,10 +1,11 @@
 // 4.1.0 mock endpoints (§14): health status golden source, full-history import job, activity search.
 
-import type { ActivitySearchHit, AthleteProfile, BodySide, BodyZone, ErrorCode, HealthStatus, HealthStatusInput, JobStatus } from '../api/types'
+import type { ActivitySearchHit, AthleteProfile, BodySide, BodyZone, ErrorCode, HealthStatus, HealthStatusInput, HealthZone, JobStatus } from '../api/types'
 import { ALL_BODY_ZONES, BODY_ZONE_META } from '../components/bodymap/bodyMapMeta'
 import { addDays, diffDays, todayISO } from '../lib/format'
 import { emitStreamEvent } from '../state/events'
 import { nextId, PRESETS, type MockUser, type UserData } from './db'
+import { conditionLabelOf, conditionPreset, MOCK_CONDITION_CATALOG, normalizeCondition } from './healthConditions'
 import { visibleItems } from './domain'
 import { isEmptyQuery, matchesActivity, parseQuery } from './search'
 import { v4Of } from './v4'
@@ -28,12 +29,15 @@ function parseBody<T>(init?: RequestInit): T | null {
 
 const PRESET_ZONES: BodyZone[] = ['knee_pfps', 'achilles', 'shin_splints']
 
-/** Zone → profile focus (spec §14.2): the most recent tracked zone wins; unknown presets become `other`. */
+/** Zone → profile focus (spec §14.2, §14.7): the most recent tracked zone wins; its condition's preset first, else `other`
+ * labelled with the condition; without condition the zone mapping applies. */
 export function focusFromHealth(s: HealthStatusInput): Pick<AthleteProfile, 'focusArea' | 'focusLabel' | 'injuredSide'> {
   if (s.mode === 'performance' || s.zones.length === 0) return { focusArea: 'none', focusLabel: 'Bonne santé', injuredSide: null }
   const latest = [...s.zones].sort((a, b) => (b.since ?? '').localeCompare(a.since ?? ''))[0]
-  const preset = PRESET_ZONES.includes(latest.zone) ? (latest.zone as AthleteProfile['focusArea']) : 'other'
-  const label = preset === 'other' ? BODY_ZONE_META[latest.zone].label : (PRESETS.find((p) => p.focusArea === preset)?.label ?? BODY_ZONE_META[latest.zone].label)
+  const byCondition = conditionPreset(latest)
+  const preset = byCondition ?? (PRESET_ZONES.includes(latest.zone) ? (latest.zone as AthleteProfile['focusArea']) : 'other')
+  const fallback = (byCondition && conditionLabelOf(latest)) || BODY_ZONE_META[latest.zone].label
+  const label = preset === 'other' ? fallback : (PRESETS.find((p) => p.focusArea === preset)?.label ?? fallback)
   return { focusArea: preset, focusLabel: label, injuredSide: latest.side }
 }
 
@@ -56,9 +60,18 @@ function validHealth(b: HealthStatusInput | null): string | null {
     if (seen.has(z.zone)) return 'Chaque zone ne peut être suivie qu’une fois.'
     if (z.since !== null && !DATE_RE.test(z.since)) return 'Date de début invalide.'
     if ((z.note ?? '').length > 280) return 'Note trop longue (280 caractères max).'
+    const c = normalizeCondition(z)
+    if ('error' in c) return c.error
     seen.add(z.zone)
   }
   return null
+}
+
+/** Stored shape of a valid tracked zone, with its derived condition label. */
+function withCondition(z: HealthZone): HealthZone {
+  const c = normalizeCondition(z)
+  const out = 'zone' in c ? c.zone : z
+  return { ...out, conditionLabel: conditionLabelOf(out) }
 }
 
 function runHistoryJob(job: JobStatus) {
@@ -82,11 +95,13 @@ function runHistoryJob(job: JobStatus) {
 export function registerV41(route: RouteFn) {
   route('GET', /^\/api\/health\/status$/, ({ data }) => json(healthOf(data)))
 
+  route('GET', /^\/api\/health\/conditions$/, () => json(MOCK_CONDITION_CATALOG))
+
   route('PUT', /^\/api\/health\/status$/, ({ data, init }) => {
     const b = parseBody<HealthStatusInput>(init)
     const invalid = validHealth(b)
     if (invalid || !b) return err(400, 'BAD_REQUEST', invalid ?? 'État de santé invalide.')
-    const zones = b.mode === 'performance' ? [] : b.zones.map((z) => ({ zone: z.zone, side: z.side, since: z.since ?? null, note: (z.note ?? '').trim() }))
+    const zones = b.mode === 'performance' ? [] : b.zones.map(withCondition)
     const focus = focusFromHealth({ mode: b.mode, zones })
     Object.assign(data.profile, focus)
     data.health = { mode: b.mode, zones, focusArea: focus.focusArea, updatedAt: isoNow() }

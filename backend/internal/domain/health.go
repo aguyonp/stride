@@ -16,13 +16,8 @@ const (
 	HealthTracking    = "tracking"
 )
 
-// HealthZone is a body zone under follow-up.
-type HealthZone struct {
-	Zone  analysis.BodyZone `json:"zone"`
-	Side  analysis.BodySide `json:"side"`
-	Since *string           `json:"since"`
-	Note  string            `json:"note"`
-}
+// HealthZone is a body zone under follow-up, optionally qualified by a catalog condition (§14.7).
+type HealthZone = analysis.HealthZone
 
 type HealthStatusInput struct {
 	Mode  string       `json:"mode"`
@@ -65,6 +60,9 @@ func (s *Services) HealthStatus(ctx context.Context, uid int64) (*HealthStatus, 
 		}
 		out.UpdatedAt = rfc3339(at)
 	}
+	for i := range out.Zones {
+		out.Zones[i].ConditionLabel = analysis.ConditionLabelOf(out.Zones[i])
+	}
 	if len(out.Zones) > 0 {
 		out.Mode = HealthTracking
 	}
@@ -84,7 +82,7 @@ func (s *Services) PutHealthStatus(ctx context.Context, uid int64, in HealthStat
 	}
 	area, label, side := athlete.FocusNone, "", (*string)(nil)
 	if z := focusZone(zones); z != nil {
-		area, label = focusOfZone(z.Zone)
+		area, label = focusOfZone(*z)
 		v := string(z.Side)
 		side = &v
 	}
@@ -129,6 +127,9 @@ func normalizeHealth(in HealthStatusInput) ([]HealthZone, error) {
 		if z.Note = strings.TrimSpace(z.Note); len([]rune(z.Note)) > 300 {
 			return nil, badRequest("Note trop longue (300 caractères max).")
 		}
+		if err := normalizeCondition(&z); err != nil {
+			return nil, err
+		}
 		out = append(out, z)
 	}
 	return out, nil
@@ -149,8 +150,39 @@ func focusZone(zones []HealthZone) *HealthZone {
 	return best
 }
 
-func focusOfZone(z analysis.BodyZone) (area, label string) {
-	switch z {
+// normalizeCondition validates the optional condition of a tracked zone: a key of the zone's
+// catalog list, or « other » with a 1–80 character customLabel (ignored for any other key).
+// The derived conditionLabel is never stored.
+func normalizeCondition(z *HealthZone) error {
+	z.Condition, z.ConditionLabel = strings.TrimSpace(z.Condition), ""
+	switch {
+	case z.Condition == "":
+		z.CustomLabel = ""
+	case !analysis.ValidCondition(z.Zone, z.Condition):
+		return badRequest("Pathologie inconnue pour la zone %s.", analysis.BodyZoneLabel(z.Zone))
+	case z.Condition == analysis.ConditionOther:
+		label, ok := analysis.NormalizeCustomLabel(z.CustomLabel)
+		if !ok {
+			return badRequest("Précisez la pathologie (1 à %d caractères, texte simple).", analysis.CustomLabelMax)
+		}
+		z.CustomLabel = label
+	default:
+		z.CustomLabel = ""
+	}
+	return nil
+}
+
+// focusOfZone maps a tracked zone to the profile focus: a condition with a dedicated preset gives
+// it, any other condition gives `other` labelled with the condition (or the custom label); without
+// condition the 4.1 zone mapping applies.
+func focusOfZone(z HealthZone) (area, label string) {
+	if z.Condition != "" {
+		if p := analysis.ConditionPreset(z.Zone, z.Condition); p != "" {
+			return p, ""
+		}
+		return athlete.FocusOther, analysis.ConditionLabelOf(z)
+	}
+	switch z.Zone {
 	case analysis.ZoneKneePFPS:
 		return athlete.FocusKnee, ""
 	case analysis.ZoneAchilles:
@@ -158,7 +190,7 @@ func focusOfZone(z analysis.BodyZone) (area, label string) {
 	case analysis.ZoneShinSplints:
 		return athlete.FocusShin, ""
 	}
-	return athlete.FocusOther, analysis.BodyZoneLabel(z)
+	return athlete.FocusOther, analysis.BodyZoneLabel(z.Zone)
 }
 
 func zoneOfFocus(area string) (analysis.BodyZone, bool) {
@@ -210,6 +242,9 @@ func (s *Services) healthFromProfileBody(ctx context.Context, uid int64, keys ma
 	_, err = s.PutHealthStatus(ctx, uid, in)
 	return err
 }
+
+// HealthConditions is the pathology catalog (GET /api/health/conditions, §14.7).
+func (s *Services) HealthConditions() analysis.ConditionCatalog { return analysis.Conditions() }
 
 // trackedZones returns the zones under follow-up (empty in performance mode).
 func (s *Services) trackedZones(ctx context.Context, uid int64) ([]HealthZone, error) {

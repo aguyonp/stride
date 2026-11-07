@@ -142,8 +142,8 @@ func TestBodyStressMapAndCorrelations(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET /api/bodymap: %d (%s)", code, raw)
 	}
-	if len(initial.Zones) != 6 {
-		t.Fatalf("expected 6 canonical zones, got %d", len(initial.Zones))
+	if len(initial.Zones) != len(analysis.AllBodyZones) || len(initial.Zones) != 10 {
+		t.Fatalf("expected 10 canonical zones, got %d", len(initial.Zones))
 	}
 	foundKnee := false
 	for _, z := range initial.Zones {

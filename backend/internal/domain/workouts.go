@@ -176,6 +176,9 @@ func (s *Services) preparePlanGenerate(ctx context.Context, uid int64, in *PlanG
 	if err != nil {
 		return "", "", err
 	}
+	if dv.Health, err = s.trackedZones(ctx, uid); err != nil {
+		return "", "", err
+	}
 	if dv.Records, err = s.records(ctx, uid); err != nil {
 		return "", "", err
 	}

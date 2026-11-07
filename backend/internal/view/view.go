@@ -176,6 +176,8 @@ type ActivityView struct {
 	BodyStress []analysis.BodyStressEntry `json:"bodyStress,omitempty"`
 	// BodyCorrelations are the conclusive body map correlations (prompts only).
 	BodyCorrelations []analysis.BodyCorrelationFactor `json:"-"`
+	// Health lists the tracked zones and conditions (prompts only, §14.7).
+	Health []analysis.HealthZone `json:"-"`
 	// PlannedToday is the planned session matched to (or scheduled on the day of) this activity.
 	PlannedToday *athlete.PlannedSession `json:"-"`
 	// Records feed the CONTEXTE & OBJECTIFS section of the prompts.
@@ -204,6 +206,8 @@ type DayView struct {
 	// History feeds the HISTORIQUE 14 JOURS table of the day report.
 	History []HistoryRow             `json:"-"`
 	Records []athlete.PersonalRecord `json:"-"`
+	// Health lists the tracked zones and conditions (prompts only, §14.7).
+	Health []analysis.HealthZone `json:"-"`
 }
 
 type GarminIntegration struct {
@@ -349,6 +353,7 @@ type MultiExport struct {
 	Records          []athlete.PersonalRecord
 	BodyStress       []analysis.BodyStressEntry
 	BodyCorrelations []analysis.BodyCorrelationFactor
+	Health           []analysis.HealthZone
 }
 
 type EfficiencyPoint struct {

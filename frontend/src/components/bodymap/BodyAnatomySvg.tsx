@@ -19,7 +19,7 @@ function sideDimmed(summary: BodyZoneSummary | undefined, side: 'left' | 'right'
 
 /**
  * Clinical inline SVG of the runner's lower body (anterior, posterior, and plantar sole views)
- * with keyboard-accessible interactive hotspots for Stride's 6 canonical biomechanical zones.
+ * with keyboard-accessible interactive hotspots for Stride's canonical body zones.
  */
 export function BodyAnatomySvg({
   zones,
@@ -76,6 +76,13 @@ export function BodyAnatomySvg({
         className: 'cursor-pointer transition-opacity hover:opacity-95 focus:outline-none',
       },
     }
+  }
+
+  /** Click handler of one side of a zone (the group itself selects the zone without a side). */
+  const pickSide = (zone: BodyZone, side: 'left' | 'right') => (e: { stopPropagation: () => void }) => {
+    if (readOnly) return
+    e.stopPropagation()
+    onSelectZone?.(zone, side)
   }
 
   const shapeStyle = (zone: BodyZone, side: 'left' | 'right') => {
@@ -150,12 +157,12 @@ export function BodyAnatomySvg({
           stroke="var(--line)"
         />
         <text x="280" y="387" textAnchor="middle" fill="var(--text-3)" fontSize="10" fontWeight="600">
-          Vue plantaire (voûte & talon)
+          Vue plantaire (talon, voûte, avant-pied)
         </text>
-        <text x="190" y="405" textAnchor="middle" fill="var(--text-3)" fontSize="9.5">
+        <text x="168" y="405" textAnchor="middle" fill="var(--text-3)" fontSize="9.5">
           D
         </text>
-        <text x="370" y="405" textAnchor="middle" fill="var(--text-3)" fontSize="9.5">
+        <text x="392" y="405" textAnchor="middle" fill="var(--text-3)" fontSize="9.5">
           G
         </text>
 
@@ -327,6 +334,34 @@ export function BodyAnatomySvg({
               onSelectZone?.('plantar_fascia', 'left')
             }}
           />
+        </g>
+
+        {/* 7. ankle: Malleoli & ankle ligaments (anterior view, above the foot) */}
+        <g {...zoneAttrs('ankle').groupProps}>
+          <title>{BODY_ZONE_META.ankle.label}</title>
+          <ellipse cx="110" cy="338" rx="11" ry="6" style={shapeStyle('ankle', 'right')} onClick={pickSide('ankle', 'right')} />
+          <ellipse cx="170" cy="338" rx="11" ry="6" style={shapeStyle('ankle', 'left')} onClick={pickSide('ankle', 'left')} />
+        </g>
+
+        {/* 8. forefoot: Metatarsal pads, in front of the plantar heel & arch */}
+        <g {...zoneAttrs('forefoot').groupProps}>
+          <title>{BODY_ZONE_META.forefoot.label}</title>
+          <ellipse cx="194" cy="402" rx="13" ry="9" style={shapeStyle('forefoot', 'right')} onClick={pickSide('forefoot', 'right')} />
+          <ellipse cx="366" cy="402" rx="13" ry="9" style={shapeStyle('forefoot', 'left')} onClick={pickSide('forefoot', 'left')} />
+        </g>
+
+        {/* 9. hip: Lateral hip (greater trochanter) & groin, top of the thigh (anterior view) */}
+        <g {...zoneAttrs('hip').groupProps}>
+          <title>{BODY_ZONE_META.hip.label}</title>
+          <ellipse cx="101" cy="102" rx="10" ry="12" style={shapeStyle('hip', 'right')} onClick={pickSide('hip', 'right')} />
+          <ellipse cx="179" cy="102" rx="10" ry="12" style={shapeStyle('hip', 'left')} onClick={pickSide('hip', 'left')} />
+        </g>
+
+        {/* 10. lower_back: Lumbar paraspinal area above the pelvis (posterior view) */}
+        <g {...zoneAttrs('lower_back').groupProps}>
+          <title>{BODY_ZONE_META.lower_back.label}</title>
+          <rect x="400" y="56" width="15" height="30" rx="7" style={shapeStyle('lower_back', 'left')} onClick={pickSide('lower_back', 'left')} />
+          <rect x="425" y="56" width="15" height="30" rx="7" style={shapeStyle('lower_back', 'right')} onClick={pickSide('lower_back', 'right')} />
         </g>
       </svg>
 

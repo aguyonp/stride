@@ -41,6 +41,30 @@ export const BODY_ZONE_META: Record<
     view: 'Postérieure',
     hint: 'Chaîne postérieure, vitesse haute, fatigue neuromusculaire.',
   },
+  ankle: {
+    label: 'Cheville',
+    short: 'Cheville',
+    view: 'Antérieure',
+    hint: 'Malléoles et ligaments : entorses, appuis instables, terrains techniques.',
+  },
+  forefoot: {
+    label: 'Avant-pied / Métatarses',
+    short: 'Avant-pied',
+    view: 'Plantaire',
+    hint: 'Têtes et diaphyses métatarsiennes, attaque avant-pied, hausse de volume.',
+  },
+  hip: {
+    label: 'Hanche / Bassin',
+    short: 'Hanche',
+    view: 'Antérieure',
+    hint: 'Face latérale (moyen fessier), pli de l’aine et pubis.',
+  },
+  lower_back: {
+    label: 'Bas du dos (lombaires)',
+    short: 'Lombaires',
+    view: 'Postérieure',
+    hint: 'Région lombaire et sacro-iliaque, gainage, fatigue posturale.',
+  },
 }
 
 export const ALL_BODY_ZONES: BodyZone[] = [
@@ -50,6 +74,10 @@ export const ALL_BODY_ZONES: BodyZone[] = [
   'achilles',
   'plantar_fascia',
   'hamstrings_calves',
+  'ankle',
+  'forefoot',
+  'hip',
+  'lower_back',
 ]
 
 export const BODY_SIDE_LABEL: Record<BodySide, string> = {

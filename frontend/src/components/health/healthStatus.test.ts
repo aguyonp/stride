@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { HealthStatusInput } from '../../api/types'
-import { addZone, draftFrom, healthSummary, primaryZone, setMode, toHealthInput, validateHealthDraft } from './healthStatus'
+import { addZone, changeZone, draftFrom, healthSummary, primaryZone, setMode, toHealthInput, validateHealthDraft } from './healthStatus'
 
 const tracking: HealthStatusInput = {
   mode: 'tracking',
@@ -30,5 +30,20 @@ describe('health status', () => {
     expect(validateHealthDraft(tracking)).toBeNull()
     expect(primaryZone(tracking)).toEqual({ zone: 'knee_pfps', side: 'left' })
     expect(primaryZone({ mode: 'performance', zones: [] })).toEqual({ zone: 'knee_pfps', side: 'left' })
+  })
+
+  it('handles pathologies: summary, zone change, custom text validation and payload', () => {
+    const fracture = { zone: 'ankle', side: 'left', since: '2026-10-12', note: '', condition: 'ankle_fracture', conditionLabel: 'Fracture de cheville (malléole)' } as const
+    expect(healthSummary({ mode: 'tracking', zones: [fracture] })).toBe('Souci suivi · Fracture de cheville (malléole) · Cheville (gauche)')
+    expect(changeZone(fracture, 'hip')).toMatchObject({ zone: 'hip', condition: null, customLabel: null, conditionLabel: null })
+    const custom = { zone: 'hip', side: 'right', since: null, note: '', condition: 'other', customLabel: '  Conflit fémoro-acétabulaire ' } as const
+    expect(changeZone(custom, 'lower_back')).toMatchObject({ zone: 'lower_back', condition: 'other', customLabel: '  Conflit fémoro-acétabulaire ' })
+    expect(validateHealthDraft({ mode: 'tracking', zones: [{ ...custom, customLabel: '  ' }] })).toMatch(/Précise la pathologie suivie \(Hanche\)/)
+    expect(validateHealthDraft({ mode: 'tracking', zones: [{ ...custom, customLabel: 'x'.repeat(81) }] })).toMatch(/80 caractères/)
+    expect(toHealthInput({ mode: 'tracking', zones: [fracture, custom, { ...tracking.zones[1], condition: null, customLabel: 'stale' }] }).zones).toEqual([
+      { zone: 'ankle', side: 'left', since: '2026-10-12', note: '', condition: 'ankle_fracture' },
+      { zone: 'hip', side: 'right', since: null, note: '', condition: 'other', customLabel: 'Conflit fémoro-acétabulaire' },
+      { zone: 'knee_pfps', side: 'left', since: '2026-10-15', note: '' },
+    ])
   })
 })

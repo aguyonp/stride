@@ -559,6 +559,10 @@ const PRIMARY_FACTOR: Record<BodyZone, Pick<BodyCorrelationFactor, 'factor' | 'f
   shin_splints: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
   iliotibial_band: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
   hamstrings_calves: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
+  ankle: { factor: 'elev_loss', factorLabel: 'Dénivelé négatif (D−)', unit: 'm' },
+  forefoot: { factor: 'shoe_drop', factorLabel: 'Drop chaussure', unit: 'mm' },
+  hip: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
+  lower_back: { factor: 'gct', factorLabel: 'Temps de contact au sol (GCT)', unit: 'ms' },
 }
 
 // Too few episodes to compare symptomatic and reference runs: the backend sends nulls, never estimates.

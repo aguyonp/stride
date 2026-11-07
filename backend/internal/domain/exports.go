@@ -53,6 +53,9 @@ func (s *Services) ActivityReport(ctx context.Context, uid, id int64, include st
 	if v.BodyStress, v.BodyCorrelations, err = s.bodyPromptContext(ctx, uid); err != nil {
 		return "", err
 	}
+	if v.Health, err = s.trackedZones(ctx, uid); err != nil {
+		return "", err
+	}
 	return report.Activity(v, p, inc), nil
 }
 
@@ -74,6 +77,9 @@ func (s *Services) DayReport(ctx context.Context, uid int64, date, include strin
 		return "", err
 	}
 	if v.BodyStress, v.BodyCorrelations, err = s.bodyPromptContext(ctx, uid); err != nil {
+		return "", err
+	}
+	if v.Health, err = s.trackedZones(ctx, uid); err != nil {
 		return "", err
 	}
 	return report.Day(v, p, inc), nil
@@ -342,6 +348,9 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 		return nil, err
 	}
 	if m.BodyStress, m.BodyCorrelations, err = s.bodyPromptContext(ctx, uid); err != nil {
+		return nil, err
+	}
+	if m.Health, err = s.trackedZones(ctx, uid); err != nil {
 		return nil, err
 	}
 	md := report.Multi(m, p, inc)

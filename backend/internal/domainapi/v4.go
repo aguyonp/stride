@@ -43,6 +43,7 @@ func registerV4(mux *http.ServeMux, user func(string, http.HandlerFunc), a *api)
 	// 4.1.0
 	user("GET /api/health/status", a.healthStatus)
 	user("PUT /api/health/status", a.putHealthStatus)
+	user("GET /api/health/conditions", a.healthConditions)
 	user("POST /api/sync/history", a.syncHistory)
 	user("GET /api/search", a.search)
 }

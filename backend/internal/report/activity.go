@@ -18,7 +18,7 @@ func Activity(v *view.ActivityView, prof athlete.Profile, inc Include) string {
 		writeBodyStress(b, v.BodyStress, v.BodyCorrelations)
 	}
 	if inc.Has(ChipPlan) {
-		writeContext(b, prof, v.Goals, plannedTodayText(v), v.Upcoming, v.Records)
+		writeContext(b, prof, v.Health, v.Goals, plannedTodayText(v), v.Upcoming, v.Records)
 	}
 	writeSession(b, v, inc.Has(ChipPain))
 	if inc.Has(ChipBiomech) {
