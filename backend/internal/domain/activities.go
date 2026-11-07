@@ -106,8 +106,9 @@ func scanActivity(sc interface{ Scan(...any) error }) (*activityRow, error) {
 	return a, nil
 }
 
+// queryActivities and activity read the read pool: they are plain SELECTs, never part of a write.
 func (s *Services) queryActivities(ctx context.Context, q string, args ...any) ([]*activityRow, error) {
-	rows, err := s.db().QueryContext(ctx, `SELECT `+actCols+` FROM activities `+q, args...)
+	rows, err := s.rdb().QueryContext(ctx, `SELECT `+actCols+` FROM activities `+q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func (s *Services) queryActivities(ctx context.Context, q string, args ...any) (
 
 // activity returns the user's activity or ErrNotFound (ids of other users are not found).
 func (s *Services) activity(ctx context.Context, uid, id int64) (*activityRow, error) {
-	a, err := scanActivity(s.db().QueryRowContext(ctx, `SELECT `+actCols+` FROM activities WHERE user_id = ? AND id = ?`, uid, id))
+	a, err := scanActivity(s.rdb().QueryRowContext(ctx, `SELECT `+actCols+` FROM activities WHERE user_id = ? AND id = ?`, uid, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -539,12 +540,17 @@ func (s *Services) summaries(ctx context.Context, uid int64, rows []*activityRow
 	if err != nil {
 		return nil, err
 	}
+	remarks, err := s.remarkCounts(ctx, uid, ids)
+	if err != nil {
+		return nil, err
+	}
 	for _, r := range rows {
 		var n *athlete.ActivityNotes
 		if v, ok := notes[r.ID]; ok {
 			n = &v
 		}
 		sm := withNotes(r.summary(), n)
+		sm.RemarkCount = remarks[r.ID]
 		if st, ok := statuses[r.ID]; ok {
 			st := st
 			sm.PlanStatus = &st

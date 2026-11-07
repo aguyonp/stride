@@ -125,7 +125,7 @@ func (h *Handler) unavailable(w http.ResponseWriter) {
 
 func (h *Handler) dbStatus(ctx context.Context) DatabaseStatus {
 	var pages, size, free int64
-	db := h.d.Store.DB
+	db := h.d.Store.R
 	err := errors.Join(
 		db.QueryRowContext(ctx, `PRAGMA page_count`).Scan(&pages),
 		db.QueryRowContext(ctx, `PRAGMA page_size`).Scan(&size),

@@ -32,6 +32,8 @@ const (
 	GroupSync    = "sync"
 	GroupLLM     = "llm"
 	GroupWebhook = "webhook"
+	// GroupBackup runs snapshots and S3 uploads one at a time, apart from sync.
+	GroupBackup = "backup"
 )
 
 const (
@@ -51,7 +53,10 @@ const (
 	KindLLMAnalyze        = "llm.analyze"
 	KindLLMPlanGenerate   = "llm.plan_generate"
 	KindLLMPlanAdapt      = "llm.plan_adapt"
+	KindLLMMorphRefine    = "llm.morph_refine"
 	KindWebhookDeliver    = "webhook.deliver"
+	KindBackupRun         = "backup.run"
+	KindBackupUpload      = "backup.upload"
 )
 
 var (
@@ -71,7 +76,7 @@ const (
 	msgCancelled   = "Tâche annulée par un administrateur."
 )
 
-var defaultConcurrency = map[string]int{GroupSync: 2, GroupLLM: 2, GroupWebhook: 4}
+var defaultConcurrency = map[string]int{GroupSync: 2, GroupLLM: 2, GroupWebhook: 4, GroupBackup: 1}
 
 // Failure is a job error whose Message is safe to persist and publish (French, never a secret).
 // The cause only reaches in-process synchronous callers.
@@ -292,6 +297,8 @@ func groupOf(kind string) string {
 		return GroupLLM
 	case strings.HasPrefix(kind, "webhook."):
 		return GroupWebhook
+	case strings.HasPrefix(kind, "backup."):
+		return GroupBackup
 	}
 	return GroupSync
 }
@@ -418,7 +425,7 @@ func normalizeQueue(q, kind string) string {
 		return q
 	}
 	switch kind {
-	case KindImportActivity, KindLLMAnalyze, KindLLMPlanGenerate, KindLLMPlanAdapt:
+	case KindImportActivity, KindLLMAnalyze, KindLLMPlanGenerate, KindLLMPlanAdapt, KindLLMMorphRefine:
 		return QueueCritical
 	case KindSyncResync, KindSyncHistory:
 		return QueueLow
@@ -444,6 +451,12 @@ func defaultLabel(kind string) string {
 		return "Génération du plan IA"
 	case KindLLMPlanAdapt:
 		return "Adaptation du plan IA"
+	case KindLLMMorphRefine:
+		return "Affinage IA de la séance adaptée"
+	case KindBackupRun:
+		return "Sauvegarde de la base"
+	case KindBackupUpload:
+		return "Envoi de la sauvegarde vers S3"
 	case KindWebhookDeliver:
 		return "Envoi de notification externe"
 	}

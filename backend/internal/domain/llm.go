@@ -582,7 +582,7 @@ func (s *Services) Analyses(ctx context.Context, uid int64, kind, ref string) ([
 		q += ` AND ref = ?`
 		args = append(args, ref)
 	}
-	rows, err := s.db().QueryContext(ctx, q+` ORDER BY created_at DESC, id DESC LIMIT 20`, args...)
+	rows, err := s.rdb().QueryContext(ctx, q+` ORDER BY created_at DESC, id DESC LIMIT 20`, args...)
 	if err != nil {
 		return nil, err
 	}

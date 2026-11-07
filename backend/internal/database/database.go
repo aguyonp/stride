@@ -288,6 +288,27 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+// HasPending reports whether migrations remain to apply on a non-empty database: a fresh file
+// (no table besides goose's own) answers false, there is nothing worth a snapshot.
+func HasPending(ctx context.Context, db *sql.DB) (bool, error) {
+	var tables int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+		AND name NOT IN ('goose_db_version', 'sqlite_sequence')`).Scan(&tables); err != nil {
+		return false, err
+	}
+	if tables == 0 {
+		return false, nil
+	}
+	p, err := NewProvider(db)
+	if err != nil {
+		return false, err
+	}
+	if err := bootstrapLegacyMigrations(ctx, db, p); err != nil {
+		return false, fmt.Errorf("database legacy bootstrap: %w", err)
+	}
+	return p.HasPending(ctx)
+}
+
 // DownTo rolls back migrations down to targetVersion (0 rolls back all migrations).
 func DownTo(ctx context.Context, db *sql.DB, targetVersion int64) error {
 	p, err := NewProvider(db)
@@ -323,13 +344,14 @@ var expectedSchema = map[string][]string{
 	"activity_metrics":     {"activity_id", "user_id", "version", "data"},
 	"activity_records":     {"activity_id", "user_id", "version", "data"},
 	"personal_records":     {"user_id", "key", "distance_m"},
-	"calendar_events":      {"id", "user_id", "kind", "start_date", "end_date", "severity"},
+	"calendar_events":      {"id", "user_id", "kind", "start_date", "end_date", "severity", "share_link_id", "prescribed_label", "prescribed_author"},
 	"training_plans":       {"id", "user_id", "goal_id", "name", "sport", "start_date", "end_date", "target_event_label", "status", "note", "created_at", "updated_at"},
 	"plan_phases":          {"id", "user_id", "plan_id", "name", "phase_type", "order_index", "start_date", "end_date", "focus", "weekly_volume_km", "target_weekly_load", "target_weekly_duration_s", "note"},
 	"training_weeks":       {"id", "user_id", "plan_id", "phase_id", "week_start", "week_end", "week_number", "is_assimilation", "target_volume_km", "target_load", "target_duration_s", "note", "created_at", "updated_at"},
-	"planned_sessions":     {"id", "user_id", "date", "sport", "title", "steps", "source", "garmin_status", "plan_id", "phase_id", "week_id"},
+	"planned_sessions":     {"id", "user_id", "date", "sport", "title", "steps", "source", "garmin_status", "plan_id", "phase_id", "week_id", "share_link_id", "prescribed_label", "prescribed_author", "morph_json"},
 	"body_stress_entries":  {"id", "user_id", "date", "activity_id", "zone", "side", "pain_score", "cold_next_day_score", "note", "created_at", "updated_at"},
-	"share_links":          {"id", "user_id", "label", "token_hash", "token_prefix", "url_ciphertext", "expires_at", "revoked_at", "access_count", "last_accessed_at", "created_at", "scope_json"},
+	"share_links":          {"id", "user_id", "label", "token_hash", "token_prefix", "url_ciphertext", "expires_at", "revoked_at", "access_count", "last_accessed_at", "created_at", "scope_json", "allow_comments", "allow_planning", "allow_activity_details"},
+	"share_notes":          {"id", "user_id", "share_link_id", "link_label", "kind", "activity_id", "author_name", "author_role", "body", "restrictions_json", "valid_until", "created_at", "updated_at"},
 	"health_status":        {"user_id", "zones", "updated_at"},
 	"feedback":             {"id", "user_id", "category", "message", "contact_ok", "contact_email", "context_json", "status", "admin_note", "created_at", "updated_at"},
 	"async_jobs":           {"id", "user_id", "kind", "queue", "state", "label", "progress_pct", "processed", "total", "attempts", "max_attempts", "error", "result_json", "created_at", "updated_at", "payload_json"},

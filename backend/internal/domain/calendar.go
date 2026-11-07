@@ -194,6 +194,9 @@ func (s *Services) prepareAdaptPlan(ctx context.Context, uid int64, in *AdaptInp
 	if dv.Records, err = s.records(ctx, uid); err != nil {
 		return nil, nil, err
 	}
+	if req.CoachNotes, err = s.coachNotes(ctx, uid, today, nil, addDays(today, -coachNotesDays)); err != nil {
+		return nil, nil, err
+	}
 	remIDs := make([]int64, 0, len(req.Remaining))
 	for _, ps := range req.Remaining {
 		remIDs = append(remIDs, ps.ID)

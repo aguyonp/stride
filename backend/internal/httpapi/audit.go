@@ -76,6 +76,31 @@ var actions = map[string]string{
 	"POST /api/admin/maintenance/check":     "admin.maintenance_check",
 	"POST /api/feedback":                    "feedback.create",
 	"PATCH /api/admin/feedback/{id}":        "admin.feedback_update",
+	// 4.2.0 portal notes, Smart Workout Morphing, backups.
+	"DELETE /api/share/notes/{id}":           "share.note_delete",
+	"POST /api/plan/{id}/morph/refine":       "plan.morph_refine",
+	"POST /api/plan/{id}/morph/apply":        "plan.morph_apply",
+	"POST /api/plan/{id}/morph/revert":       "plan.morph_revert",
+	"POST /api/admin/backups":                "admin.backup_create",
+	"POST /api/admin/backups/{name}/upload":  "admin.backup_upload",
+	"DELETE /api/admin/backups/{name}":       "admin.backup_delete",
+	"GET /api/admin/backups/{name}/download": "admin.backup_download",
+	"PUT /api/admin/backups/s3":              "admin.backup_s3_update",
+	"POST /api/admin/backups/s3/test":        "admin.backup_s3_test",
+}
+
+// publicActions are the portal writes (§15.1): no session, the actor is the link (share:<prefix>).
+var publicActions = map[string]string{
+	"PUT /api/public/share/{token}/directive":                 "share.public_directive_put",
+	"DELETE /api/public/share/{token}/directive":              "share.public_directive_delete",
+	"PUT /api/public/share/{token}/activities/{id}/remark":    "share.public_remark_put",
+	"DELETE /api/public/share/{token}/activities/{id}/remark": "share.public_remark_delete",
+	"POST /api/public/share/{token}/plan":                     "share.public_plan_create",
+	"PATCH /api/public/share/{token}/plan/{id}":               "share.public_plan_update",
+	"DELETE /api/public/share/{token}/plan/{id}":              "share.public_plan_delete",
+	"POST /api/public/share/{token}/events":                   "share.public_event_create",
+	"PATCH /api/public/share/{token}/events/{id}":             "share.public_event_update",
+	"DELETE /api/public/share/{token}/events/{id}":            "share.public_event_delete",
 }
 
 // clientActions are events only the browser sees (POST /api/actions).
@@ -110,6 +135,10 @@ func withAudit(l *applog.Log, next http.Handler) http.Handler {
 		if action, ok := actions[r.Pattern]; ok && uid != nil && status != http.StatusUnauthorized {
 			l.Add(applog.Entry{Category: applog.CategoryAction, Level: level, UserID: uid, Method: r.Method, Target: r.URL.Path,
 				Status: status, Action: action})
+		}
+		if action, ok := publicActions[r.Pattern]; ok {
+			l.Add(applog.Entry{Category: applog.CategoryAction, Level: level, Method: r.Method, Target: redactPath(r.URL.Path),
+				Status: status, Action: action, Message: shareActor(r.URL.Path)})
 		}
 	})
 }

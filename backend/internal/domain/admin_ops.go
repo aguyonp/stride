@@ -199,7 +199,7 @@ type AdminCounts struct {
 func (s *Services) AdminCounts(ctx context.Context) (AdminCounts, error) {
 	var c AdminCounts
 	now := s.now().Unix()
-	err := s.db().QueryRowContext(ctx, `SELECT
+	err := s.rdb().QueryRowContext(ctx, `SELECT
 		(SELECT COUNT(*) FROM users),
 		(SELECT COUNT(*) FROM users WHERE status = 'active'),
 		(SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'),

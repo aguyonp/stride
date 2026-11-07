@@ -247,6 +247,8 @@ func (s *Services) registerJobs() {
 		return out, nil
 	})
 
+	s.queue.Register(queue.KindLLMMorphRefine, s.runMorphRefine)
+
 	s.queue.Register(queue.KindWebhookDeliver, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p webhookDeliverPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {

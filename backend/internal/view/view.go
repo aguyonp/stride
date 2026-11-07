@@ -46,6 +46,8 @@ type ActivitySummary struct {
 	PlanStatus      *string  `json:"planStatus"`
 	// Kudos is the Strava kudos_count (null without Strava: Garmin likes are not exposed).
 	Kudos *int `json:"kudos"`
+	// RemarkCount is the number of physio/coach remarks on the session (§15.1).
+	RemarkCount int `json:"remarkCount"`
 }
 
 type ActivityList struct {
@@ -182,6 +184,8 @@ type ActivityView struct {
 	PlannedToday *athlete.PlannedSession `json:"-"`
 	// Records feed the CONTEXTE & OBJECTIFS section of the prompts.
 	Records []athlete.PersonalRecord `json:"-"`
+	// CoachNotes are the active physio/coach directives and the remarks on the sessions of the prompt.
+	CoachNotes []athlete.ShareNote `json:"-"`
 }
 
 type DayView struct {
@@ -208,6 +212,8 @@ type DayView struct {
 	Records []athlete.PersonalRecord `json:"-"`
 	// Health lists the tracked zones and conditions (prompts only, §14.7).
 	Health []analysis.HealthZone `json:"-"`
+	// CoachNotes are the active physio/coach directives and the remarks on the sessions of the prompt.
+	CoachNotes []athlete.ShareNote `json:"-"`
 }
 
 type GarminIntegration struct {
@@ -354,6 +360,7 @@ type MultiExport struct {
 	BodyStress       []analysis.BodyStressEntry
 	BodyCorrelations []analysis.BodyCorrelationFactor
 	Health           []analysis.HealthZone
+	CoachNotes       []athlete.ShareNote
 }
 
 type EfficiencyPoint struct {

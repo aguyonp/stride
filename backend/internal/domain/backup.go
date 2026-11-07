@@ -94,7 +94,7 @@ type ImportCounts struct {
 }
 
 func (s *Services) Backup(ctx context.Context, uid int64) (*Backup, error) {
-	r := s.repo()
+	r := s.readRepo()
 	p, err := s.profile(ctx, uid)
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (s *Services) Backup(ctx context.Context, uid int64) (*Backup, error) {
 		c := cks[d]
 		b.Checkins = append(b.Checkins, backupCheckin{c.Date, c.TrainingReadiness, c.ReadinessStatus, c.Note})
 	}
-	rows, err := s.db().QueryContext(ctx, `SELECT a.id, a.garmin_id, a.strava_id, a.start_utc FROM activity_notes n
+	rows, err := s.rdb().QueryContext(ctx, `SELECT a.id, a.garmin_id, a.strava_id, a.start_utc FROM activity_notes n
 		JOIN activities a ON a.id = n.activity_id WHERE n.user_id = ? AND a.user_id = ? ORDER BY a.start_utc`, uid, uid)
 	if err != nil {
 		return nil, err

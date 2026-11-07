@@ -199,6 +199,9 @@ func (s *Services) preparePlanGenerate(ctx context.Context, uid int64, in *PlanG
 	if req.LoadRatio, err = s.loadRatio(ctx, uid, p, today); err != nil {
 		return "", "", err
 	}
+	if req.CoachNotes, err = s.coachNotes(ctx, uid, today, nil, addDays(today, -coachNotesDays)); err != nil {
+		return "", "", err
+	}
 	return report.Plan(dv, p, req), req.StartDate + ".." + req.EndDate, nil
 }
 

@@ -32,6 +32,15 @@ type ShareLink struct {
 	LastAccessedAt *string `json:"lastAccessedAt"`
 	CreatedAt      string  `json:"createdAt"`
 	ShareScope
+	Permissions SharePermissions `json:"permissions"`
+}
+
+// SharePermissions opens a link to writes (§15.1): directive and session remarks, planning, and
+// the per-session detail. All off by default, so links created before 4.2 stay read-only.
+type SharePermissions struct {
+	Comments        bool `json:"comments"`
+	Planning        bool `json:"planning"`
+	ActivityDetails bool `json:"activityDetails"`
 }
 
 // ShareScope selects what a public view shows: the period and the allowed sections.
@@ -93,6 +102,8 @@ type PublicActivityItem struct {
 	PainDuring      *float64 `json:"painDuring,omitempty"`
 	PainNextMorning *float64 `json:"painNextMorning,omitempty"`
 	Note            *string  `json:"note,omitempty"`
+	// Remark is this link's remark on the session (null when none).
+	Remark *athlete.ShareNote `json:"remark"`
 }
 
 type PublicLoadPoint struct {
@@ -150,6 +161,18 @@ type PublicShareView struct {
 	BodyMap        *analysis.BodyMapOverview `json:"bodyMap,omitempty"`
 	Records        *[]athlete.PersonalRecord `json:"records,omitempty"`
 	Shoes          *[]PublicShoeItem         `json:"shoes,omitempty"`
+	// LinkID is this link's id: the portal edits the sessions and events whose prescribedBy.linkId matches.
+	LinkID      int64            `json:"linkId"`
+	Permissions SharePermissions `json:"permissions"`
+	// Directive is this link's directive (null when none), shown even when no longer valid so it can be edited.
+	Directive *athlete.ShareNote `json:"directive"`
+	// Calendar is present with the planning permission (today −7 d → +42 d).
+	Calendar *PublicCalendar `json:"calendar,omitempty"`
+}
+
+type PublicCalendar struct {
+	Planned []athlete.PlannedSession `json:"planned"`
+	Events  []athlete.CalendarEvent  `json:"events"`
 }
 
 const (
@@ -158,13 +181,17 @@ const (
 	shareHistoryExtra = 7*trendWeeksActivity + 27 // EF trend and load ratio need days before the period
 )
 
+// PublicURL is STRIDE_PUBLIC_URL: the only origin allowed to write through the portal.
+func (s *Services) PublicURL() string { return s.deps.Env.PublicURL }
+
 func shareAAD(uid int64) string { return fmt.Sprintf("share:%d:url", uid) }
 
 func shareCacheKey(uid int64, tokenHash []byte) string {
 	return userKey(uid, "share", hex.EncodeToString(tokenHash))
 }
 
-const shareCols = `id, label, token_prefix, url_ciphertext, expires_at, revoked_at, access_count, last_accessed_at, created_at, scope_json`
+const shareCols = `id, label, token_prefix, url_ciphertext, expires_at, revoked_at, access_count, last_accessed_at, created_at, scope_json,
+	allow_comments, allow_planning, allow_activity_details`
 
 func (s *Services) scanShareLink(uid int64, sc interface{ Scan(...any) error }) (ShareLink, error) {
 	var l ShareLink
@@ -172,7 +199,8 @@ func (s *Services) scanShareLink(uid int64, sc interface{ Scan(...any) error }) 
 	var exp, rev, last sql.NullInt64
 	var created int64
 	var scope string
-	if err := sc.Scan(&l.ID, &l.Label, &l.TokenPrefix, &sealed, &exp, &rev, &l.AccessCount, &last, &created, &scope); err != nil {
+	if err := sc.Scan(&l.ID, &l.Label, &l.TokenPrefix, &sealed, &exp, &rev, &l.AccessCount, &last, &created, &scope,
+		&l.Permissions.Comments, &l.Permissions.Planning, &l.Permissions.ActivityDetails); err != nil {
 		return l, err
 	}
 	plain, err := s.deps.Sealer.Open(sealed, shareAAD(uid))
@@ -189,7 +217,7 @@ func (s *Services) scanShareLink(uid int64, sc interface{ Scan(...any) error }) 
 
 // ListShareLinks lists all share links created by uid.
 func (s *Services) ListShareLinks(ctx context.Context, uid int64) ([]ShareLink, error) {
-	rows, err := s.db().QueryContext(ctx, `SELECT `+shareCols+` FROM share_links WHERE user_id = ? ORDER BY created_at DESC, id DESC`, uid)
+	rows, err := s.rdb().QueryContext(ctx, `SELECT `+shareCols+` FROM share_links WHERE user_id = ? ORDER BY created_at DESC, id DESC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -225,12 +253,13 @@ type shareEdit struct {
 	label     *string
 	expiresAt **int64
 	scope     ShareScope
+	perms     SharePermissions
 }
 
-// parseShareEdit validates any subset of {label, expiresInDays, expiresAt, periodWeeks, sections, anonymize}
-// onto base; expiresInDays restarts the expiry from now (null or 0: never).
-func (s *Services) parseShareEdit(body map[string]json.RawMessage, base ShareScope) (shareEdit, error) {
-	e := shareEdit{scope: base}
+// parseShareEdit validates any subset of {label, expiresInDays, expiresAt, periodWeeks, sections, anonymize,
+// permissions} onto base; expiresInDays restarts the expiry from now (null or 0: never).
+func (s *Services) parseShareEdit(body map[string]json.RawMessage, base ShareScope, perms SharePermissions) (shareEdit, error) {
+	e := shareEdit{scope: base, perms: perms}
 	for k, raw := range body {
 		var err error
 		switch k {
@@ -291,6 +320,24 @@ func (s *Services) parseShareEdit(body map[string]json.RawMessage, base ShareSco
 			}
 		case "anonymize":
 			err = json.Unmarshal(raw, &e.scope.Anonymize)
+		case "permissions":
+			var v struct {
+				Comments        *bool `json:"comments"`
+				Planning        *bool `json:"planning"`
+				ActivityDetails *bool `json:"activityDetails"`
+			}
+			dec := json.NewDecoder(strings.NewReader(string(raw)))
+			dec.DisallowUnknownFields()
+			if err = dec.Decode(&v); err == nil {
+				for _, f := range []struct {
+					src *bool
+					dst *bool
+				}{{v.Comments, &e.perms.Comments}, {v.Planning, &e.perms.Planning}, {v.ActivityDetails, &e.perms.ActivityDetails}} {
+					if f.src != nil {
+						*f.dst = *f.src
+					}
+				}
+			}
 		default:
 			return e, badRequest("Champ inconnu %q.", k)
 		}
@@ -303,7 +350,7 @@ func (s *Services) parseShareEdit(body map[string]json.RawMessage, base ShareSco
 
 // CreateShareLink generates a read-only share link; only the token hash is stored, the URL is sealed.
 func (s *Services) CreateShareLink(ctx context.Context, uid int64, body map[string]json.RawMessage) (*ShareLink, error) {
-	e, err := s.parseShareEdit(body, defaultScope())
+	e, err := s.parseShareEdit(body, defaultScope(), SharePermissions{})
 	if err != nil {
 		return nil, err
 	}
@@ -326,8 +373,10 @@ func (s *Services) CreateShareLink(ctx context.Context, uid int64, body map[stri
 		return nil, err
 	}
 	scope, _ := json.Marshal(e.scope)
-	res, err := s.db().ExecContext(ctx, `INSERT INTO share_links (user_id, label, token_hash, token_prefix, url_ciphertext, expires_at, created_at, scope_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, uid, label, th[:], token[:8], sealed, expiresAt, s.now().Unix(), string(scope))
+	res, err := s.db().ExecContext(ctx, `INSERT INTO share_links (user_id, label, token_hash, token_prefix, url_ciphertext, expires_at, created_at, scope_json,
+		allow_comments, allow_planning, allow_activity_details)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, label, th[:], token[:8], sealed, expiresAt, s.now().Unix(), string(scope),
+		e.perms.Comments, e.perms.Planning, e.perms.ActivityDetails)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +393,7 @@ func (s *Services) PatchShareLink(ctx context.Context, uid, id int64, body map[s
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.parseShareEdit(body, cur.ShareScope)
+	e, err := s.parseShareEdit(body, cur.ShareScope, cur.Permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +402,8 @@ func (s *Services) PatchShareLink(ctx context.Context, uid, id int64, body map[s
 		label = *e.label
 	}
 	scope, _ := json.Marshal(e.scope)
-	q, args := `UPDATE share_links SET label = ?, scope_json = ?`, []any{label, string(scope)}
+	q, args := `UPDATE share_links SET label = ?, scope_json = ?, allow_comments = ?, allow_planning = ?, allow_activity_details = ?`,
+		[]any{label, string(scope), e.perms.Comments, e.perms.Planning, e.perms.ActivityDetails}
 	if e.expiresAt != nil {
 		q, args = q+`, expires_at = ?`, append(args, *e.expiresAt)
 	}
@@ -390,32 +440,62 @@ func (s *Services) DeleteShareLink(ctx context.Context, uid, id int64) error {
 type shareLinkRow struct {
 	id, uid     int64
 	label, name string
+	prefix      string
 	hash        []byte
 	expiresAt   *string
 	scope       ShareScope
+	perms       SharePermissions
+}
+
+// shareByToken resolves a token: unknown, revoked or disabled-owner links are ErrNotFound, expired
+// ones ErrGone. Plain read on the read pool.
+func (s *Services) shareByToken(ctx context.Context, token string) (shareLinkRow, error) {
+	th := sha256.Sum256([]byte(token))
+	l := shareLinkRow{hash: th[:]}
+	var exp, rev sql.NullInt64
+	var status, scope string
+	err := s.rdb().QueryRowContext(ctx, `SELECT l.id, l.user_id, l.label, l.token_prefix, l.expires_at, l.revoked_at, l.scope_json,
+		l.allow_comments, l.allow_planning, l.allow_activity_details, u.display_name, u.status
+		FROM share_links l JOIN users u ON u.id = l.user_id WHERE l.token_hash = ?`, l.hash).
+		Scan(&l.id, &l.uid, &l.label, &l.prefix, &exp, &rev, &scope, &l.perms.Comments, &l.perms.Planning, &l.perms.ActivityDetails, &l.name, &status)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return l, ErrNotFound
+	case err != nil:
+		return l, err
+	case rev.Valid || status != "active":
+		return l, ErrNotFound
+	case exp.Valid && exp.Int64 <= s.now().Unix():
+		return l, ErrGone
+	}
+	l.expiresAt, l.scope = nullTime(exp), parseScope(scope)
+	return l, nil
+}
+
+// portalLink resolves the token of a portal call: unknown, revoked and expired links are the same
+// ErrNotFound; a permission that is off is ErrShareForbidden ("" checks none).
+func (s *Services) portalLink(ctx context.Context, token, perm string) (shareLinkRow, error) {
+	l, err := s.shareByToken(ctx, token)
+	if errors.Is(err, ErrGone) {
+		return l, ErrNotFound
+	}
+	if err != nil {
+		return l, err
+	}
+	allowed := map[string]bool{"": true, "comments": l.perms.Comments, "planning": l.perms.Planning, "activityDetails": l.perms.ActivityDetails}
+	if !allowed[perm] {
+		return l, ErrShareForbidden
+	}
+	return l, nil
 }
 
 // GetPublicShare returns the read-only overview behind a valid token: unknown, revoked or
 // disabled-owner links are ErrNotFound, expired ones ErrGone. The view is cached for 5 minutes.
 func (s *Services) GetPublicShare(ctx context.Context, token string) (*PublicShareView, error) {
-	th := sha256.Sum256([]byte(token))
-	l := shareLinkRow{hash: th[:]}
-	var exp, rev sql.NullInt64
-	var status, scope string
-	err := s.db().QueryRowContext(ctx, `SELECT l.id, l.user_id, l.label, l.expires_at, l.revoked_at, l.scope_json, u.display_name, u.status
-		FROM share_links l JOIN users u ON u.id = l.user_id WHERE l.token_hash = ?`, l.hash).
-		Scan(&l.id, &l.uid, &l.label, &exp, &rev, &scope, &l.name, &status)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return nil, ErrNotFound
-	case err != nil:
+	l, err := s.shareByToken(ctx, token)
+	if err != nil {
 		return nil, err
-	case rev.Valid || status != "active":
-		return nil, ErrNotFound
-	case exp.Valid && exp.Int64 <= s.now().Unix():
-		return nil, ErrGone
 	}
-	l.expiresAt, l.scope = nullTime(exp), parseScope(scope)
 	if _, err := s.db().ExecContext(ctx, `UPDATE share_links SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?`,
 		s.now().Unix(), l.id); err != nil {
 		s.log.Warn("🔗 Compteur d'accès du lien de partage non mis à jour", "lien", l.id, "err", err.Error())
@@ -446,7 +526,17 @@ func (s *Services) buildPublicShare(ctx context.Context, l shareLinkRow) (*Publi
 	sc, today := l.scope, s.today(p)
 	days := sc.PeriodWeeks * 7
 	v := &PublicShareView{GeneratedAt: s.now().UTC().Format(time.RFC3339), ShareLabel: l.label, ExpiresAt: l.expiresAt,
-		PeriodWeeks: sc.PeriodWeeks, Sections: sc.Sections, Athlete: PublicAthlete{DisplayName: l.name}}
+		PeriodWeeks: sc.PeriodWeeks, Sections: sc.Sections, Athlete: PublicAthlete{DisplayName: l.name}, LinkID: l.id, Permissions: l.perms}
+	directive, remarks, err := s.linkNotes(ctx, l.uid, l.id)
+	if err != nil {
+		return nil, err
+	}
+	v.Directive = directive
+	if l.perms.Planning {
+		if v.Calendar, err = s.publicCalendar(ctx, l.uid, today); err != nil {
+			return nil, err
+		}
+	}
 	if sc.Anonymize {
 		v.Athlete.DisplayName = "Athlète"
 	}
@@ -504,6 +594,11 @@ func (s *Services) buildPublicShare(ctx context.Context, l shareLinkRow) (*Publi
 		sessions, err := s.shareSessions(ctx, l.uid, acts, shoes, addDays(today, -days+1), sc.allows("notes"))
 		if err != nil {
 			return nil, err
+		}
+		for i := range sessions {
+			if n, ok := remarks[sessions[i].ID]; ok {
+				sessions[i].Remark = &n
+			}
 		}
 		v.RecentSessions = &sessions
 	}

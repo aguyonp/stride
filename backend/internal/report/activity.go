@@ -13,6 +13,7 @@ import (
 // Activity renders the single-session prompt (§6.2).
 func Activity(v *view.ActivityView, prof athlete.Profile, inc Include) string {
 	b := newBuilder()
+	writeCoachNotes(b, v.CoachNotes)
 	writeReadinessPriority(b, v.Readiness)
 	if inc.Has(ChipPain) {
 		writeBodyStress(b, v.BodyStress, v.BodyCorrelations)

@@ -19,6 +19,7 @@ const (
 	CodeProviderDown   = "PROVIDER_UNAVAILABLE"
 	CodeNotConnected   = "PROVIDER_NOT_CONNECTED"
 	CodeInviteRequired = "INVITE_REQUIRED"
+	CodeShareForbidden = "SHARE_FORBIDDEN"
 	CodeInternal       = "INTERNAL"
 )
 

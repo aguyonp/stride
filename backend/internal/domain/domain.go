@@ -115,6 +115,11 @@ func (s *Services) db() *sql.DB { return s.deps.Store.DB }
 
 func (s *Services) repo() athlete.Repo { return athlete.Repo{DB: s.db(), Now: s.Now} }
 
+// rdb is the read pool (§15.3): read-only paths that never write, even lazily.
+func (s *Services) rdb() *sql.DB { return s.deps.Store.R }
+
+func (s *Services) readRepo() athlete.Repo { return athlete.Repo{DB: s.rdb(), Now: s.Now} }
+
 // Wait blocks until background work and jobs, including the jobs and goroutines they chain, are drained.
 func (s *Services) Wait() { s.queue.Wait() }
 

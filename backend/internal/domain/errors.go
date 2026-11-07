@@ -20,6 +20,9 @@ var (
 	ErrGone           = errors.New("ressource expirée")
 	ErrNotConnected   = errors.New("fournisseur non connecté")
 	ErrStravaDisabled = errors.New("Strava n'est pas configuré sur ce serveur")
+	// ErrShareForbidden answers a portal call whose permission is off, or an edit of what another
+	// link (or the athlete) created.
+	ErrShareForbidden = errors.New("action non autorisée par ce lien de partage")
 )
 
 // BadRequestError carries a French message for a 400 answer.

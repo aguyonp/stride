@@ -179,16 +179,18 @@ func (r Repo) DeleteGoal(ctx context.Context, uid, id int64) error {
 // ---------- plan ----------
 
 const planCols = `id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions,
-	steps, source, garmin_status, garmin_workout_id, garmin_pushed_at, garmin_error`
+	steps, source, garmin_status, garmin_workout_id, garmin_pushed_at, garmin_error, share_link_id, prescribed_label, prescribed_author, morph_json`
 
 func scanPlanned(sc interface{ Scan(...any) error }) (PlannedSession, error) {
 	var p PlannedSession
 	var d, dist, pmin, pmax, cad sql.NullFloat64
 	var steps string
 	var wid, pushed sql.NullInt64
-	var gerr sql.NullString
+	var gerr, label, author, morph sql.NullString
+	var link sql.NullInt64
 	err := sc.Scan(&p.ID, &p.Date, &p.Sport, &p.Title, &d, &dist, &pmin, &pmax, &cad, &p.Instructions,
-		&steps, &p.Source, &p.Garmin.Status, &wid, &pushed, &gerr)
+		&steps, &p.Source, &p.Garmin.Status, &wid, &pushed, &gerr, &link, &label, &author, &morph)
+	p.PrescribedBy, p.Morph = prescriber(link, label, author), morphOf(morph)
 	p.TargetDurationS, p.TargetDistanceM, p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm = nf(d), nf(dist), nf(pmin), nf(pmax), nf(cad)
 	_ = json.Unmarshal([]byte(steps), &p.Steps)
 	if p.Steps == nil {
@@ -252,9 +254,10 @@ func (r Repo) CreatePlanned(ctx context.Context, uid int64, p *PlannedSession) e
 		return err
 	}
 	now := r.ts()
-	res, err := r.DB.ExecContext(ctx, `INSERT INTO planned_sessions (user_id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions, steps, source, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, p.Date, p.Sport, p.Title, p.TargetDurationS, p.TargetDistanceM,
-		p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm, p.Instructions, stepsJSON(p.Steps), p.Source, now, now)
+	link, label, author := prescriberArgs(p.PrescribedBy)
+	res, err := r.DB.ExecContext(ctx, `INSERT INTO planned_sessions (user_id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions, steps, source, share_link_id, prescribed_label, prescribed_author, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, p.Date, p.Sport, p.Title, p.TargetDurationS, p.TargetDistanceM,
+		p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm, p.Instructions, stepsJSON(p.Steps), p.Source, link, label, author, now, now)
 	if err != nil {
 		return err
 	}

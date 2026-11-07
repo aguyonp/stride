@@ -32,11 +32,15 @@ type api struct {
 	s          *domain.Services
 	log        *slog.Logger
 	shareLimit *ipLimiter
+	// Portal writes are limited per token and per client IP.
+	portalTokenLimit *ipLimiter
+	portalIPLimit    *ipLimiter
 }
 
 // Register mounts every domain route on mux (Go 1.22 patterns, e.g. "GET /api/activities/{id}").
 func Register(mux *http.ServeMux, d Deps) {
-	a := &api{s: d.Services, log: d.Log, shareLimit: newIPLimiter(shareRateLimit)}
+	a := &api{s: d.Services, log: d.Log, shareLimit: newIPLimiter(shareRateLimit),
+		portalTokenLimit: newWindowLimiter(portalWritesByToken, portalWriteWindow), portalIPLimit: newWindowLimiter(portalWritesByIP, portalWriteWindow)}
 	if a.log == nil {
 		a.log = slog.Default()
 	}
@@ -89,6 +93,7 @@ func Register(mux *http.ServeMux, d Deps) {
 	registerV3(user, a)
 	registerV31(user, a)
 	registerV4(mux, user, a)
+	registerV42(mux, user, a)
 
 	admin("GET /api/admin/connections", a.adminConnections)
 	admin("POST /api/admin/users/{id}/resync", a.adminResync)
@@ -136,6 +141,8 @@ func (a *api) fail(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	case errors.As(err, &br):
 		httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, br.Msg)
+	case errors.Is(err, domain.ErrShareForbidden):
+		httpx.Fail(w, http.StatusForbidden, httpx.CodeShareForbidden, "Action non autorisée par ce lien de partage.")
 	case errors.Is(err, domain.ErrGone):
 		httpx.Fail(w, http.StatusGone, "GONE", "Ce lien de partage a expiré.")
 	case errors.Is(err, domain.ErrNotFound) || errors.Is(err, athlete.ErrNotFound):
