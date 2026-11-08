@@ -31,6 +31,7 @@ open http://localhost:8080
 - Smart Workout Morphing: today's or tomorrow's session adapted to pain, load, heat, wind and physio restrictions; refine with AI, apply, revert, `.FIT`.
 - Atomic SQLite backups (daily, before migrations, on demand) with SHA-256, local retention and S3-compatible upload.
 - SQLite split into one writer and a read-only pool.
+- French / English interface and AI prompts, following the browser language by default (switch in Settings, `Cmd+K`, login and share pages).
 
 **4.1.0**
 - Five menus (Tableau de bord, Planning, Santé & forme, Coach IA, Réglages) and a header search button (`Cmd+K`).
