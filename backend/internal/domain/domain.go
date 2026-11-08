@@ -18,6 +18,7 @@ import (
 	"stride/internal/cache"
 	"stride/internal/egress"
 	"stride/internal/env"
+	"stride/internal/frfmt"
 	"stride/internal/garmin"
 	"stride/internal/observability"
 	"stride/internal/provider/strava"
@@ -146,6 +147,11 @@ func (s *Services) profile(ctx context.Context, uid int64) (athlete.Profile, err
 }
 
 func (s *Services) location(p athlete.Profile) *time.Location { return p.Location() }
+
+// lang is the effective output language (§15.2): profile.language ?? Accept-Language ?? en.
+func (s *Services) lang(ctx context.Context, p athlete.Profile) frfmt.Lang {
+	return frfmt.Resolve(p.Language, frfmt.LangFrom(ctx))
+}
 
 func (s *Services) today(p athlete.Profile) string {
 	return s.now().In(s.location(p)).Format("2006-01-02")

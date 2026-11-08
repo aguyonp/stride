@@ -204,7 +204,7 @@ func (s *Services) prepareAdaptPlan(ctx context.Context, uid int64, in *AdaptInp
 	return nil, &llmPlanAdaptJobPayload{
 		From:         in.From,
 		To:           to,
-		Prompt:       report.Adapt(dv, p, req),
+		Prompt:       report.Localize(report.Adapt(dv, p, req), s.lang(ctx, p)),
 		RemainingIDs: remIDs,
 	}, nil
 }

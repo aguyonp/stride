@@ -34,7 +34,7 @@ func registerV4(mux *http.ServeMux, user func(string, http.HandlerFunc), a *api)
 	user("POST /api/share", a.createShareLink)
 	user("PATCH /api/share/{id}", a.patchShareLink)
 	user("DELETE /api/share/{id}", a.deleteShareLink)
-	mux.HandleFunc("GET /api/public/share/{token}", a.publicShare)
+	mux.Handle("GET /api/public/share/{token}", withLang(a.publicShare))
 
 	// Async jobs
 	user("GET /api/jobs", a.listJobs)

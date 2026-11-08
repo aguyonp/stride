@@ -68,9 +68,9 @@ func affected(res sql.Result, err error) error {
 
 func (r Repo) Profile(ctx context.Context, uid int64, defaultTZ string) (Profile, error) {
 	var area, label, tz, ov, pts string
-	var side sql.NullString
-	err := r.DB.QueryRowContext(ctx, `SELECT focus_area, focus_label, injured_side, timezone, overrides, pace_targets FROM athlete_profiles WHERE user_id = ?`, uid).
-		Scan(&area, &label, &side, &tz, &ov, &pts)
+	var side, lang sql.NullString
+	err := r.DB.QueryRowContext(ctx, `SELECT focus_area, focus_label, injured_side, timezone, overrides, pace_targets, language FROM athlete_profiles WHERE user_id = ?`, uid).
+		Scan(&area, &label, &side, &tz, &ov, &pts, &lang)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultProfile(defaultTZ), nil
 	}
@@ -81,7 +81,7 @@ func (r Repo) Profile(ctx context.Context, uid int64, defaultTZ string) (Profile
 	var overrides map[string]float64
 	_ = json.Unmarshal([]byte(ov), &overrides)
 	p := Profile{FocusArea: preset.FocusArea, FocusLabel: label, InjuredSide: ns(side), Timezone: tz,
-		Thresholds: applyOverrides(preset.Thresholds, overrides), PaceTargets: []PaceTarget{}}
+		Thresholds: applyOverrides(preset.Thresholds, overrides), PaceTargets: []PaceTarget{}, Language: ns(lang)}
 	_ = json.Unmarshal([]byte(pts), &p.PaceTargets)
 	if p.FocusLabel == "" {
 		p.FocusLabel = preset.Label
@@ -98,12 +98,12 @@ func (r Repo) PutProfile(ctx context.Context, uid int64, p Profile) error {
 	}
 	ov, _ := json.Marshal(overrides(p.Thresholds, PresetFor(p.FocusArea).Thresholds))
 	pts, _ := json.Marshal(p.PaceTargets)
-	_, err := r.DB.ExecContext(ctx, `INSERT INTO athlete_profiles (user_id, focus_area, focus_label, injured_side, timezone, overrides, pace_targets, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := r.DB.ExecContext(ctx, `INSERT INTO athlete_profiles (user_id, focus_area, focus_label, injured_side, timezone, overrides, pace_targets, language, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET focus_area = excluded.focus_area, focus_label = excluded.focus_label,
 		injured_side = excluded.injured_side, timezone = excluded.timezone, overrides = excluded.overrides,
-		pace_targets = excluded.pace_targets, updated_at = excluded.updated_at`,
-		uid, p.FocusArea, p.FocusLabel, p.InjuredSide, p.Timezone, string(ov), string(pts), r.ts())
+		pace_targets = excluded.pace_targets, language = excluded.language, updated_at = excluded.updated_at`,
+		uid, p.FocusArea, p.FocusLabel, p.InjuredSide, p.Timezone, string(ov), string(pts), p.Language, r.ts())
 	return err
 }
 

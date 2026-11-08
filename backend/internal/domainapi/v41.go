@@ -17,8 +17,8 @@ func (a *api) healthStatus(w http.ResponseWriter, r *http.Request) {
 
 // healthConditions serves the static pathology catalog (zones in canonical order, §14.7).
 func (a *api) healthConditions(w http.ResponseWriter, r *http.Request) {
-	a.withUser(w, r, func(int64) {
-		a.reply(w, r, a.s.HealthConditions(), nil)
+	a.withUser(w, r, func(uid int64) {
+		a.reply(w, r, a.s.HealthConditions(r.Context(), uid), nil)
 	})
 }
 

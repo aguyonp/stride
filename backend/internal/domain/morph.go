@@ -724,7 +724,7 @@ func (s *Services) RefineMorph(ctx context.Context, uid, id int64, in MorphRefin
 	}
 	return s.queue.Enqueue(ctx, queue.EnqueueRequest{UserID: uid, Kind: queue.KindLLMMorphRefine, Queue: queue.QueueCritical,
 		Label:   "Affinage IA de la séance adaptée",
-		Payload: llmMorphRefineJobPayload{SessionID: id, Prompt: report.Morph(dv, p, req), Preview: *prev}})
+		Payload: llmMorphRefineJobPayload{SessionID: id, Prompt: report.Localize(report.Morph(dv, p, req), s.lang(ctx, p)), Preview: *prev}})
 }
 
 func (s *Services) runMorphRefine(ctx context.Context, jc *queue.JobContext) (any, error) {

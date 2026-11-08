@@ -74,7 +74,7 @@ func (s *Services) saveProfile(ctx context.Context, uid int64, body []byte) (ath
 	var keys map[string]json.RawMessage
 	_ = json.Unmarshal(body, &keys)
 	next := cur
-	if err := patch(&next, body, []string{"focusArea", "focusLabel", "injuredSide", "timezone", "thresholds", "paceTargets"}, nil); err != nil {
+	if err := patch(&next, body, []string{"focusArea", "focusLabel", "injuredSide", "timezone", "thresholds", "paceTargets", "language"}, nil); err != nil {
 		return cur, err
 	}
 	if _, hasTh := keys["thresholds"]; !hasTh && next.FocusArea != cur.FocusArea {

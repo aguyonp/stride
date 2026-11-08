@@ -19,6 +19,7 @@ import (
 
 	"stride/internal/apimeter"
 	"stride/internal/egress"
+	"stride/internal/frfmt"
 	"stride/internal/queue"
 	"stride/internal/report"
 	"stride/internal/view"
@@ -443,8 +444,19 @@ func (s *Services) callLLMStream(ctx context.Context, uid int64, c *llmConfig, r
 	return text, nil
 }
 
-// systemDirective is §6.1 without the Markdown quote marker.
-func systemDirective() string { return strings.TrimPrefix(report.Directive, "> ") }
+// systemDirective is §6.1 without the Markdown quote marker, in the language of the prompt it goes
+// with: prompts are localized at request time (§15.2), so a queued job keeps its language.
+func systemDirective(prompt string) string {
+	return strings.TrimPrefix(report.DirectiveFor(promptLang(prompt)), "> ")
+}
+
+// promptLang is the language a prompt was rendered in (every prompt starts with the directive).
+func promptLang(prompt string) frfmt.Lang {
+	if strings.HasPrefix(prompt, report.DirectiveFor(frfmt.EN)) {
+		return frfmt.EN
+	}
+	return frfmt.FR
+}
 
 func (s *Services) TestLLM(ctx context.Context, uid int64) (*view.LLMTestResult, error) {
 	c, err := s.llmConfig(ctx, uid)
@@ -457,7 +469,15 @@ func (s *Services) TestLLM(ctx context.Context, uid int64) (*view.LLMTestResult,
 	ctx, cancel := context.WithTimeout(ctx, llmTimeout)
 	defer cancel()
 	t0 := time.Now()
-	text, err := s.callLLM(ctx, uid, c, llmRequest{system: systemDirective(), prompt: "Test de connexion : réponds uniquement « OK ».", maxTokens: 512})
+	l := frfmt.FR
+	if p, perr := s.profile(ctx, uid); perr == nil {
+		l = s.lang(ctx, p)
+	}
+	testPrompt, okMsg := "Test de connexion : réponds uniquement « OK ».", "Connexion réussie"
+	if l == frfmt.EN {
+		testPrompt, okMsg = "Connection test: reply only “OK”.", "Connection succeeded"
+	}
+	text, err := s.callLLM(ctx, uid, c, llmRequest{system: strings.TrimPrefix(report.DirectiveFor(l), "> "), prompt: testPrompt, maxTokens: 512})
 	ms := int(time.Since(t0).Milliseconds())
 	if err != nil {
 		var pe *ProviderError
@@ -467,7 +487,7 @@ func (s *Services) TestLLM(ctx context.Context, uid int64) (*view.LLMTestResult,
 		}
 		return &view.LLMTestResult{OK: false, LatencyMs: ms, Message: msg}, nil
 	}
-	return &view.LLMTestResult{OK: true, LatencyMs: ms, Message: "Connexion réussie (" + c.Provider + " · " + c.Model + ") : " + compactText(text, 80)}, nil
+	return &view.LLMTestResult{OK: true, LatencyMs: ms, Message: okMsg + " (" + c.Provider + " · " + c.Model + ") : " + compactText(text, 80)}, nil
 }
 
 func compactText(s string, n int) string {
@@ -549,7 +569,7 @@ func (s *Services) prepareAnalyze(ctx context.Context, uid int64, in AnalyzeInpu
 		return "", "", err
 	}
 	if q := strings.TrimSpace(in.Question); q != "" {
-		prompt = strings.TrimRight(prompt, "\n") + "\n\n### QUESTION DE L'ATHLÈTE\n" + q + "\n"
+		prompt = strings.TrimRight(prompt, "\n") + "\n\n" + report.Localize("### QUESTION DE L'ATHLÈTE", promptLang(prompt)) + "\n" + q + "\n"
 	}
 	return ref, prompt, nil
 }

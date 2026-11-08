@@ -17,6 +17,7 @@ import (
 	"stride/internal/athlete"
 	"stride/internal/auth"
 	"stride/internal/domain"
+	"stride/internal/frfmt"
 	"stride/internal/httpx"
 	"stride/internal/provider/strava"
 )
@@ -44,7 +45,7 @@ func Register(mux *http.ServeMux, d Deps) {
 	if a.log == nil {
 		a.log = slog.Default()
 	}
-	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(h)) }
+	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(withLang(h))) }
 	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(d.RequireAdmin(h))) }
 
 	user("GET /api/integrations", a.integrations)
@@ -109,6 +110,14 @@ func uid(r *http.Request) (int64, bool) {
 }
 
 // withUser runs h with the authenticated user id (never taken from the request).
+// withLang stores the Accept-Language choice (fr/en) in the request context; services resolve the
+// effective language as profile.language ?? Accept-Language ?? en (§15.2).
+func withLang(h http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h(w, r.WithContext(frfmt.WithLang(r.Context(), frfmt.FromAcceptLanguage(r.Header.Get("Accept-Language")))))
+	})
+}
+
 func (a *api) withUser(w http.ResponseWriter, r *http.Request, h func(id int64)) {
 	id, ok := uid(r)
 	if !ok {

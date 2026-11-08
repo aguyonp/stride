@@ -28,6 +28,7 @@ func (e *env2) portal(method, path, origin string, body any, out any) (int, stri
 		}
 	}
 	req, _ := http.NewRequest(method, e.srv.URL+path, rd)
+	req.Header.Set("Accept-Language", "fr-FR")
 	if origin != "" {
 		req.Header.Set("Origin", origin)
 	}

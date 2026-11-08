@@ -219,6 +219,8 @@ type env2 struct {
 	st  *store.Store
 	fx  *fixture
 	fs  *fakeStrava
+	// acceptLanguage overrides the Accept-Language sent by do() (default fr-FR).
+	acceptLanguage string
 }
 
 func setup(t *testing.T) *env2 { return setupWith(t, nil, nil) }
@@ -299,6 +301,13 @@ func setupWith(t *testing.T, garminExtra func(*http.ServeMux), deps func(*domain
 	return &env2{t: t, srv: srv, svc: svc, st: st, fx: fx, fs: fs}
 }
 
+func (e *env2) lang() string {
+	if e.acceptLanguage != "" {
+		return e.acceptLanguage
+	}
+	return "fr-FR"
+}
+
 func (e *env2) do(user int, method, path string, body any, out any) (int, string) {
 	e.t.Helper()
 	var rd io.Reader
@@ -311,6 +320,8 @@ func (e *env2) do(user int, method, path string, body any, out any) (int, string
 		}
 	}
 	req, _ := http.NewRequest(method, e.srv.URL+path, rd)
+	// The French UI sends its language (§15.2); without it the output would default to English.
+	req.Header.Set("Accept-Language", e.lang())
 	if user > 0 {
 		req.Header.Set("X-Test-User", strconv.Itoa(user))
 	}
@@ -501,6 +512,37 @@ func TestDomainEndToEnd(t *testing.T) {
 	if code, md := e.do(1, "GET", "/api/days/"+e.fx.day(-1)+"/report", nil, nil); code != 200 || !strings.Contains(md, "BILAN SANTÉ & CHARGE QUOTIDIENNE") {
 		t.Errorf("day report: %d %s", code, md)
 	}
+	// §15.2: Accept-Language picks the report language unless the profile sets one.
+	e.acceptLanguage = "en-GB,en;q=0.9"
+	if code, md := e.do(1, "GET", "/api/days/"+e.fx.day(-1)+"/report", nil, nil); code != 200 || !strings.HasPrefix(md, "> **SYSTEM DIRECTIVE FOR THE AI:**") ||
+		!strings.Contains(md, "DAILY HEALTH & LOAD REVIEW") || strings.Contains(md, "BILAN SANTÉ") {
+		t.Errorf("English day report: %d %.300s", code, md)
+	}
+	var cat struct {
+		Zones []struct {
+			ZoneLabel  string                   `json:"zoneLabel"`
+			Conditions []struct{ Label string } `json:"conditions"`
+		} `json:"zones"`
+	}
+	if code, body := e.do(1, "GET", "/api/health/conditions", nil, &cat); code != 200 || cat.Zones[0].Conditions[0].Label != "Patellofemoral pain syndrome" {
+		t.Errorf("English catalog: %d %.200s", code, body)
+	}
+	var prof m
+	if code, body := e.do(1, "GET", "/api/profile", nil, &prof); code != 200 {
+		t.Fatalf("profile: %d %s", code, body)
+	}
+	prof["language"] = "fr"
+	if code, body := e.do(1, "PUT", "/api/profile", prof, &prof); code != 200 || prof["language"] != "fr" {
+		t.Fatalf("profile language: %d %s", code, body)
+	}
+	if _, md := e.do(1, "GET", "/api/days/"+e.fx.day(-1)+"/report", nil, nil); !strings.Contains(md, "BILAN SANTÉ & CHARGE QUOTIDIENNE") {
+		t.Errorf("profile language must win over Accept-Language: %.200s", md)
+	}
+	prof["language"] = nil
+	if code, body := e.do(1, "PUT", "/api/profile", prof, &prof); code != 200 || prof["language"] != nil {
+		t.Fatalf("profile language reset: %d %s", code, body)
+	}
+	e.acceptLanguage = ""
 	var multi m
 	if code, body := e.do(1, "POST", "/api/exports/multi", m{"weeks": 2}, &multi); code != 200 || multi["sessions"].(float64) < 1 ||
 		!strings.Contains(multi["markdown"].(string), "TENDANCES HEBDOMADAIRES") {

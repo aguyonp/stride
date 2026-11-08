@@ -17,7 +17,9 @@ import (
 
 	"stride/internal/analysis"
 	"stride/internal/athlete"
+	"stride/internal/frfmt"
 	"stride/internal/garmin"
+	"stride/internal/report"
 )
 
 type ShareLink struct {
@@ -504,7 +506,7 @@ func (s *Services) GetPublicShare(ctx context.Context, token string) (*PublicSha
 	if raw, ok := s.cacheGet(ctx, key); ok {
 		var v PublicShareView
 		if json.Unmarshal(raw, &v) == nil {
-			return &v, nil
+			return localizePublicShare(&v, publicLang(ctx)), nil
 		}
 	}
 	v, err := s.buildPublicShare(ctx, l)
@@ -514,7 +516,56 @@ func (s *Services) GetPublicShare(ctx context.Context, token string) (*PublicSha
 	if raw, err := json.Marshal(v); err == nil {
 		s.cacheSet(ctx, key, raw, shareCacheTTL)
 	}
-	return v, nil
+	return localizePublicShare(v, publicLang(ctx)), nil
+}
+
+// publicLang is the portal language: the viewer has no profile, so Accept-Language ?? en (§15.2).
+func publicLang(ctx context.Context) frfmt.Lang { return frfmt.Resolve(nil, frfmt.LangFrom(ctx)) }
+
+// localizePublicShare translates the server-computed labels of a (French, cached) portal view.
+// Owner and recipient text (names, titles, notes) is left as written.
+func localizePublicShare(v *PublicShareView, l frfmt.Lang) *PublicShareView {
+	if l != frfmt.EN {
+		return v
+	}
+	tr := func(s string) string { return report.Localize(s, l) }
+	if v.Athlete.FocusLabel != nil && v.Athlete.FocusArea != nil && *v.Athlete.FocusLabel == athlete.PresetFor(*v.Athlete.FocusArea).Label {
+		en := tr(*v.Athlete.FocusLabel)
+		v.Athlete.FocusLabel = &en
+	}
+	if r := v.Readiness; r != nil {
+		r.Title = tr(r.Title)
+		for i := range r.Reasons {
+			r.Reasons[i] = tr(r.Reasons[i])
+		}
+	}
+	if v.RecentSessions != nil {
+		for i := range *v.RecentSessions {
+			(*v.RecentSessions)[i].TypeLabel = tr((*v.RecentSessions)[i].TypeLabel)
+		}
+	}
+	if bm := v.BodyMap; bm != nil {
+		for i := range bm.Zones {
+			bm.Zones[i].ZoneLabel = analysis.BodyZoneLabelIn(bm.Zones[i].Zone, l)
+		}
+		for i := range bm.Entries {
+			bm.Entries[i].ZoneLabel = analysis.BodyZoneLabelIn(bm.Entries[i].Zone, l)
+		}
+		for i := range bm.Correlations {
+			c := &bm.Correlations[i]
+			c.ZoneLabel, c.FactorLabel = analysis.BodyZoneLabelIn(c.Zone, l), tr(c.FactorLabel)
+			if c.Summary != nil {
+				sum := tr(*c.Summary)
+				c.Summary = &sum
+			}
+		}
+	}
+	if v.Records != nil {
+		for i := range *v.Records {
+			(*v.Records)[i].Label = tr((*v.Records)[i].Label)
+		}
+	}
+	return v
 }
 
 // buildPublicShare computes only the sections the link allows, over its period.
