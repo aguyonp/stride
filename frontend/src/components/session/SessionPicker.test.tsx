@@ -4,6 +4,10 @@ import type { ActivitySummary } from '../../api/types'
 import { addDays } from '../../lib/format'
 import { clickEl, mountWithProviders, setInputValue, waitFor, type MountedApp } from '../../test/domHarness'
 import { SessionPicker } from './SessionPicker'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const TODAY = '2026-11-07'
 

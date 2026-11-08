@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { BodyStressEntry } from '../../api/types'
 import { diffSymptoms, hasChanges, initialSymptoms, newSymptom } from './symptoms'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const entry = (id: number, over: Partial<BodyStressEntry> = {}): BodyStressEntry => ({
   id,

@@ -4,6 +4,10 @@ import type { BodyMapOverview, BodyStressEntry } from '../../api/types'
 import { ALL_BODY_ZONES, BODY_ZONE_META } from '../../components/bodymap/bodyMapMeta'
 import { clickEl, installDomPolyfills, mountWithProviders, setInputValue, waitFor, type MountedApp } from '../../test/domHarness'
 import HealthView from './HealthView'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 function sampleOverview(entries: BodyStressEntry[]): BodyMapOverview {
   return {

@@ -1,5 +1,6 @@
 import type { Goal, PlanPhase } from '../../api/types'
-import { diffDays, parseLocal } from '../../lib/format'
+import { diffDays, monthShort, parseLocal } from '../../lib/format'
+import { t } from '../../i18n'
 
 /** Active goals with a target date not yet passed, nearest first. */
 export function datedGoals(goals: Goal[], today: string): Goal[] {
@@ -15,7 +16,7 @@ export function horizonGoal(dated: Goal[], phases: PlanPhase[]): Goal | null {
 export function countdown(target: string, today: string): { days: number; label: string } | null {
   const days = diffDays(today, target)
   if (days < 0) return null
-  return { days, label: days === 0 ? 'Jour J' : `J-${days}` }
+  return { days, label: days === 0 ? t('plan.format.raceDay') : t('plan.format.countdown', { n: days }) }
 }
 
 export const phaseAt = (phases: PlanPhase[], date: string): PlanPhase | null => phases.find((p) => p.startDate <= date && p.endDate >= date) ?? null
@@ -45,7 +46,6 @@ export function phaseLayout(phases: PlanPhase[], from: string, to: string, today
   return { segments, todayPct, totalDays }
 }
 
-const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
 
 /** First day of each month strictly after `from` up to `to`, positioned on the same scale as phaseLayout. */
 export function monthTicks(from: string, to: string): { label: string; pct: number }[] {
@@ -63,7 +63,7 @@ export function monthTicks(from: string, to: string): { label: string; pct: numb
     }
     const iso = `${y}-${String(m).padStart(2, '0')}-01`
     if (iso > to) break
-    out.push({ label: m === 1 ? `${MONTHS[0]} ${y}` : MONTHS[m - 1], pct: pct(diffDays(from, iso) / totalDays) })
+    out.push({ label: m === 1 ? `${monthShort(1)} ${y}` : monthShort(m), pct: pct(diffDays(from, iso) / totalDays) })
   }
   return out
 }

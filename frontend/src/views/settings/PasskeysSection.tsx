@@ -13,6 +13,7 @@ import { useToast } from '../../components/ui/Toast'
 import { fmtWhen } from '../../lib/format'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
+import { t } from '../../i18n'
 
 export function PasskeysSection() {
   const qc = useQueryClient()
@@ -24,7 +25,7 @@ export function PasskeysSection() {
     mutationFn: addPasskey,
     onSuccess: (p) => {
       void qc.invalidateQueries({ queryKey: qk.passkeys })
-      toast({ title: 'Passkey ajoutée', description: p.name })
+      toast({ title: t('settings.passkeys.added'), description: p.name })
     },
   })
   const items = list.data ?? []
@@ -33,19 +34,19 @@ export function PasskeysSection() {
   return (
     <Section
       id="passkeys"
-      title="Passkeys"
+      title={t('settings.passkeys.title')}
       icon={<KeyRound />}
-      description="Stride se connecte uniquement par passkey. Ajoute-en une par appareil (téléphone, ordinateur, clé de sécurité)."
+      description={t('settings.passkeys.description')}
       actions={
         <button type="button" className="btn btn-primary" onClick={() => add.mutate()} disabled={add.isPending}>
           {add.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-4" aria-hidden="true" />}
-          Ajouter une passkey
+          {t('settings.passkeys.add')}
         </button>
       }
     >
       {add.isError && <InlineError className="mb-3">{passkeyErrorMessage(add.error, 'add')}</InlineError>}
       {list.isError ? (
-        <ErrorView error={list.error} onRetry={() => void list.refetch()} title="Passkeys indisponibles" />
+        <ErrorView error={list.error} onRetry={() => void list.refetch()} title={t('settings.passkeys.unavailable')} />
       ) : !list.data ? (
         <div className="space-y-2">
           <Skeleton className="h-16" />
@@ -58,15 +59,15 @@ export function PasskeysSection() {
               <PasskeyRow key={p.id} p={p} last={last} onDelete={() => setDel(p)} />
             ))}
           </ul>
-          {last && <p className="mt-3 text-xs text-ink-3">Ta seule passkey ne peut pas être supprimée : ajoute d’abord une autre passkey pour ne pas perdre l’accès à ton compte.</p>}
+          {last && <p className="mt-3 text-xs text-ink-3">{t('settings.passkeys.lastOne')}</p>}
         </>
       )}
       <ConfirmDialog
         open={del !== null}
         onClose={() => setDel(null)}
-        title="Supprimer cette passkey ?"
-        message={<p>« {del?.name} » ne pourra plus servir à se connecter à Stride. Pense aussi à la retirer du gestionnaire de mots de passe de l’appareil.</p>}
-        confirmLabel="Supprimer"
+        title={t('settings.passkeys.deleteTitle')}
+        message={<p>{t('settings.passkeys.deleteBody', { name: del?.name })}</p>}
+        confirmLabel={t('common.actions.delete')}
         danger
         busy={m.remove.isPending}
         onConfirm={() =>
@@ -74,11 +75,11 @@ export function PasskeysSection() {
           m.remove.mutate(del.id, {
             onSuccess: () => {
               setDel(null)
-              toast({ title: 'Passkey supprimée' })
+              toast({ title: t('settings.passkeys.deleted') })
             },
             onError: (e) => {
               setDel(null)
-              toast({ tone: 'error', title: 'Suppression refusée', description: isApiError(e, 'CONFLICT') ? 'Impossible de supprimer ta dernière passkey.' : e.message })
+              toast({ tone: 'error', title: t('settings.passkeys.deleteRefused'), description: isApiError(e, 'CONFLICT') ? t('settings.passkeys.cannotDeleteLast') : e.message })
             },
           })
         }
@@ -101,9 +102,9 @@ function PasskeyRow({ p, last, onDelete }: { p: Passkey; last: boolean; onDelete
       {
         onSuccess: () => {
           setEditing(false)
-          toast({ title: 'Passkey renommée' })
+          toast({ title: t('settings.passkeys.renamed') })
         },
-        onError: (e) => toast({ tone: 'error', title: 'Renommage impossible', description: e.message }),
+        onError: (e) => toast({ tone: 'error', title: t('settings.passkeys.renameFailed'), description: e.message }),
       },
     )
   }
@@ -122,11 +123,11 @@ function PasskeyRow({ p, last, onDelete }: { p: Passkey; last: boolean; onDelete
               save()
             }}
           >
-            <input className="field min-h-9 py-1" value={name} maxLength={60} autoFocus aria-label="Nouveau nom de la passkey" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && (setName(p.name), setEditing(false))} />
-            <button type="submit" className="icon-btn size-9" aria-label="Enregistrer le nom" disabled={rename.isPending}>
+            <input className="field min-h-9 py-1" value={name} maxLength={60} autoFocus aria-label={t('settings.passkeys.newName')} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && (setName(p.name), setEditing(false))} />
+            <button type="submit" className="icon-btn size-9" aria-label={t('settings.passkeys.saveName')} disabled={rename.isPending}>
               {rename.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
             </button>
-            <button type="button" className="icon-btn size-9" aria-label="Annuler" onClick={() => (setName(p.name), setEditing(false))}>
+            <button type="button" className="icon-btn size-9" aria-label={t('common.actions.cancel')} onClick={() => (setName(p.name), setEditing(false))}>
               <X className="size-4" />
             </button>
           </form>
@@ -136,22 +137,22 @@ function PasskeyRow({ p, last, onDelete }: { p: Passkey; last: boolean; onDelete
               <span className="truncate font-semibold text-ink">{p.name}</span>
               {p.backedUp && (
                 <span className="chip h-5 flex-none border border-ok/30 bg-ok/10 px-2 text-[10px] text-ok">
-                  <CloudCheck className="size-3" aria-hidden="true" /> Sauvegardée
+                  <CloudCheck className="size-3" aria-hidden="true" /> {t('settings.passkeys.backedUp')}
                 </span>
               )}
             </p>
             <p className="text-xs text-ink-3">
-              Créée le {fmtDay(p.createdAt)} · {p.lastUsedAt ? `utilisée ${fmtWhen(p.lastUsedAt)}` : 'jamais utilisée'}
+              {t('settings.passkeys.created', { date: fmtDay(p.createdAt) })} · {p.lastUsedAt ? t('settings.passkeys.used', { when: fmtWhen(p.lastUsedAt) }) : t('settings.passkeys.neverUsed')}
             </p>
           </>
         )}
       </div>
       {!editing && (
         <div className="flex flex-none gap-1">
-          <button type="button" className="icon-btn size-9" onClick={() => setEditing(true)} aria-label={`Renommer ${p.name}`}>
+          <button type="button" className="icon-btn size-9" onClick={() => setEditing(true)} aria-label={t('settings.passkeys.rename', { name: p.name })}>
             <Pencil className="size-4" />
           </button>
-          <button type="button" className="icon-btn size-9" onClick={onDelete} disabled={last} aria-label={last ? 'Impossible de supprimer la dernière passkey' : `Supprimer ${p.name}`} title={last ? 'Dernière passkey : ajoute-en une autre avant de la supprimer' : undefined}>
+          <button type="button" className="icon-btn size-9" onClick={onDelete} disabled={last} aria-label={last ? t('settings.passkeys.cannotDeleteLabel') : t('settings.passkeys.deleteLabel', { name: p.name })} title={last ? t('settings.passkeys.lastHint') : undefined}>
             <Trash2 className="size-4" />
           </button>
         </div>

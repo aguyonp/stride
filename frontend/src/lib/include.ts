@@ -1,4 +1,5 @@
 import type { IncludeKey } from '../api/types'
+import { t } from '../i18n'
 
 export interface IncludeChip {
   key: IncludeKey
@@ -7,14 +8,25 @@ export interface IncludeChip {
   scope: 'session' | 'all'
 }
 
+const chip = (key: IncludeKey, scope: IncludeChip['scope']): IncludeChip => ({
+  key,
+  scope,
+  get label() {
+    return t(`coach.prompt.chips.${key}.label`)
+  },
+  get hint() {
+    return t(`coach.prompt.chips.${key}.hint`)
+  },
+})
+
 export const INCLUDE_CHIPS: IncludeChip[] = [
-  { key: 'pain', label: 'Suivi douleur', hint: 'Ligne « Ressenti & Douleur » et colonnes de gêne de l’historique', scope: 'all' },
-  { key: 'biomech', label: 'Biomécanique', hint: 'Cadence, GCT, OV, foulée, dérive de fatigue, pente', scope: 'session' },
-  { key: 'health', label: 'Santé / VFC', hint: 'Nuit précédente : VFC, sommeil, FC repos, Body Battery, readiness', scope: 'all' },
-  { key: 'plan', label: 'Planning', hint: 'Profil, objectifs, séance prévue et prochaines séances', scope: 'all' },
-  { key: 'load', label: 'Charge 48 h', hint: 'Dérive cardiaque, stamina, charge, ratio, vélo / étages / pas', scope: 'session' },
-  { key: 'splits', label: 'Intervalles', hint: 'Tableau des blocs / laps', scope: 'session' },
-  { key: 'history', label: 'Historique 14 j', hint: 'Tableau des 14 derniers jours', scope: 'all' },
+  chip('pain', 'all'),
+  chip('biomech', 'session'),
+  chip('health', 'all'),
+  chip('plan', 'all'),
+  chip('load', 'session'),
+  chip('splits', 'session'),
+  chip('history', 'all'),
 ]
 
 export const ALL_INCLUDE: IncludeKey[] = INCLUDE_CHIPS.map((c) => c.key)

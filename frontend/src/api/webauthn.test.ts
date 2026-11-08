@@ -3,6 +3,10 @@ import type { WebAuthnErrorCode } from '@simplewebauthn/browser'
 import { describe, expect, it } from 'vitest'
 import { ApiError } from './client'
 import { ISSUE_MESSAGE, passkeyErrorMessage } from './webauthn'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 function domErr(name: string, message = name): Error {
   const err = new Error(message)

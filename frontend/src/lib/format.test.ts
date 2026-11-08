@@ -17,6 +17,10 @@ import {
   parsePace,
   todayISO,
 } from './format'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 // French separators (narrow and regular no-break spaces) are normalised for readability.
 const norm = (s: string) => s.replace(/[  ]/g, ' ')

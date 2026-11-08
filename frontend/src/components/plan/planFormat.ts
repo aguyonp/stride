@@ -1,26 +1,27 @@
 import type { PlanMatch, PlannedSession } from '../../api/types'
-import { addDays, diffDays, fmtHM, fmtKm, fmtNumber, fmtPaceValue, fmtSigned, isNum, parseLocal } from '../../lib/format'
+import { addDays, diffDays, fmtHM, fmtKm, fmtNumber, fmtPaceValue, fmtSigned, fmtSignedPct, isNum, monthShort, parseLocal } from '../../lib/format'
+import { t } from '../../i18n'
 
-const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+const MONTH = (m1: number) => monthShort(m1)
 
 /** « Semaine du 3 au 9 nov. », « Semaine du 27 oct. au 2 nov. ». */
 export function weekLabel(weekStart: string): string {
   const a = parseLocal(weekStart)
   const b = parseLocal(addDays(weekStart, 6))
-  if (!a || !b) return 'Semaine'
-  const end = `${b.d} ${MONTHS[b.mo - 1]}`
-  const start = a.mo === b.mo ? `${a.d}` : `${a.d} ${MONTHS[a.mo - 1]}`
+  if (!a || !b) return t('plan.format.week')
+  const end = `${b.d} ${MONTH(b.mo)}`
+  const start = a.mo === b.mo ? `${a.d}` : `${a.d} ${MONTH(a.mo)}`
   const year = a.y !== b.y ? ` ${b.y}` : ''
-  return `Semaine du ${start} au ${end}${year}`
+  return `${t('plan.format.weekOf', { start, end })}${year}`
 }
 
 /** « aujourd'hui », « demain », « dans 12 j », « hier », « il y a 3 j ». */
 export function relativeDays(date: string, today: string): string {
   const d = diffDays(today, date)
-  if (d === 0) return 'aujourd’hui'
-  if (d === 1) return 'demain'
-  if (d === -1) return 'hier'
-  return d > 0 ? `dans ${d} j` : `il y a ${-d} j`
+  if (d === 0) return t('plan.format.today')
+  if (d === 1) return t('plan.format.tomorrow')
+  if (d === -1) return t('plan.format.yesterday')
+  return d > 0 ? t('plan.format.inDays', { n: d }) : t('plan.format.daysAgo', { n: -d })
 }
 
 function paceRange(min: number | null, max: number | null): string | null {
@@ -43,10 +44,10 @@ export function targetParts(s: Pick<PlannedSession, 'targetDurationS' | 'targetD
 /** Signed deltas of a plan match, e.g. ["Durée +8 %", "Allure −4 s/km"]. */
 export function matchDeltas(m: PlanMatch): string[] {
   const out: string[] = []
-  if (isNum(m.durationDeltaPct)) out.push(`Durée ${fmtSigned(m.durationDeltaPct)} %`)
-  if (isNum(m.distanceDeltaPct)) out.push(`Distance ${fmtSigned(m.distanceDeltaPct)} %`)
-  if (isNum(m.paceDeltaSecPerKm)) out.push(`Allure ${fmtSigned(m.paceDeltaSecPerKm)} s/km`)
-  if (isNum(m.cadenceDeltaSpm)) out.push(`Cadence ${fmtSigned(m.cadenceDeltaSpm)} spm`)
+  if (isNum(m.durationDeltaPct)) out.push(t('plan.format.deltaDuration', { value: fmtSignedPct(m.durationDeltaPct, 0) }))
+  if (isNum(m.distanceDeltaPct)) out.push(t('plan.format.deltaDistance', { value: fmtSignedPct(m.distanceDeltaPct, 0) }))
+  if (isNum(m.paceDeltaSecPerKm)) out.push(t('plan.format.deltaPace', { value: fmtSigned(m.paceDeltaSecPerKm) }))
+  if (isNum(m.cadenceDeltaSpm)) out.push(t('plan.format.deltaCadence', { value: fmtSigned(m.cadenceDeltaSpm) }))
   return out
 }
 

@@ -61,6 +61,8 @@ export interface UserData {
   v3?: V3Data
   v31?: V31Data
   v4?: unknown
+  /** 4.2 share notes (see ./v42.ts). */
+  v42?: unknown
   health?: HealthStatus
 }
 
@@ -83,6 +85,8 @@ export interface MockState {
   data: Record<string, UserData>
   sync: { running: boolean; startedAt: number | null; lastSyncAt: string | null; lastLiveAt: string | null; liveUntil: number; runs: number; newGarmin: number; newStrava: number; cooldownUntil: string | null }
   pending: { displayName: string; invitationId: number | null } | null
+  /** 4.2 instance backups and S3 target (see ./v42.ts). */
+  v42?: unknown
 }
 
 const KEY = 'stride.mock.v2'
@@ -190,7 +194,7 @@ function integrationsFor(rich: boolean): Integrations {
 
 function defaultProfile(): AthleteProfile {
   const p = presetFor('none')
-  return { focusArea: 'none', focusLabel: p.label, injuredSide: null, timezone: 'Europe/Paris', thresholds: { ...p.thresholds }, paceTargets: [] }
+  return { focusArea: 'none', focusLabel: p.label, injuredSide: null, timezone: 'Europe/Paris', thresholds: { ...p.thresholds }, paceTargets: [], language: null }
 }
 
 export function emptyData(): UserData {
@@ -210,6 +214,7 @@ function richData(st: { seq: number }, today: string): UserData {
       { label: '10 km', minSecPerKm: 215, maxSecPerKm: 220 },
       { label: 'Marathon', minSecPerKm: 230, maxSecPerKm: 240 },
     ],
+    language: null,
   }
   const goals: Goal[] = [
     { id: next(), title: 'Courir 45 min continu sans gêne mi-novembre → reprise perf en décembre', kind: 'macro', targetValue: 45, targetUnit: 'min', targetDate: addDays(today, 12), status: 'active', note: 'Priorité : zéro gêne le lendemain.' },

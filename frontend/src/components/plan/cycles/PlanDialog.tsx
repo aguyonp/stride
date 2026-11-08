@@ -8,6 +8,7 @@ import { Checkbox, Field } from '../../ui/Field'
 import { InlineError } from '../../ui/Misc'
 import { useToast } from '../../ui/Toast'
 import { parseOptionalNumber, planFormDefaults, validatePlanForm } from './cycleModel'
+import { t } from '../../../i18n'
 
 export function PlanDialog({
   open,
@@ -48,7 +49,7 @@ export function PlanDialog({
     if (g && !plan) {
       if (g.targetDate) setEndDate(g.targetDate)
       setTargetEventLabel(g.title)
-      if (!name.trim() || name.startsWith('Préparation')) setName(`Préparation ${g.title}`)
+      if (!name.trim() || name.startsWith('Préparation') || name.endsWith('build-up')) setName(t('plan.cycles.prep', { goal: g.title }))
     }
   }
 
@@ -76,7 +77,7 @@ export function PlanDialog({
         { id: plan.id, ...payload },
         {
           onSuccess: () => {
-            toast({ title: 'Macrocycle mis à jour', tone: 'success' })
+            toast({ title: t('plan.cycleDialogs.planUpdated'), tone: 'success' })
             onClose()
           },
           onError: (e) => setErrMsg(e.message),
@@ -85,7 +86,7 @@ export function PlanDialog({
     } else {
       mut.createPlan.mutate(payload, {
         onSuccess: () => {
-          toast({ title: 'Macrocycle créé', description: autoScaffold ? 'Mésocycles et semaines d’assimilation générés.' : undefined, tone: 'success' })
+          toast({ title: t('plan.cycleDialogs.planCreated'), description: autoScaffold ? t('plan.cycleDialogs.scaffolded') : undefined, tone: 'success' })
           onClose()
         },
         onError: (e) => setErrMsg(e.message),
@@ -98,17 +99,17 @@ export function PlanDialog({
       open={open}
       onClose={onClose}
       size="lg"
-      title={plan ? 'Modifier le macrocycle' : 'Nouveau macrocycle'}
-      description="Structure ta préparation en mésocycles progressifs et semaines d’assimilation jusqu’à ton échéance."
+      title={plan ? t('plan.cycleDialogs.editPlan') : t('plan.cycleDialogs.newPlan')}
+      description={t('plan.cycleDialogs.planHint')}
       initialFocus={`#${CSS.escape(`${ids}-name`)}`}
       footer={
         <div className="flex justify-end gap-2 pb-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-            {plan ? 'Enregistrer' : 'Créer le macrocycle'}
+            {plan ? t('common.actions.save') : t('plan.cycleDialogs.createPlan')}
           </button>
         </div>
       }
@@ -123,7 +124,7 @@ export function PlanDialog({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label htmlFor={`${ids}-name`} className="mb-1.5 block text-sm font-medium text-ink-2">
-              Nom du macrocycle
+              {t('plan.cycleDialogs.planName')}
             </label>
             <input
               id={`${ids}-name`}
@@ -131,22 +132,22 @@ export function PlanDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
-              placeholder="Ex. Préparation Semi-Marathon d’automne"
+              placeholder={t('plan.cycleDialogs.planNamePlaceholder')}
             />
           </div>
-          <Field label="Discipline principale">
+          <Field label={t('plan.cycleDialogs.discipline')}>
             {(p) => (
               <select {...p} className="field" value={sport} onChange={(e) => setSport(e.target.value as 'run' | 'bike' | 'other')}>
-                <option value="run">Course à pied</option>
-                <option value="bike">Cyclisme</option>
-                <option value="other">Multisport / Autre</option>
+                <option value="run">{t('plan.cycleDialogs.run')}</option>
+                <option value="bike">{t('plan.cycleDialogs.bike')}</option>
+                <option value="other">{t('plan.cycleDialogs.multi')}</option>
               </select>
             )}
           </Field>
-          <Field label="Objectif lié (facultatif)">
+          <Field label={t('plan.cycleDialogs.linkedGoal')}>
             {(p) => (
               <select {...p} className="field" value={goalId ?? ''} onChange={(e) => onGoalPick(e.target.value ? Number(e.target.value) : null)}>
-                <option value="">Aucun objectif lié</option>
+                <option value="">{t('plan.cycleDialogs.noGoal')}</option>
                 {goals.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.title}
@@ -156,9 +157,9 @@ export function PlanDialog({
               </select>
             )}
           </Field>
-          <Field label="Début du cycle">{(p) => <input {...p} type="date" className="field num" value={startDate} onChange={(e) => setStartDate(e.target.value)} />}</Field>
-          <Field label="Échéance / Course cible">{(p) => <input {...p} type="date" className="field num" value={endDate} onChange={(e) => setEndDate(e.target.value)} />}</Field>
-          <Field label="Libellé de l’échéance" className={plan ? undefined : 'sm:col-span-2'}>
+          <Field label={t('plan.cycleDialogs.start')}>{(p) => <input {...p} type="date" className="field num" value={startDate} onChange={(e) => setStartDate(e.target.value)} />}</Field>
+          <Field label={t('plan.cycleDialogs.end')}>{(p) => <input {...p} type="date" className="field num" value={endDate} onChange={(e) => setEndDate(e.target.value)} />}</Field>
+          <Field label={t('plan.cycleDialogs.eventLabel')} className={plan ? undefined : 'sm:col-span-2'}>
             {(p) => (
               <input
                 {...p}
@@ -166,17 +167,17 @@ export function PlanDialog({
                 value={targetEventLabel}
                 onChange={(e) => setTargetEventLabel(e.target.value)}
                 maxLength={100}
-                placeholder="Ex. 10 km de Lyon — objectif 37 min"
+                placeholder={t('plan.cycleDialogs.eventPlaceholder')}
               />
             )}
           </Field>
           {plan && (
-            <Field label="Statut">
+            <Field label={t('plan.cycleDialogs.status')}>
               {(p) => (
                 <select {...p} className="field" value={status} onChange={(e) => setStatus(e.target.value as CyclePlanStatus)}>
-                  <option value="active">Actif</option>
-                  <option value="completed">Terminé</option>
-                  <option value="archived">Archivé</option>
+                  <option value="active">{t('plan.cycles.planStatus.active')}</option>
+                  <option value="completed">{t('plan.cycles.planStatus.completed')}</option>
+                  <option value="archived">{t('plan.cycles.planStatus.archived')}</option>
                 </select>
               )}
             </Field>
@@ -188,15 +189,15 @@ export function PlanDialog({
             <Checkbox
               checked={autoScaffold}
               onChange={setAutoScaffold}
-              label="Découper automatiquement en mésocycles et semaines d’assimilation"
-              description="Génère les blocs Fondation, Développement, Spécifique et Affûtage avec une semaine d’assimilation toutes les 3 à 4 semaines."
+              label={t('plan.cycleDialogs.autoSplit')}
+              description={t('plan.cycleDialogs.autoSplitHint')}
             />
             {autoScaffold && (
               <div className="grid gap-3 pt-1 sm:grid-cols-2">
-                <Field label="Volume hebdo pic visé (km)">
+                <Field label={t('plan.cycleDialogs.peakVolume')}>
                   {(p) => <input {...p} type="number" min={5} max={300} step={1} className="field num" value={peakVolume} onChange={(e) => setPeakVolume(e.target.value)} />}
                 </Field>
-                <Field label="Charge hebdo pic visée (pts)">
+                <Field label={t('plan.cycleDialogs.peakLoad')}>
                   {(p) => <input {...p} type="number" min={50} max={3000} step={10} className="field num" value={peakLoad} onChange={(e) => setPeakLoad(e.target.value)} />}
                 </Field>
               </div>
@@ -204,7 +205,7 @@ export function PlanDialog({
           </div>
         )}
 
-        <Field label="Notes d’orientation (facultatif)">
+        <Field label={t('plan.cycleDialogs.notes')}>
           {(p) => (
             <textarea
               {...p}
@@ -212,7 +213,7 @@ export function PlanDialog({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={600}
-              placeholder="Ex. progression prudente sur le D−, maintien renfo excentrique 2×/semaine"
+              placeholder={t('plan.cycleDialogs.notesPlaceholder')}
             />
           )}
         </Field>

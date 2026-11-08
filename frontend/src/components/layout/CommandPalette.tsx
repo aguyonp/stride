@@ -7,6 +7,7 @@ import {
   CornerDownLeft,
   Footprints,
   History,
+  Languages,
   LayoutDashboard,
   MessageSquarePlus,
   Plus,
@@ -33,8 +34,10 @@ import { ALL_INCLUDE, effectiveInclude } from '../../lib/include'
 import { SPORT_LABEL } from '../../lib/labels'
 import { ui, useUi } from '../../state/ui'
 import { useToast } from '../ui/Toast'
+import { getLang, t } from '../../i18n'
+import { useLanguageSwitch } from '../../i18n/useLanguage'
 
-type CommandGroup = 'Actions rapides' | 'Navigation' | 'Séances'
+type CommandGroup = 'actions' | 'nav' | 'sessions'
 
 interface CommandItem {
   id: string
@@ -66,12 +69,14 @@ export function CommandPalette({ me }: { me: Me }) {
   const profile = useProfile()
   const today = todayISO(profile.data?.timezone)
   const activities = useActivities({}, open)
+  const language = useLanguageSwitch()
+  const otherLang = getLang() === 'fr' ? 'en' : 'fr'
 
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(query), 200)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setDebounced(query), 200)
+    return () => clearTimeout(timer)
   }, [query])
   const remote = useActivitySearch(open ? debounced : '')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -118,69 +123,69 @@ export function CommandPalette({ me }: { me: Me }) {
     const actions: CommandItem[] = [
       {
         id: 'act-sync',
-        group: 'Actions rapides',
-        label: 'Lancer une synchronisation',
-        subtitle: 'Récupérer les dernières séances Garmin et Strava en tâche de fond',
-        keywords: 'sync synchro garmin strava actualiser rafraichir',
+        group: 'actions',
+        label: t('layout.command.actSync.label'),
+        subtitle: t('layout.command.actSync.subtitle'),
+        keywords: t('layout.command.actSync.keywords'),
         icon: RefreshCw,
         onSelect: () => {
           sync.mutate(undefined, {
-            onSuccess: () => toast({ title: 'Synchronisation lancée' }),
-            onError: (err) => toast({ tone: 'error', title: 'Synchronisation impossible', description: err.message }),
+            onSuccess: () => toast({ title: t('layout.command.syncStarted') }),
+            onError: (err) => toast({ tone: 'error', title: t('layout.command.syncFailed'), description: err.message }),
           })
         },
       },
       {
         id: 'act-manual',
-        group: 'Actions rapides',
-        label: 'Créer une séance manuelle',
-        subtitle: 'Enregistrer une sortie sans montre connectée',
-        keywords: 'creer ajouter seance activite manuelle course velo',
+        group: 'actions',
+        label: t('layout.command.actManual.label'),
+        subtitle: t('layout.command.actManual.subtitle'),
+        keywords: t('layout.command.actManual.keywords'),
         icon: Plus,
         onSelect: () => ui.openManualActivity(),
       },
       {
         id: 'act-bodymap',
-        group: 'Actions rapides',
-        label: 'Enregistrer une gêne corporelle',
-        subtitle: 'Noter une douleur ou un ressenti à froid J+1 sur la cartographie',
-        keywords: 'douleur gene blessure corps genou achille periostite tfl aponevrose',
+        group: 'actions',
+        label: t('layout.command.actBodymap.label'),
+        subtitle: t('layout.command.actBodymap.subtitle'),
+        keywords: t('layout.command.actBodymap.keywords'),
         icon: Stethoscope,
         onSelect: () => navigate('/health?new=1'),
       },
       {
         id: 'act-feedback',
-        group: 'Actions rapides',
-        label: 'Donner un avis',
-        subtitle: 'Signaler un bug ou proposer une idée à l’administrateur',
-        keywords: 'avis bug idee suggestion retour feedback probleme contact',
+        group: 'actions',
+        label: t('layout.command.actFeedback.label'),
+        subtitle: t('layout.command.actFeedback.subtitle'),
+        keywords: t('layout.command.actFeedback.keywords'),
         icon: MessageSquarePlus,
         onSelect: () => ui.openFeedback(),
       },
       {
         id: 'act-share',
-        group: 'Actions rapides',
-        label: 'Créer un lien de partage Kiné / Coach',
-        subtitle: 'Générer un accès en lecture seule au dossier athlète',
-        keywords: 'partage lien kine coach medecin lecture seule',
+        group: 'actions',
+        label: t('layout.command.actShare.label'),
+        subtitle: t('layout.command.actShare.subtitle'),
+        keywords: t('layout.command.actShare.keywords'),
         icon: Share2,
         onSelect: () => navigate('/health#partage'),
       },
       {
         id: 'act-history',
-        group: 'Actions rapides',
-        label: 'Importer tout l’historique',
-        subtitle: 'Rapatrier les anciennes séances Garmin et Strava',
-        keywords: 'importer historique ancien annees backfill garmin strava',
+        group: 'actions',
+        label: t('layout.command.actHistory.label'),
+        subtitle: t('layout.command.actHistory.subtitle'),
+        keywords: t('layout.command.actHistory.keywords'),
         icon: History,
         onSelect: () => navigate('/settings#integrations'),
       },
       {
         id: 'act-prompt',
-        group: 'Actions rapides',
-        label: 'Copier le prompt Coach IA du jour',
-        subtitle: 'Générer et copier le rapport complet du jour au format Markdown',
-        keywords: 'copier prompt coach ia bilan jour markdown rapport',
+        group: 'actions',
+        label: t('layout.command.actPrompt.label'),
+        subtitle: t('layout.command.actPrompt.subtitle'),
+        keywords: t('layout.command.actPrompt.keywords'),
         icon: Copy,
         onSelect: async () => {
           try {
@@ -188,14 +193,14 @@ export function CommandPalette({ me }: { me: Me }) {
             const ok = await copyText(md)
             if (ok) {
               void api.trackAction('prompt.copy').catch(() => undefined)
-              toast({ tone: 'success', title: 'Prompt Coach IA du jour copié' })
+              toast({ tone: 'success', title: t('layout.command.promptCopied') })
             } else {
-              toast({ tone: 'error', title: 'Impossible de copier dans le presse-papiers' })
+              toast({ tone: 'error', title: t('layout.command.clipboardFailed') })
             }
           } catch (err) {
             toast({
               tone: 'error',
-              title: 'Génération du prompt impossible',
+              title: t('layout.command.promptFailed'),
               description: err instanceof Error ? err.message : undefined,
             })
           }
@@ -203,72 +208,81 @@ export function CommandPalette({ me }: { me: Me }) {
       },
       {
         id: 'act-ai-day',
-        group: 'Actions rapides',
-        label: 'Lancer l’analyse IA du jour',
-        subtitle: 'Ouvrir le coach IA en streaming sur le bilan du jour',
-        keywords: 'analyse ia coach streaming bilan jour',
+        group: 'actions',
+        label: t('layout.command.actAiDay.label'),
+        subtitle: t('layout.command.actAiDay.subtitle'),
+        keywords: t('layout.command.actAiDay.keywords'),
         icon: Bot,
         onSelect: () => ui.triggerDayAnalysis(),
+      },
+      {
+        id: 'act-lang',
+        group: 'actions',
+        label: t('layout.command.actLang.label', { lang: t(`common.lang.${otherLang}`) }),
+        subtitle: t('layout.command.actLang.subtitle'),
+        keywords: t('layout.command.actLang.keywords'),
+        icon: Languages,
+        onSelect: () => language.choose(otherLang),
       },
     ]
 
     const navItems: CommandItem[] = [
       {
         id: 'nav-dashboard',
-        group: 'Navigation',
-        label: 'Tableau de bord',
-        subtitle: 'Séances, readiness, biomécanique et bilan quotidien',
-        keywords: 'accueil dashboard tableau de bord seance aujourdhui',
+        group: 'nav',
+        label: t('layout.command.navDashboard.label'),
+        subtitle: t('layout.command.navDashboard.subtitle'),
+        keywords: t('layout.command.navDashboard.keywords'),
         icon: LayoutDashboard,
         meta: '/',
         onSelect: () => navigate('/'),
       },
       {
         id: 'nav-plan',
-        group: 'Navigation',
-        label: 'Planning',
-        subtitle: 'Séances, cycles, calendrier et imprévus',
-        keywords: 'plan planning cycles gantt macrocycle mesocycle semaine mois',
+        group: 'nav',
+        label: t('layout.command.navPlan.label'),
+        subtitle: t('layout.command.navPlan.subtitle'),
+        keywords: t('layout.command.navPlan.keywords'),
         icon: CalendarRange,
         meta: '/plan',
         onSelect: () => navigate('/plan'),
       },
       {
         id: 'nav-health',
-        group: 'Navigation',
-        label: 'Santé & forme',
-        subtitle: 'État de santé, symptômes, corrélations et partage kiné',
-        keywords: 'sante forme corps cartographie anatomie douleur blessure kine correlation partage',
+        group: 'nav',
+        label: t('layout.command.navHealth.label'),
+        subtitle: t('layout.command.navHealth.subtitle'),
+        keywords: t('layout.command.navHealth.keywords'),
         icon: Stethoscope,
         meta: '/health',
         onSelect: () => navigate('/health'),
       },
       {
         id: 'nav-shoes',
-        group: 'Navigation',
-        label: 'Chaussures',
-        subtitle: 'Rotation active, drop et usure kilométrique',
-        keywords: 'chaussures paires drop km equipement materiel',
+        group: 'nav',
+        label: t('layout.command.navShoes.label'),
+        subtitle: t('layout.command.navShoes.subtitle'),
+        keywords: t('layout.command.navShoes.keywords'),
         icon: Footprints,
         meta: '/shoes',
         onSelect: () => navigate('/shoes'),
       },
       {
         id: 'nav-coach',
-        group: 'Navigation',
-        label: 'Coach IA',
-        subtitle: 'Prompt, analyse IA, historique et export multi-séances',
-        keywords: 'coach ia export prompt analyse markdown multi seances rapport',
+        group: 'nav',
+        label: t('layout.command.navCoach.label'),
+        subtitle: t('layout.command.navCoach.subtitle'),
+        keywords: t('layout.command.navCoach.keywords'),
         icon: Sparkles,
         meta: '/coach',
         onSelect: () => navigate('/coach'),
       },
       {
         id: 'nav-settings',
-        group: 'Navigation',
-        label: 'Réglages',
-        subtitle: 'Profil, seuils, intégrations, IA, notifications et sécurité',
-        keywords: 'reglages parametres profil garmin strava passkeys sauvegarde',
+        group: 'nav',
+        label: t('layout.command.navSettings.label'),
+        subtitle: t('layout.command.navSettings.subtitle'),
+        keywords: t('layout.command.navSettings.keywords'),
         icon: Settings,
         meta: '/settings',
         onSelect: () => navigate('/settings'),
@@ -278,10 +292,10 @@ export function CommandPalette({ me }: { me: Me }) {
     if (me.role === 'admin') {
       navItems.push({
         id: 'nav-admin',
-        group: 'Navigation',
-        label: 'Administration',
-        subtitle: 'Comptes, invitations, quotas fournisseurs et journaux',
-        keywords: 'admin administration utilisateurs invitations quotas logs',
+        group: 'nav',
+        label: t('layout.command.navAdmin.label'),
+        subtitle: t('layout.command.navAdmin.subtitle'),
+        keywords: t('layout.command.navAdmin.keywords'),
         icon: ShieldCheck,
         meta: '/admin',
         onSelect: () => navigate('/admin'),
@@ -289,7 +303,7 @@ export function CommandPalette({ me }: { me: Me }) {
     }
 
     return [...actions, ...navItems]
-  }, [me.role, navigate, sync, toast, today])
+  }, [me.role, navigate, sync, toast, today, otherLang, language])
 
   const filteredItems = useMemo<CommandItem[]>(() => {
     const q = normalize(query)
@@ -298,7 +312,7 @@ export function CommandPalette({ me }: { me: Me }) {
     const matches = (haystack: string) => {
       if (tokens.length === 0) return true
       const normHay = normalize(haystack)
-      return tokens.every((t) => normHay.includes(t))
+      return tokens.every((tok) => normHay.includes(tok))
     }
 
     const matchedStatic = staticItems.filter((item) =>
@@ -316,7 +330,7 @@ export function CommandPalette({ me }: { me: Me }) {
       if (!matches(searchable)) continue
       sessionItems.push({
         id: `session-${a.id}`,
-        group: 'Séances',
+        group: 'sessions',
         label: a.name,
         subtitle: `${sportFr} · ${a.typeLabel}`,
         keywords: searchable,
@@ -335,7 +349,7 @@ export function CommandPalette({ me }: { me: Me }) {
         const sportFr = SPORT_LABEL[h.sport] ?? h.sport
         sessionItems.push({
           id: `session-${h.id}`,
-          group: 'Séances',
+          group: 'sessions',
           label: h.name,
           subtitle: `${sportFr} · ${h.typeLabel}`,
           keywords: h.name,
@@ -391,7 +405,7 @@ export function CommandPalette({ me }: { me: Me }) {
 
   if (!open) return null
 
-  const groups: CommandGroup[] = ['Actions rapides', 'Navigation', 'Séances']
+  const groups: CommandGroup[] = ['actions', 'nav', 'sessions']
   const activeOptionId = safeIndex >= 0 ? `${listId}-opt-${filteredItems[safeIndex].id}` : undefined
 
   return (
@@ -408,7 +422,7 @@ export function CommandPalette({ me }: { me: Me }) {
         className="sheet-panel flex max-h-[76dvh] w-full max-w-xl flex-col overflow-hidden rounded-[22px]"
       >
         <h2 id={titleId} className="sr-only">
-          Palette de commandes Stride
+          {t('common.misc.palette')}
         </h2>
 
         <div className="flex flex-none items-center gap-2.5 border-b border-line px-4 py-3">
@@ -421,14 +435,14 @@ export function CommandPalette({ me }: { me: Me }) {
             aria-controls={listId}
             aria-activedescendant={activeOptionId}
             aria-autocomplete="list"
-            aria-label="Rechercher une commande, une page ou une séance"
+            aria-label={t('layout.command.inputLabel')}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
               setActiveIndex(0)
             }}
             onKeyDown={onInputKeyDown}
-            placeholder="Rechercher une séance, une vue ou une action…"
+            placeholder={t('layout.command.placeholder')}
             className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none"
           />
           {query && (
@@ -440,7 +454,7 @@ export function CommandPalette({ me }: { me: Me }) {
                 setActiveIndex(0)
                 inputRef.current?.focus()
               }}
-              aria-label="Effacer la recherche"
+              aria-label={t('layout.command.clear')}
             >
               <X className="size-3.5" />
             </button>
@@ -449,9 +463,9 @@ export function CommandPalette({ me }: { me: Me }) {
             type="button"
             onClick={ui.closeCommand}
             className="rounded-lg border border-line bg-track/60 px-2 py-1 font-mono text-[11px] text-ink-3 hover:text-ink"
-            aria-label="Fermer la palette (Échap)"
+            aria-label={t('layout.command.close')}
           >
-            Échap
+            {t('common.ui.esc')}
           </button>
         </div>
 
@@ -459,15 +473,15 @@ export function CommandPalette({ me }: { me: Me }) {
           id={listId}
           ref={listRef}
           role="listbox"
-          aria-label="Résultats de la palette de commandes"
+          aria-label={t('layout.command.results')}
           className="scroll-thin min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
         >
           {filteredItems.length === 0 ? (
             <div className="py-10 text-center">
               <Compass className="mx-auto mb-2 size-6 text-ink-3" aria-hidden="true" />
-              <p className="text-sm font-medium text-ink-2">Aucun résultat pour « {query} »</p>
+              <p className="text-sm font-medium text-ink-2">{t('layout.command.empty', { query })}</p>
               <p className="mt-0.5 text-xs text-ink-3">
-                Essaie un titre de sortie, une date (ex. 2026-11), un sport ou le nom d’une page.
+                {t('layout.command.emptyHint')}
               </p>
             </div>
           ) : (
@@ -478,7 +492,7 @@ export function CommandPalette({ me }: { me: Me }) {
               if (entries.length === 0) return null
               return (
                 <div key={group} className="mb-2 last:mb-0">
-                  <p className="px-3 pt-1.5 pb-1 text-[11px] font-semibold text-ink-3">{group}</p>
+                  <p className="px-3 pt-1.5 pb-1 text-[11px] font-semibold text-ink-3">{t(`layout.command.groups.${group}`)}</p>
                   <ul className="space-y-0.5">
                     {entries.map(({ item, idx }) => {
                       const active = idx === safeIndex
@@ -537,7 +551,7 @@ export function CommandPalette({ me }: { me: Me }) {
         </div>
 
         <footer className="flex flex-none items-center justify-between border-t border-line bg-track/30 px-4 py-2 text-[11px] text-ink-3">
-          <span>↑↓ naviguer · Entrée valider · Échap fermer</span>
+          <span>{t('layout.command.footer')}</span>
           <span className="font-mono">⌘K / Ctrl+K</span>
         </footer>
       </div>

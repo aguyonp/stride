@@ -2,7 +2,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { ActivitySummary } from '../../api/types'
 import { cn } from '../../lib/cn'
-import { addDays, capitalize, fmtDateLong, fmtMonthYear, parseLocal, toISODate } from '../../lib/format'
+import { addDays, capitalize, fmtDateLong, fmtMonthYear, parseLocal, toISODate, weekdayNames } from '../../lib/format'
+import { t } from '../../i18n'
 
 interface MiniCalendarProps {
   year: number
@@ -16,9 +17,6 @@ interface MiniCalendarProps {
   /** Shows an « Aujourd’hui » button between the arrows: back to the current month, today selected. */
   onToday?: () => void
 }
-
-const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
-const WEEKDAYS_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
 
 export function monthBounds(year: number, month0: number): { from: string; to: string } {
   return { from: toISODate(new Date(year, month0, 1)), to: toISODate(new Date(year, month0 + 1, 0)) }
@@ -78,7 +76,7 @@ export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, on
           {loading && <span className="sr-only"> — chargement</span>}
         </p>
         <div className="flex flex-none items-center gap-1">
-          <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(-1)} aria-label="Mois précédent">
+          <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(-1)} aria-label={t('session.calendar.prevMonth')}>
             <ChevronLeft className="size-4" />
           </button>
           {onToday && (
@@ -91,16 +89,16 @@ export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, on
                 onToday()
               }}
             >
-              Aujourd’hui
+              {t('session.feeling.today')}
             </button>
           )}
-          <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(1)} disabled={nextDisabled} aria-label="Mois suivant">
+          <button type="button" className="icon-btn size-8" onClick={() => shiftMonth(1)} disabled={nextDisabled} aria-label={t('session.calendar.nextMonth')}>
             <ChevronRight className="size-4" />
           </button>
         </div>
       </div>
       <div className="grid grid-cols-7 gap-1 text-center" aria-hidden="true">
-        {WEEKDAYS.map((w, i) => (
+        {weekdayNames('narrow').map((w, i) => (
           <span key={i} className="py-1 text-[11px] font-semibold text-ink-3">
             {w}
           </span>
@@ -115,7 +113,7 @@ export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, on
           const isToday = iso === today
           const future = iso > today
           const p = parseLocal(iso)
-          const label = `${capitalize(fmtDateLong(iso))}${acts.length ? `, ${acts.length} activité${acts.length > 1 ? 's' : ''}${runs ? ` dont ${runs} course${runs > 1 ? 's' : ''}` : ''}` : ', aucune activité'}`
+          const label = `${capitalize(fmtDateLong(iso))}${acts.length ? `${t('session.calendar.activities', { count: acts.length })}${runs ? t('session.calendar.runs', { count: runs }) : ''}` : t('session.calendar.none')}`
           return (
             <button
               key={iso}
@@ -151,12 +149,12 @@ export function MiniCalendar({ year, month0, onMonthChange, byDate, selected, on
       </div>
       <p className="mt-2 flex items-center gap-3 text-[11px] text-ink-3">
         <span className="flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" /> Course
+          <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" /> {t('session.calendar.run')}
         </span>
         <span className="flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-ink-3/70" aria-hidden="true" /> Autre activité
+          <span className="size-1.5 rounded-full bg-ink-3/70" aria-hidden="true" /> {t('session.calendar.other')}
         </span>
-        <span className="sr-only">{WEEKDAYS_LONG.join(', ')}</span>
+        <span className="sr-only">{weekdayNames('long').join(', ')}</span>
       </p>
     </div>
   )

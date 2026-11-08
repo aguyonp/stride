@@ -5,6 +5,7 @@ import type { Me } from '../../api/types'
 import { initials } from '../../lib/format'
 import { ui } from '../../state/ui'
 import { MenuItem, Popover } from '../ui/Popover'
+import { t } from '../../i18n'
 
 export function UserMenu({ me }: { me: Me }) {
   const [, navigate] = useLocation()
@@ -12,7 +13,7 @@ export function UserMenu({ me }: { me: Me }) {
   return (
     <Popover
       trigger={(p) => (
-        <button {...p} type="button" className="icon-btn bg-accent/15 text-[0.8rem] font-semibold text-accent" aria-label={`Compte : ${me.displayName}`}>
+        <button {...p} type="button" className="icon-btn bg-accent/15 text-[0.8rem] font-semibold text-accent" aria-label={t('layout.userMenu.account', { name: me.displayName })}>
           {initials(me.displayName)}
         </button>
       )}
@@ -21,30 +22,30 @@ export function UserMenu({ me }: { me: Me }) {
         <>
           <div className="border-b border-line px-3 pt-2 pb-2.5">
             <p className="truncate text-sm font-semibold text-ink">{me.displayName}</p>
-            <p className="text-xs text-ink-3">{me.role === 'admin' ? 'Administrateur' : 'Athlète'}</p>
+            <p className="text-xs text-ink-3">{me.role === 'admin' ? t('layout.userMenu.admin') : t('layout.userMenu.athlete')}</p>
           </div>
           <div className="pt-1.5">
             <MenuItem icon={<Search />} onSelect={() => (close(), ui.openCommand())}>
-              Rechercher
+              {t('layout.userMenu.search')}
             </MenuItem>
             <MenuItem icon={<Footprints />} onSelect={() => (close(), navigate('/shoes'))}>
-              Chaussures
+              {t('layout.userMenu.shoes')}
             </MenuItem>
             <MenuItem icon={<Share2 />} onSelect={() => (close(), navigate('/health#partage'))}>
-              Partage Kiné & Coach
+              {t('layout.userMenu.share')}
             </MenuItem>
             <MenuItem icon={<Settings />} onSelect={() => (close(), navigate('/settings'))}>
-              Réglages
+              {t('layout.userMenu.settings')}
             </MenuItem>
             <MenuItem icon={<MessageSquarePlus />} onSelect={() => (close(), ui.openFeedback())}>
-              Donner un avis
+              {t('layout.userMenu.feedback')}
             </MenuItem>
             <MenuItem icon={<KeyRound />} onSelect={() => (close(), navigate('/settings#passkeys'))}>
-              Mes passkeys
+              {t('layout.userMenu.passkeys')}
             </MenuItem>
             {me.role === 'admin' && (
               <MenuItem icon={<ShieldCheck />} onSelect={() => (close(), navigate('/admin'))}>
-                Administration
+                {t('layout.userMenu.administration')}
               </MenuItem>
             )}
             <MenuItem
@@ -55,7 +56,7 @@ export function UserMenu({ me }: { me: Me }) {
                 logout.mutate(undefined, { onSettled: () => navigate('/login', { replace: true }) })
               }}
             >
-              Se déconnecter
+              {t('layout.userMenu.logout')}
             </MenuItem>
           </div>
         </>

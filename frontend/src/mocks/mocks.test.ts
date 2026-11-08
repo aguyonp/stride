@@ -6,6 +6,10 @@ import { visibleItems } from './domain'
 import { setFlags } from './flags'
 import { activityReport, dayReport, DIRECTIVE, multiReport } from './report'
 import { buildActivityView, buildDayView } from './view'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 function setup(flags: string[]) {
   setFlags(flags)

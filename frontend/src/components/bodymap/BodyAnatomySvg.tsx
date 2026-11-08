@@ -3,6 +3,7 @@ import type { BodySide, BodyZone, BodyZoneSummary } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtNumber } from '../../lib/format'
 import { ALL_BODY_ZONES, BODY_SIDE_LABEL, BODY_ZONE_META, effectiveZoneScore, painScoreTone } from './bodyMapMeta'
+import { t } from '../../i18n'
 
 interface BodyAnatomySvgProps {
   zones: BodyZoneSummary[]
@@ -39,8 +40,8 @@ export function BodyAnatomySvg({
     const sideTxt = summary?.latestSide ? ` (${BODY_SIDE_LABEL[summary.latestSide].toLowerCase()})` : ''
     const ariaLabel =
       score > 0
-        ? `${meta.label}${sideTxt} : intensité ${fmtNumber(score, 1, { trim: true })} sur 10`
-        : `${meta.label} : aucune gêne signalée`
+        ? t('health.map.zoneAria', { label: meta.label, side: sideTxt, score: fmtNumber(score, 1, { trim: true }) })
+        : t('health.map.zoneAriaNone', { label: meta.label })
 
     if (readOnly) {
       return {
@@ -101,27 +102,27 @@ export function BodyAnatomySvg({
         viewBox="0 0 560 430"
         className="mx-auto h-auto w-full max-w-[35rem]"
         role="img"
-        aria-label="Cartographie anatomique antérieure, postérieure et plantaire du coureur"
+        aria-label={t('health.map.aria')}
       >
         {/* Column headers & L/R orientation */}
         <text x="140" y="22" textAnchor="middle" fill="var(--text-2)" fontSize="12" fontWeight="600">
-          Vue antérieure
+          {t('health.map.front')}
         </text>
         <text x="82" y="42" textAnchor="middle" fill="var(--text-3)" fontSize="10" fontWeight="500">
-          D
+          {t('common.misc.rightShort')}
         </text>
         <text x="198" y="42" textAnchor="middle" fill="var(--text-3)" fontSize="10" fontWeight="500">
-          G
+          {t('common.misc.leftShort')}
         </text>
 
         <text x="420" y="22" textAnchor="middle" fill="var(--text-2)" fontSize="12" fontWeight="600">
-          Vue postérieure
+          {t('health.map.back')}
         </text>
         <text x="362" y="42" textAnchor="middle" fill="var(--text-3)" fontSize="10" fontWeight="500">
-          G
+          {t('common.misc.leftShort')}
         </text>
         <text x="478" y="42" textAnchor="middle" fill="var(--text-3)" fontSize="10" fontWeight="500">
-          D
+          {t('common.misc.rightShort')}
         </text>
 
         {/* Center divider */}
@@ -157,7 +158,7 @@ export function BodyAnatomySvg({
           stroke="var(--line)"
         />
         <text x="280" y="387" textAnchor="middle" fill="var(--text-3)" fontSize="10" fontWeight="600">
-          Vue plantaire (talon, voûte, avant-pied)
+          {t('health.map.plantar')}
         </text>
         <text x="168" y="405" textAnchor="middle" fill="var(--text-3)" fontSize="9.5">
           D
@@ -368,21 +369,21 @@ export function BodyAnatomySvg({
       {/* Compact legend + quick zone buttons */}
       <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[11px] text-ink-3">
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full border border-line-strong bg-track" aria-hidden="true" /> 0 R.A.S.
+          <span className="size-2.5 rounded-full border border-line-strong bg-track" aria-hidden="true" /> {t('health.map.none')}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-ok" aria-hidden="true" /> 1–3 Légère
+          <span className="size-2.5 rounded-full bg-ok" aria-hidden="true" /> {t('health.map.mild')}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-warn" aria-hidden="true" /> 4–6 Modérée
+          <span className="size-2.5 rounded-full bg-warn" aria-hidden="true" /> {t('health.map.moderate')}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-danger" aria-hidden="true" /> 7–10 Forte
+          <span className="size-2.5 rounded-full bg-danger" aria-hidden="true" /> {t('health.map.severe')}
         </span>
       </div>
 
       {!readOnly && onSelectZone && (
-        <div className="mt-3 flex flex-wrap justify-center gap-1.5" aria-label="Sélection rapide de zone">
+        <div className="mt-3 flex flex-wrap justify-center gap-1.5" aria-label={t('health.map.quickSelect')}>
           {ALL_BODY_ZONES.map((z) => {
             const summary = byZone.get(z)
             const score = effectiveZoneScore(summary)

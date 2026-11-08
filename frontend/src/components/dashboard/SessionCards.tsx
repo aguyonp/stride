@@ -5,6 +5,7 @@ import { teLabel } from '../../lib/labels'
 import { Card } from '../ui/Card'
 import { NA, Stat, Value } from '../ui/Value'
 import { garminReason } from './reason'
+import { t } from '../../i18n'
 
 export function KpiGrid({ view, className }: { view: ActivityView; className?: string }) {
   const a = view.activity
@@ -12,25 +13,25 @@ export function KpiGrid({ view, className }: { view: ActivityView; className?: s
   return (
     <div className={className}>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat label="Distance" icon={<Route />} emphasis>
+        <Stat label={t('dashboard.cards.distance')} icon={<Route />} emphasis>
           <Value value={a.distanceM === null ? null : a.distanceM / 1000} format={(v) => fmtNumber(v, 2)} unit="km" />
         </Stat>
-        <Stat label="Durée" icon={<Clock />} emphasis sub={a.movingDurationS && a.durationS && a.movingDurationS < a.durationS - 30 ? `en mouvement ${fmtDuration(a.movingDurationS)}` : undefined}>
+        <Stat label={t('dashboard.cards.duration')} icon={<Clock />} emphasis sub={a.movingDurationS && a.durationS && a.movingDurationS < a.durationS - 30 ? t('dashboard.cards.moving', { time: fmtDuration(a.movingDurationS) }) : undefined}>
           <Value value={a.durationS} format={fmtDuration} />
         </Stat>
-        <Stat label="Allure moyenne" icon={<Gauge />} emphasis>
+        <Stat label={t('dashboard.cards.avgPace')} icon={<Gauge />} emphasis>
           <Value value={a.avgPaceSecPerKm} format={fmtPaceValue} unit="/km" />
         </Stat>
-        <Stat label={<abbr title="Grade Adjusted Pace : allure équivalente sur le plat" className="no-underline">GAP (pente)</abbr>} icon={<Mountain />} emphasis sub={!a.sources.includes('garmin') && isNum(a.gapSecPerKm) ? 'calculé (modèle de pente)' : undefined}>
+        <Stat label={<abbr title={t('dashboard.cards.gapTitle')} className="no-underline">{t('dashboard.cards.gapLabel')}</abbr>} icon={<Mountain />} emphasis sub={!a.sources.includes('garmin') && isNum(a.gapSecPerKm) ? t('dashboard.cards.gapComputed') : undefined}>
           <Value value={a.gapSecPerKm} format={fmtPaceValue} unit="/km" />
         </Stat>
-        <Stat label="FC moyenne" icon={<HeartPulse />} sub={a.maxHR ? `max ${a.maxHR} bpm` : undefined}>
+        <Stat label={t('dashboard.cards.avgHr')} icon={<HeartPulse />} sub={a.maxHR ? t('dashboard.cards.maxHr', { value: a.maxHR }) : undefined}>
           <Value value={a.avgHR} format={(v) => fmtNumber(v)} unit="bpm" />
         </Stat>
-        <Stat label="Puissance" icon={<Zap />} sub={a.normPower ? `NP ${fmtNumber(a.normPower)} W` : undefined}>
+        <Stat label={t('dashboard.cards.power')} icon={<Zap />} sub={a.normPower ? `NP ${fmtNumber(a.normPower)} W` : undefined}>
           <Value value={a.avgPower} format={(v) => fmtNumber(v)} unit="W" />
         </Stat>
-        <Stat label="D+ / D−" icon={<TrendingUp />}>
+        <Stat label={t('dashboard.cards.elevation')} icon={<TrendingUp />}>
           <span className="num">
             <Value value={a.elevGainM} format={(v) => `+${fmtNumber(v)}`} />
             <span className="mx-1 text-ink-3">/</span>
@@ -45,15 +46,14 @@ export function KpiGrid({ view, className }: { view: ActivityView; className?: s
   )
 }
 
-const WEATHER_NA = 'Météo indisponible (pas de position GPS, séance en intérieur ou météo désactivée).'
 
 export function WeatherCard({ view, className }: { view: ActivityView; className?: string }) {
   const w = view.weather
   return (
-    <Card title="Météo au départ" icon={<CloudSun className="size-4" />} subtitle={w ? `${w.description || 'Conditions'} · ${w.source}` : undefined} className={className}>
+    <Card title={t('dashboard.cards.weatherTitle')} icon={<CloudSun className="size-4" />} subtitle={w ? `${w.description || t('dashboard.cards.conditions')} · ${w.source}` : undefined} className={className}>
       {!w ? (
         <p className="text-sm text-ink-3">
-          <NA /> — {WEATHER_NA}
+          <NA /> — {t('dashboard.cards.weatherNa')}
         </p>
       ) : (
         <>
@@ -61,12 +61,12 @@ export function WeatherCard({ view, className }: { view: ActivityView; className
             <p className="num text-4xl font-semibold tracking-tight">
               <Value value={w.temperatureC} format={(v) => fmtNumber(v, 1, { trim: true })} unit="°C" />
             </p>
-            {isNum(w.apparentC) && <p className="num pb-1 text-sm text-ink-3">ressenti {fmtNumber(w.apparentC, 1, { trim: true })} °C</p>}
+            {isNum(w.apparentC) && <p className="num pb-1 text-sm text-ink-3">{t('dashboard.cards.feelsLike', { value: fmtNumber(w.apparentC, 1, { trim: true }) })}</p>}
           </div>
           <dl className="num mt-3 grid grid-cols-3 gap-2 text-sm">
             <div className="glass-inset rounded-xl px-2.5 py-2">
               <dt className="flex items-center gap-1 text-[11px] text-ink-3">
-                <Droplets className="size-3.5" aria-hidden="true" /> Humidité
+                <Droplets className="size-3.5" aria-hidden="true" /> {t('dashboard.cards.humidity')}
               </dt>
               <dd className="font-semibold">
                 <Value value={w.humidityPct} format={(v) => fmtNumber(v)} unit="%" />
@@ -74,7 +74,7 @@ export function WeatherCard({ view, className }: { view: ActivityView; className
             </div>
             <div className="glass-inset rounded-xl px-2.5 py-2">
               <dt className="flex items-center gap-1 text-[11px] text-ink-3">
-                <Wind className="size-3.5" aria-hidden="true" /> Vent
+                <Wind className="size-3.5" aria-hidden="true" /> {t('dashboard.cards.wind')}
               </dt>
               <dd className="truncate font-semibold">
                 <Value value={w.windKph} format={(v) => fmtNumber(v)} unit="km/h" />
@@ -83,7 +83,7 @@ export function WeatherCard({ view, className }: { view: ActivityView; className
             </div>
             <div className="glass-inset rounded-xl px-2.5 py-2">
               <dt className="flex items-center gap-1 text-[11px] text-ink-3">
-                <Thermometer className="size-3.5" aria-hidden="true" /> Pluie
+                <Thermometer className="size-3.5" aria-hidden="true" /> {t('dashboard.cards.rain')}
               </dt>
               <dd className="font-semibold">
                 <Value value={w.precipMm} format={(v) => fmtNumber(v, 1, { trim: true })} unit="mm" />
@@ -91,7 +91,8 @@ export function WeatherCard({ view, className }: { view: ActivityView; className
             </div>
           </dl>
           <p className="num mt-2 text-xs text-ink-3">
-            {isNum(w.windGustKph) ? `Rafales ${fmtNumber(w.windGustKph)} km/h · ` : ''}Observé {fmtDateTime(w.observedAt)}
+            {isNum(w.windGustKph) ? t('dashboard.cards.gusts', { value: fmtNumber(w.windGustKph) }) : ''}
+            {t('dashboard.cards.observed', { when: fmtDateTime(w.observedAt) })}
           </p>
         </>
       )}
@@ -103,21 +104,21 @@ export function StravaCard({ view, className }: { view: ActivityView; className?
   const s = view.activity.strava
   const linked = view.activity.sources.includes('strava')
   return (
-    <Card title="Strava" icon={<MessageSquareQuote className="size-4" />} subtitle={s ? 'Titre, description, RPE et équipement' : undefined} className={className}>
+    <Card title="Strava" icon={<MessageSquareQuote className="size-4" />} subtitle={s ? t('dashboard.cards.stravaSubtitle') : undefined} className={className}>
       {!s ? (
         <p className="text-sm text-ink-3">
-          <NA /> — {linked ? 'Détail Strava non disponible pour cette séance.' : 'Séance non liée à Strava (connecte Strava dans Réglages pour récupérer titre, RPE, Relative Effort et chaussures).'}
+          <NA /> — {linked ? t('dashboard.cards.stravaDetailNa') : t('dashboard.cards.stravaNotLinked')}
         </p>
       ) : (
         <div className="space-y-3">
           <div>
             <p className="font-semibold text-ink">{s.title || <NA />}</p>
             {s.description && <p className="mt-0.5 text-sm whitespace-pre-line text-ink-2">{s.description}</p>}
-            {s.privateNote && <p className="mt-1.5 rounded-xl border border-line bg-track/50 px-2.5 py-1.5 text-xs text-ink-2">Note privée : {s.privateNote}</p>}
+            {s.privateNote && <p className="mt-1.5 rounded-xl border border-line bg-track/50 px-2.5 py-1.5 text-xs text-ink-2">{t('dashboard.cards.privateNote', { note: s.privateNote })}</p>}
           </div>
           <dl className="num grid grid-cols-3 gap-2 text-sm">
             <div className="glass-inset rounded-xl px-2.5 py-2">
-              <dt className="text-[11px] text-ink-3">RPE Strava</dt>
+              <dt className="text-[11px] text-ink-3">{t('dashboard.cards.stravaRpe')}</dt>
               <dd className="font-semibold">{isNum(s.rpe) ? `${s.rpe}/10` : <NA />}</dd>
             </div>
             <div className="glass-inset rounded-xl px-2.5 py-2">
@@ -127,7 +128,7 @@ export function StravaCard({ view, className }: { view: ActivityView; className?
               </dd>
             </div>
             <div className="glass-inset min-w-0 rounded-xl px-2.5 py-2">
-              <dt className="text-[11px] text-ink-3">Équipement</dt>
+              <dt className="text-[11px] text-ink-3">{t('dashboard.cards.gear')}</dt>
               <dd className="truncate font-semibold">{s.gearName ?? <NA />}</dd>
             </div>
           </dl>

@@ -13,6 +13,7 @@ export type ErrorCode =
   | 'PROVIDER_UNAVAILABLE'
   | 'PROVIDER_NOT_CONNECTED'
   | 'INVITE_REQUIRED'
+  | 'SHARE_FORBIDDEN'
   | 'INTERNAL'
 
 export interface ApiErrorBody {
@@ -306,6 +307,8 @@ export interface ActivitySummary {
   painDuring: number | null
   hasNotes: boolean
   planStatus: 'done' | 'partial' | 'extra' | null
+  /** Physio/coach remarks left on this session through share links (§15.1), when cheap to expose. */
+  remarkCount?: number
   /** Strava kudos_count; null when unknown (Garmin likes are not exposed). */
   kudos?: number | null
 }
@@ -675,8 +678,12 @@ export interface PlannedSession {
   steps: WorkoutStep[]
   source: PlanSource
   garmin: GarminPush
+  /** Set when a physio/coach share link prescribed the session (§15.1). */
+  prescribedBy?: PrescribedBy | null
+  /** Smart Workout Morphing trace: what was planned before the adaptation (§15.5). */
+  morph?: PlannedSessionMorph | null
 }
-export type PlannedSessionInput = Omit<PlannedSession, 'id' | 'match' | 'steps' | 'source' | 'garmin'> & { steps?: WorkoutStep[]; source?: PlanSource }
+export type PlannedSessionInput = Omit<PlannedSession, 'id' | 'match' | 'steps' | 'source' | 'garmin' | 'prescribedBy' | 'morph'> & { steps?: WorkoutStep[]; source?: PlanSource }
 
 export interface WeekPlan {
   weekStart: string
@@ -776,6 +783,7 @@ export interface PaceTarget {
   minSecPerKm: number
   maxSecPerKm: number
 }
+export type UiLanguage = 'fr' | 'en'
 export interface AthleteProfile {
   focusArea: FocusArea
   focusLabel: string
@@ -783,6 +791,8 @@ export interface AthleteProfile {
   timezone: string
   thresholds: Thresholds
   paceTargets: PaceTarget[]
+  /** UI, report and prompt language (§15.2); null = follow the browser. */
+  language: UiLanguage | null
 }
 export interface FocusPreset {
   focusArea: FocusArea
@@ -865,7 +875,7 @@ export interface WorkoutStep {
   target?: { kind: TargetKind; min?: number; max?: number }
   note?: string
 }
-type PlanSource = 'manual' | 'llm' | 'import'
+export type PlanSource = 'manual' | 'llm' | 'import' | 'share'
 export interface GarminPush {
   status: 'none' | 'pushed' | 'failed' | 'unsupported'
   workoutId: number | null
@@ -1049,8 +1059,10 @@ export interface CalendarEvent {
   endDate: string
   severity: EventSeverity
   note: string
+  /** Set when a physio/coach share link declared the constraint (§15.1). */
+  prescribedBy?: PrescribedBy | null
 }
-export type CalendarEventInput = Omit<CalendarEvent, 'id'>
+export type CalendarEventInput = Omit<CalendarEvent, 'id' | 'prescribedBy'>
 
 export interface PlanPhase {
   id: number
@@ -1086,7 +1098,10 @@ type JobKind =
   | 'llm.analyze'
   | 'llm.plan_generate'
   | 'llm.plan_adapt'
+  | 'llm.morph_refine'
   | 'webhook.deliver'
+  | 'backup.run'
+  | 'backup.upload'
 
 export interface JobStatus {
   id: string
@@ -1142,6 +1157,12 @@ interface StreamLLMDoneEvent {
   analysis?: LLMAnalysis | null
   planDrafts?: PlanDraftsResponse | null
   adaptPreview?: PlanAdaptPreview | null
+  morphPreview?: MorphPreview | null
+}
+
+interface StreamShareUpdatedEvent {
+  kind: 'directive' | 'remark' | 'plan' | 'event'
+  linkId: number
 }
 
 export interface StrideStreamEventMap {
@@ -1151,6 +1172,7 @@ export interface StrideStreamEventMap {
   'alert.triggered': StreamAlertEvent
   'llm.token': StreamLLMTokenEvent
   'llm.done': StreamLLMDoneEvent
+  'share.updated': StreamShareUpdatedEvent
 }
 
 export type PhaseType = 'foundation' | 'build' | 'threshold' | 'specific' | 'assimilation' | 'taper' | 'recovery'
@@ -1361,6 +1383,7 @@ export interface ShareLink {
   periodWeeks: SharePeriodWeeks
   sections: ShareSection[]
   anonymize: boolean
+  permissions: SharePermissions
 }
 
 export type ShareSection = 'activities' | 'health' | 'recovery' | 'load' | 'records' | 'plan' | 'shoes' | 'notes'
@@ -1373,6 +1396,7 @@ export interface ShareLinkInput {
   periodWeeks: SharePeriodWeeks
   sections: ShareSection[]
   anonymize: boolean
+  permissions: SharePermissions
 }
 
 export interface PublicActivityItem {
@@ -1400,6 +1424,8 @@ export interface PublicActivityItem {
   painDuring?: number | null
   painNextMorning?: number | null
   note?: string | null
+  /** This link's remark on the session (§15.1). */
+  remark?: ShareNote | null
 }
 
 export interface PublicLoadPoint {
@@ -1425,6 +1451,8 @@ interface PublicShoeItem {
 // Sections the link does not allow are absent from the payload (never empty placeholders).
 export interface PublicShareView {
   generatedAt: string
+  /** This link's id (§15.6): matches `prescribedBy.linkId` on what the link may edit. */
+  linkId: number
   shareLabel: string
   expiresAt: string | null
   periodWeeks: SharePeriodWeeks
@@ -1452,6 +1480,12 @@ export interface PublicShareView {
   bodyMap?: BodyMapOverview
   records?: PersonalRecord[]
   shoes?: PublicShoeItem[]
+  /** What the recipient may write through the portal (§15.1); absent on 4.1 payloads = read only. */
+  permissions?: SharePermissions
+  /** This link's directive, if any. */
+  directive?: ShareNote | null
+  /** Planning window (today −7 d → +42 d), only with the `planning` permission. */
+  calendar?: { planned: PlannedSession[]; events: CalendarEvent[] }
 }
 
 /* ---------------------------------- 4.1.0 (§14) ---------------------------------- */
@@ -1514,4 +1548,184 @@ export interface ActivitySearchHit {
 export interface SearchResponse {
   query: string
   items: ActivitySearchHit[]
+}
+
+/* ---------------------------------- 4.2.0 (§15) ---------------------------------- */
+
+/** What a share link lets its recipient write (§15.1); all false by default. */
+export interface SharePermissions {
+  comments: boolean
+  planning: boolean
+  activityDetails: boolean
+}
+
+export type ShareNoteKind = 'directive' | 'remark'
+export type ShareAuthorRole = 'physio' | 'coach' | 'other'
+
+export interface DirectiveRestrictions {
+  noIntervals: boolean
+  maxIntensity: 'easy' | 'moderate' | null
+  maxElevLossM: number | null
+  cadenceTargetSpm: number | null
+}
+
+export interface ShareNote {
+  id: number
+  kind: ShareNoteKind
+  linkId: number | null
+  linkLabel: string
+  authorName: string | null
+  authorRole: ShareAuthorRole
+  body: string
+  activityId: number | null
+  validUntil: string | null
+  restrictions: DirectiveRestrictions | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ShareDirectiveInput {
+  authorName?: string | null
+  authorRole?: ShareAuthorRole
+  body: string
+  validUntil?: string | null
+  restrictions?: DirectiveRestrictions | null
+}
+
+export interface ShareRemarkInput {
+  authorName?: string | null
+  authorRole?: ShareAuthorRole
+  body: string
+}
+
+export interface PrescribedBy {
+  linkId: number | null
+  label: string
+  authorName: string | null
+}
+
+export interface PublicActivityLap {
+  index: number
+  label: string
+  durationS: number
+  distanceM: number
+  paceSecPerKm: number | null
+  avgHR: number | null
+  avgCadenceSpm: number | null
+  gctMs: number | null
+  elevGainM: number | null
+  elevLossM: number | null
+}
+
+/** GET /api/public/share/{token}/activities/{id} (activityDetails permission). Never GPS, polyline or place names. */
+export interface PublicActivityDetail {
+  id: number
+  date: string
+  startLocal: string
+  name: string
+  sport: string
+  typeLabel: string
+  distanceM: number | null
+  durationS: number | null
+  avgPaceSecPerKm: number | null
+  gapSecPerKm: number | null
+  avgHR: number | null
+  maxHR: number | null
+  efSpeed: number | null
+  avgCadenceSpm: number | null
+  gctMs: number | null
+  verticalOscillationCm: number | null
+  balanceLeftPct: number | null
+  balanceRightPct: number | null
+  elevGainM: number | null
+  elevLossM: number | null
+  impactLoad: number | null
+  trainingLoad: number | null
+  weather: { temperatureC: number | null; apparentC: number | null; humidityPct: number | null; windKph: number | null; description: string } | null
+  laps: PublicActivityLap[]
+  shoe: { name: string; dropMm: number | null; distanceKm: number } | null
+  painDuring: number | null
+  painNextMorning: number | null
+  remark: ShareNote | null
+}
+
+/* Atomic backups (§15.4) */
+
+export type BackupTrigger = 'manual' | 'daily' | 'pre_migration'
+export type BackupS3Status = 'none' | 'pending' | 'synced' | 'error'
+
+export interface BackupItem {
+  name: string
+  sizeBytes: number
+  sha256: string
+  createdAt: string
+  trigger: BackupTrigger
+  s3: { status: BackupS3Status; key: string | null; syncedAt: string | null; error: string | null }
+}
+
+/** S3 target; the secret key is never returned (`secretKeySet` only). */
+export interface S3Config {
+  endpoint: string
+  region: string
+  bucket: string
+  prefix: string
+  accessKeyId: string
+  secretKeySet: boolean
+  pathStyle: boolean
+  autoUpload: boolean
+  retentionDays: number
+}
+
+/** PUT body: an empty `secretKey` keeps the stored one. */
+export type S3ConfigInput = Omit<S3Config, 'secretKeySet'> & { secretKey: string }
+
+export interface BackupList {
+  items: BackupItem[]
+  s3: S3Config
+  lastSuccess: { local: string | null; s3: string | null }
+  nextScheduledAt: string | null
+}
+
+export interface S3TestResult {
+  ok: boolean
+  latencyMs: number
+  error?: string
+}
+
+/* Smart Workout Morphing (§15.5) */
+
+export type MorphConstraintKind = 'directive' | 'pain' | 'load' | 'heat' | 'wind'
+
+export interface MorphConstraint {
+  kind: MorphConstraintKind
+  label: string
+  detail: string
+  severity: 1 | 2 | 3
+}
+
+export interface MorphChange {
+  field: string
+  stepIndex: number | null
+  before: string
+  after: string
+  reason: string
+}
+
+export interface MorphPreview {
+  sessionId: number
+  constraints: MorphConstraint[]
+  original: PlannedSession
+  proposal: PlannedSession | null
+  changes: MorphChange[]
+}
+
+export type MorphOriginal = Pick<
+  PlannedSession,
+  'title' | 'targetDurationS' | 'targetDistanceM' | 'targetPaceMinSecPerKm' | 'targetPaceMaxSecPerKm' | 'targetCadenceSpm' | 'instructions' | 'steps'
+>
+
+export interface PlannedSessionMorph {
+  at: string
+  reasons: string[]
+  original: MorphOriginal
 }

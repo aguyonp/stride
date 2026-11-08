@@ -3,6 +3,7 @@ import { Fragment, useMemo, type ReactNode } from 'react'
 import { fmtNumber } from '../../lib/format'
 import { Dialog } from '../ui/Dialog'
 import type { ReportPayload } from './useReportExport'
+import { t } from '../../i18n'
 
 /** Light markdown highlighting (headings, bold, tables, directive). */
 function renderLine(line: string, i: number): ReactNode {
@@ -48,7 +49,7 @@ interface ReportPreviewProps {
   extra?: ReactNode
 }
 
-export function ReportPreview({ open, onClose, payload, onCopy, onDownload, onShare, canShare, refreshing, title = 'Aperçu du prompt', extra }: ReportPreviewProps) {
+export function ReportPreview({ open, onClose, payload, onCopy, onDownload, onShare, canShare, refreshing, title = t('coach.prompt.previewTitle'), extra }: ReportPreviewProps) {
   const lines = useMemo(() => (payload?.report ?? '').split('\n'), [payload?.report])
   return (
     <Dialog
@@ -56,21 +57,21 @@ export function ReportPreview({ open, onClose, payload, onCopy, onDownload, onSh
       onClose={onClose}
       variant="drawer"
       title={title}
-      description={payload ? `≈ ${fmtNumber(payload.tokens)} tokens · ${fmtNumber(payload.report.length)} caractères · ${payload.filename}` : undefined}
+      description={payload ? t('coach.prompt.previewMeta', { tokens: fmtNumber(payload.tokens), chars: fmtNumber(payload.report.length), file: payload.filename }) : undefined}
       bodyClassName="px-0 py-0"
       footer={
         <div className="space-y-3">
           {extra}
           <div className="flex gap-2">
             <button type="button" className="btn btn-primary flex-1" onClick={onCopy} disabled={!payload || refreshing}>
-              <Copy className="size-4" aria-hidden="true" /> Copier
+              <Copy className="size-4" aria-hidden="true" /> {t('coach.prompt.copyShort')}
             </button>
-            <button type="button" className="btn btn-ghost" onClick={onDownload} disabled={!payload} aria-label="Télécharger en .md">
+            <button type="button" className="btn btn-ghost" onClick={onDownload} disabled={!payload} aria-label={t('coach.prompt.downloadShort')}>
               <Download className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">.md</span>
             </button>
             {canShare && (
-              <button type="button" className="btn btn-ghost" onClick={onShare} disabled={!payload} aria-label="Partager">
+              <button type="button" className="btn btn-ghost" onClick={onShare} disabled={!payload} aria-label={t('coach.prompt.shareShort')}>
                 <Share2 className="size-4" aria-hidden="true" />
               </button>
             )}
@@ -80,7 +81,7 @@ export function ReportPreview({ open, onClose, payload, onCopy, onDownload, onSh
     >
       <pre
         tabIndex={0}
-        aria-label="Texte du prompt"
+        aria-label={t('coach.prompt.promptText')}
         className={`min-h-full px-5 py-4 font-mono text-[12px] leading-[1.6] whitespace-pre-wrap text-ink-2 select-text sm:text-[12.5px] ${refreshing ? 'is-refetching' : ''}`}
         style={{ overflowWrap: 'anywhere' }}
       >

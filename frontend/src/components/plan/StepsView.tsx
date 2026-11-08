@@ -2,12 +2,13 @@ import { Repeat } from 'lucide-react'
 import type { WorkoutStep } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { STEP_LABEL, STEP_TONE, stepAmount, targetText } from './steps'
+import { t } from '../../i18n'
 
 /** Readable workout structure: one row per step, repeats as an indented group. */
 export function StepsView({ steps, className }: { steps: WorkoutStep[]; className?: string }) {
   if (!steps.length) return null
   return (
-    <ol className={cn('space-y-1.5', className)} aria-label="Structure de la séance">
+    <ol className={cn('space-y-1.5', className)} aria-label={t('plan.format.structure')}>
       {steps.map((s, i) => (
         <li key={i}>
           {s.type === 'repeat' ? (

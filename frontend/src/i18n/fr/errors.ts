@@ -1,0 +1,25 @@
+export default {
+  code: {
+    BAD_REQUEST: 'Requête invalide.',
+    UNAUTHORIZED: 'Session expirée : reconnecte-toi.',
+    FORBIDDEN: 'Accès refusé.',
+    NOT_FOUND: 'Introuvable.',
+    GONE: 'Ce contenu n’est plus disponible.',
+    CONFLICT: 'Conflit avec l’état actuel : rafraîchis et réessaie.',
+    PRECONDITION_FAILED: 'Prérequis manquant pour cette action.',
+    RATE_LIMITED: 'Trop de requêtes, réessaie dans un instant.',
+    PROVIDER_UNAUTHORIZED: 'Le fournisseur a refusé l’accès : reconnecte l’intégration.',
+    PROVIDER_UNAVAILABLE: 'Fournisseur indisponible, réessaie plus tard.',
+    PROVIDER_NOT_CONNECTED: 'Intégration non connectée.',
+    INVITE_REQUIRED: 'Une invitation est requise pour créer un compte.',
+    SHARE_FORBIDDEN: 'Ce lien de partage ne permet pas cette action.',
+    INTERNAL: 'Erreur interne du serveur Stride.',
+  },
+  http: {
+    network: 'Serveur Stride injoignable. Vérifie ta connexion.',
+    unauthorized: 'Session expirée : reconnecte-toi.',
+    forbidden: 'Accès refusé.',
+    rateLimited: 'Trop de requêtes, réessaie dans un instant.',
+    status: 'Erreur {status} du serveur Stride.',
+  },
+} as const

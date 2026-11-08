@@ -18,6 +18,7 @@ import { useToast } from '../ui/Toast'
 import { phaseTone } from './longterm'
 import { targetParts, weekLabel } from './planFormat'
 import { stepsSummary } from './steps'
+import { t } from '../../i18n'
 
 type Mode = 'llm' | 'prompt'
 type Step = 'config' | 'paste' | 'preview'
@@ -28,7 +29,7 @@ function PhaseList({ phases }: { phases: PlanPhase[] }) {
   return (
     <section aria-labelledby="gen-phases" className="rounded-2xl bg-track/50 p-3">
       <h3 id="gen-phases" className="label-caps mb-2">
-        Phases jusqu’à l’objectif
+        {t('plan.generate.phases')}
       </h3>
       <ol className="space-y-1.5">
         {phases.map((p, i) => (
@@ -38,7 +39,7 @@ function PhaseList({ phases }: { phases: PlanPhase[] }) {
               <span className="font-semibold text-ink">{p.name}</span>{' '}
               <span className="num text-xs text-ink-3">
                 {fmtDateShort(p.startDate)} → {fmtDateShort(p.endDate)}
-                {p.weeklyVolumeKm ? ` · ${fmtNumber(p.weeklyVolumeKm)} km/sem` : ''}
+                {p.weeklyVolumeKm ? t('plan.generate.perWeek', { km: fmtNumber(p.weeklyVolumeKm) }) : ''}
               </span>
               {p.focus && <span className="block text-xs text-ink-3">{p.focus}</span>}
             </span>
@@ -60,7 +61,7 @@ function DraftList({ drafts, errors, selected, onToggle, onAll }: { drafts: Plan
       {errors.length > 0 && (
         <div role="alert" className="rounded-2xl border border-warn/30 bg-warn/[0.07] p-3">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-warn">
-            <TriangleAlert className="size-4" aria-hidden="true" /> {errors.length} point{errors.length > 1 ? 's' : ''} à vérifier
+            <TriangleAlert className="size-4" aria-hidden="true" /> {t('plan.generate.toCheck', { count: errors.length })}
           </p>
           <ul className="mt-1 list-disc pl-5 text-sm text-ink-2">
             {errors.map((e) => (
@@ -70,13 +71,13 @@ function DraftList({ drafts, errors, selected, onToggle, onAll }: { drafts: Plan
         </div>
       )}
       {drafts.length === 0 ? (
-        <p className="text-sm text-ink-3">Aucune séance exploitable.</p>
+        <p className="text-sm text-ink-3">{t('plan.generate.noDraft')}</p>
       ) : (
         <>
           {drafts.length > 3 && (
             <div className="flex justify-end">
               <button type="button" className="text-xs font-semibold text-accent underline-offset-2 hover:underline" onClick={() => onAll(selected.size !== drafts.length)}>
-                {selected.size === drafts.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                {selected.size === drafts.length ? t('plan.generate.unselectAll') : t('plan.generate.selectAll')}
               </button>
             </div>
           )}
@@ -193,7 +194,7 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
       { sessions: chosen, phases },
       {
         onSuccess: (r) => {
-          toast({ title: `${r.length} séance${r.length > 1 ? 's' : ''} ajoutée${r.length > 1 ? 's' : ''} au planning`, description: phases.length ? `${phases.length} phases enregistrées jusqu’à l’objectif.` : undefined, tone: 'success' })
+          toast({ title: t('plan.generate.added', { count: r.length }), description: phases.length ? t('plan.generate.phasesSaved', { count: phases.length }) : undefined, tone: 'success' })
           onClose()
         },
       },
@@ -209,32 +210,32 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
     step === 'config' ? (
       <div className="flex justify-end gap-2 pb-3">
         <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Annuler
+          {t('common.actions.cancel')}
         </button>
         <button type="button" className="btn btn-primary" onClick={generate} disabled={busy || !startDate}>
           {genMut.isPending || isStreaming ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : effMode === 'llm' ? <Sparkles className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
-          {effMode === 'llm' ? 'Générer' : 'Obtenir le prompt'}
+          {effMode === 'llm' ? t('plan.generate.generate') : t('plan.generate.getPrompt')}
         </button>
       </div>
     ) : step === 'paste' ? (
       <div className="flex justify-between gap-2 pb-3">
         <button type="button" className="btn btn-ghost" onClick={() => setStep('config')}>
-          <ArrowLeft className="size-4" aria-hidden="true" /> Retour
+          <ArrowLeft className="size-4" aria-hidden="true" /> {t('plan.generate.back')}
         </button>
         <button type="button" className="btn btn-primary" onClick={parse} disabled={busy || !answer.trim()}>
           {plan.importText.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ClipboardPaste className="size-4" aria-hidden="true" />}
-          Lire la réponse
+          {t('plan.generate.read')}
         </button>
       </div>
     ) : (
       <div className="flex justify-between gap-2 pb-3">
         <button type="button" className="btn btn-ghost" onClick={() => setStep(effMode === 'llm' ? 'config' : 'paste')}>
-          <ArrowLeft className="size-4" aria-hidden="true" /> Retour
+          <ArrowLeft className="size-4" aria-hidden="true" /> {t('plan.generate.back')}
         </button>
         <button type="button" className="btn btn-primary" onClick={confirm} disabled={busy || (selected.size === 0 && phaseCount === 0)}>
           {plan.bulk.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-          Ajouter {selected.size} séance{selected.size > 1 ? 's' : ''}
-          {phaseCount > 0 ? ` + ${phaseCount} phases` : ''}
+          {t('plan.generate.addSessions', { count: selected.size })}
+          {phaseCount > 0 ? t('plan.generate.plusPhases', { count: phaseCount }) : ''}
         </button>
       </div>
     )
@@ -244,8 +245,8 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
       open={open}
       onClose={onClose}
       size="lg"
-      title="Générer un plan"
-      description={step === 'config' ? 'Stride prépare le contexte (séances récentes, préparation, charge, objectifs) et impose le format de réponse.' : step === 'paste' ? 'Étape 2 : copie le prompt dans ton IA, puis colle sa réponse.' : 'Vérifie les séances avant de les ajouter.'}
+      title={t('plan.generate.title')}
+      description={step === 'config' ? t('plan.generate.configHint') : step === 'paste' ? t('plan.generate.pasteHint') : t('plan.generate.previewHint')}
       footer={footer}
     >
       <div className="space-y-4" aria-busy={busy}>
@@ -253,39 +254,39 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
           <>
             {llmOn && (
               <SegmentedControl<Mode>
-                ariaLabel="Mode"
+                ariaLabel={t('plan.generate.mode')}
                 value={effMode}
                 onChange={setMode}
                 options={[
-                  { value: 'llm', label: 'Mon IA connectée', icon: <Bot /> },
-                  { value: 'prompt', label: 'Copier-coller', icon: <ClipboardPaste /> },
+                  { value: 'llm', label: t('plan.generate.connected'), icon: <Bot /> },
+                  { value: 'prompt', label: t('plan.generate.copyPaste'), icon: <ClipboardPaste /> },
                 ]}
               />
             )}
             {!llmOn && llm.isSuccess && (
               <p className="text-xs text-ink-3">
-                Aucune IA connectée :{' '}
+                {t('plan.generate.noAi')}{' '}
                 <Link href="/settings#ia" className="underline underline-offset-2" onClick={onClose}>
-                  brancher mon IA
+                  {t('plan.generate.connectAi')}
                 </Link>{' '}
-                ou utilise le copier-coller (ChatGPT, Claude, Gemini…).
+                {t('plan.generate.orCopyPaste')}
               </p>
             )}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Horizon" className={horizon === 'goal' && goals.length > 1 ? 'sm:col-span-2' : undefined} hint={horizon === 'goal' ? 'Au-delà de 3 semaines : phases jusqu’à la date + séances détaillées des 2 à 4 prochaines semaines.' : undefined}>
+              <Field label={t('plan.generate.horizon')} className={horizon === 'goal' && goals.length > 1 ? 'sm:col-span-2' : undefined} hint={horizon === 'goal' ? t('plan.generate.horizonHint') : undefined}>
                 {(p) => (
                   <select {...p} className="field" value={horizon} onChange={(e) => setHorizon(e.target.value as PlanHorizon)}>
-                    <option value="session">1 séance</option>
-                    <option value="week">7 jours</option>
-                    <option value="2weeks">14 jours</option>
+                    <option value="session">{t('plan.generate.oneSession')}</option>
+                    <option value="week">{t('plan.generate.days', { n: 7 })}</option>
+                    <option value="2weeks">{t('plan.generate.days', { n: 14 })}</option>
                     <option value="goal" disabled={!goal}>
-                      {goal ? `Jusqu’à l’échéance de mon objectif (${fmtDateShort(goal.targetDate as string)})` : 'Jusqu’à l’échéance de mon objectif (aucun objectif daté)'}
+                      {goal ? t('plan.generate.untilGoal', { date: fmtDateShort(goal.targetDate as string) }) : t('plan.generate.untilGoalNone')}
                     </option>
                   </select>
                 )}
               </Field>
               {horizon === 'goal' && goals.length > 1 && (
-                <Field label="Objectif">
+                <Field label={t('plan.generate.goal')}>
                   {(p) => (
                     <select {...p} className="field" value={goal?.id} onChange={(e) => setGoalId(Number(e.target.value))}>
                       {goals.map((g) => (
@@ -297,9 +298,9 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
                   )}
                 </Field>
               )}
-              <Field label="À partir du">{(p) => <input {...p} type="date" className="field" value={startDate} min={today} onChange={(e) => setStartDate(e.target.value)} />}</Field>
-              <Field label="Précision pour le coach (facultatif)" className="sm:col-span-2">
-                {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Ex. pas de séance le jeudi, sortie longue le dimanche" />}
+              <Field label={t('plan.generate.from')}>{(p) => <input {...p} type="date" className="field" value={startDate} min={today} onChange={(e) => setStartDate(e.target.value)} />}</Field>
+              <Field label={t('plan.generate.note')} className="sm:col-span-2">
+                {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder={t('plan.generate.notePlaceholder')} />}
               </Field>
             </div>
           </>
@@ -309,15 +310,15 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
           <>
             <div>
               <div className="mb-1.5 flex items-center justify-between gap-2">
-                <p className="text-sm font-medium text-ink-2">1. Prompt à copier</p>
+                <p className="text-sm font-medium text-ink-2">{t('plan.generate.promptStep')}</p>
                 <span className="num text-xs text-ink-3">≈ {fmtNumber(prompt.tokensEstimate)} tokens</span>
               </div>
-              <textarea readOnly className="field num min-h-36 resize-y font-mono text-xs" value={prompt.prompt} aria-label="Prompt de génération du plan" onFocus={(e) => e.currentTarget.select()} />
-              <button type="button" className="btn btn-ghost mt-2" onClick={async () => toast((await copyText(prompt.prompt)) ? { title: 'Prompt copié', tone: 'success' } : { title: 'Copie impossible', tone: 'error' })}>
-                <Copy className="size-4" aria-hidden="true" /> Copier le prompt
+              <textarea readOnly className="field num min-h-36 resize-y font-mono text-xs" value={prompt.prompt} aria-label={t('plan.generate.promptAria')} onFocus={(e) => e.currentTarget.select()} />
+              <button type="button" className="btn btn-ghost mt-2" onClick={async () => toast((await copyText(prompt.prompt)) ? { title: t('plan.generate.copied'), tone: 'success' } : { title: t('plan.generate.copyFailed'), tone: 'error' })}>
+                <Copy className="size-4" aria-hidden="true" /> {t('plan.generate.copy')}
               </button>
             </div>
-            <Field label="2. Réponse de l’IA" hint="Colle la réponse complète : Stride lit le premier bloc ```json (format stride-plan).">
+            <Field label={t('plan.generate.answer')} hint={t('plan.generate.answerHint')}>
               {(p) => <textarea {...p} className="field min-h-36 resize-y font-mono text-xs" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder={horizon === 'goal' ? '```json\n{"format":"stride-plan","version":2,"phases":[…],"sessions":[…]}\n```' : '```json\n{"format":"stride-plan","version":1,"sessions":[…]}\n```'} />}
             </Field>
           </>
@@ -345,7 +346,7 @@ export function GenerateDialog({ open, onClose, today, goals = [], initialHorizo
           <div className="space-y-2 rounded-2xl border border-accent/25 bg-track/35 p-3">
             <p className="flex items-center gap-2 text-sm text-ink-2">
               <Loader2 className="size-4 animate-spin text-accent" aria-hidden="true" />
-              {liveStream?.text ? 'Flux de génération IA en direct…' : 'Ton IA prépare le plan…'}
+              {liveStream?.text ? t('plan.generate.streaming') : t('plan.generate.preparing')}
             </p>
             {liveStream?.text && (
               <pre className="scroll-thin max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-ink-3">

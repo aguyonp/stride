@@ -3,10 +3,12 @@ import { Redirect, Route, Switch, useLocation, useSearch } from 'wouter'
 import { useAuthState } from './api/queries'
 import { AppShell } from './components/layout/AppShell'
 import { Spinner } from './components/ui/Misc'
+import { useProfileLanguage } from './i18n/useLanguage'
 import { LoginView } from './views/auth/LoginView'
 import { RegisterView } from './views/auth/RegisterView'
 import { DashboardView } from './views/dashboard/DashboardView'
 import { BootErrorView, ForbiddenView, NotFoundView } from './views/StateViews'
+import { t } from './i18n'
 
 const OnboardingView = lazy(() => import('./views/onboarding/OnboardingView'))
 const PlanView = lazy(() => import('./views/plan/PlanView'))
@@ -30,7 +32,7 @@ function Lazy({ children }: { children: ReactNode }) {
     <Suspense
       fallback={
         <div className="grid min-h-[40vh] place-items-center">
-          <Spinner label="Chargement…" />
+          <Spinner label={t('layout.app.loading')} />
         </div>
       }
     >
@@ -44,6 +46,7 @@ export default function App() {
   const search = useSearch()
   const shareMatch = /^\/share\/([^/?#]+)$/.exec(path)
   const auth = useAuthState(!shareMatch)
+  useProfileLanguage(!shareMatch && Boolean(auth.data?.authenticated && auth.data.user))
 
   if (shareMatch) {
     return (
@@ -57,7 +60,7 @@ export default function App() {
     return (
       <AppShell me={null}>
         <div className="grid min-h-[60vh] place-items-center">
-          <Spinner label="Connexion à Stride…" />
+          <Spinner label={t('layout.app.connecting')} />
         </div>
       </AppShell>
     )

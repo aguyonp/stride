@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
+import { t } from '../../i18n'
 
 interface DialogProps {
   open: boolean
@@ -83,7 +84,7 @@ export function Dialog({ open, onClose, title, description, children, footer, va
           </div>
           <div className="flex flex-none items-center gap-2">
             {headerExtra}
-            <button type="button" className="icon-btn size-9" onClick={onClose} aria-label="Fermer">
+            <button type="button" className="icon-btn size-9" onClick={onClose} aria-label={t('common.actions.close')}>
               <X className="size-4" />
             </button>
           </div>

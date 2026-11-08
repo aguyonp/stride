@@ -1,6 +1,7 @@
 import { CircleCheck, Info, OctagonAlert, X } from 'lucide-react'
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
+import { t } from '../../i18n'
 
 type Tone = 'success' | 'error' | 'info'
 interface ToastItem {
@@ -47,26 +48,26 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         aria-atomic="false"
         className="pointer-events-none fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-[60] flex flex-col items-center gap-2 px-4 lg:top-auto lg:right-6 lg:bottom-6 lg:left-auto lg:items-end"
       >
-        {items.map((t) => (
+        {items.map((item) => (
           <div
-            key={t.id}
-            role={t.tone === 'error' ? 'alert' : 'status'}
+            key={item.id}
+            role={item.tone === 'error' ? 'alert' : 'status'}
             className={cn(
               'glass-bar pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl px-4 py-3 animate-[toast-in_.28s_var(--ease-out-soft)_both]',
             )}
           >
-            {t.tone === 'success' ? (
+            {item.tone === 'success' ? (
               <CircleCheck className="mt-0.5 size-5 flex-none text-ok" aria-hidden="true" />
-            ) : t.tone === 'info' ? (
+            ) : item.tone === 'info' ? (
               <Info className="mt-0.5 size-5 flex-none text-info" aria-hidden="true" />
             ) : (
               <OctagonAlert className="mt-0.5 size-5 flex-none text-danger" aria-hidden="true" />
             )}
             <div className="min-w-0 flex-1">
-              <p className="num text-sm font-semibold text-ink">{t.title}</p>
-              {t.description && <p className="mt-0.5 text-xs text-ink-2">{t.description}</p>}
+              <p className="num text-sm font-semibold text-ink">{item.title}</p>
+              {item.description && <p className="mt-0.5 text-xs text-ink-2">{item.description}</p>}
             </div>
-            <button type="button" className="-mr-1 grid size-7 place-items-center rounded-full text-ink-3 hover:text-ink" onClick={() => dismiss(t.id)} aria-label="Fermer la notification">
+            <button type="button" className="-mr-1 grid size-7 place-items-center rounded-full text-ink-3 hover:text-ink" onClick={() => dismiss(item.id)} aria-label={t('common.ui.closeNotification')}>
               <X className="size-4" />
             </button>
           </div>

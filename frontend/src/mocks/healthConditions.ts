@@ -3,6 +3,7 @@
 
 import type { AthleteProfile, BodyZone, HealthCondition, HealthConditionCatalog, HealthZone } from '../api/types'
 import { ALL_BODY_ZONES, BODY_ZONE_META } from '../components/bodymap/bodyMapMeta'
+import { getLang, type Lang } from '../i18n/lang'
 
 type MockCondition = HealthCondition & { preset?: AthleteProfile['focusArea'] }
 
@@ -61,12 +62,54 @@ const BY_ZONE: Record<BodyZone, MockCondition[]> = {
   ],
 }
 
-export const MOCK_CONDITION_CATALOG: HealthConditionCatalog = {
-  zones: ALL_BODY_ZONES.map((zone) => ({
-    zone,
-    zoneLabel: BODY_ZONE_META[zone].label,
-    conditions: [...BY_ZONE[zone].map(({ key, label }) => ({ key, label })), OTHER],
-  })),
+/** English labels of the catalog (§15.2: the backend localizes them from `Accept-Language`). */
+const EN_LABEL: Record<string, string> = {
+  other: 'Other (specify)',
+  patellofemoral_pain: 'Patellofemoral pain syndrome',
+  patellar_tendinopathy: 'Patellar tendinopathy',
+  pes_anserine_tendinopathy: 'Pes anserine tendinopathy',
+  meniscus_tear: 'Meniscus tear',
+  knee_ligament_sprain: 'Knee sprain (ligament)',
+  medial_tibial_stress: 'Medial tibial stress syndrome (shin splints)',
+  tibial_stress_fracture: 'Tibial stress fracture',
+  compartment_syndrome: 'Compartment syndrome',
+  iliotibial_band_syndrome: 'Iliotibial band syndrome',
+  achilles_tendinopathy: 'Achilles tendinopathy',
+  retrocalcaneal_bursitis: 'Retrocalcaneal bursitis',
+  achilles_partial_tear: 'Partial Achilles tendon tear',
+  plantar_fasciitis: 'Plantar fasciitis',
+  calcaneal_stress_fracture: 'Calcaneal stress fracture',
+  hamstring_strain: 'Hamstring strain',
+  calf_strain: 'Calf strain',
+  proximal_hamstring_tendinopathy: 'Proximal hamstring tendinopathy',
+  ankle_sprain: 'Ankle sprain',
+  ankle_fracture: 'Ankle fracture (malleolus)',
+  peroneal_tendinopathy: 'Peroneal tendinopathy',
+  tibialis_posterior_tendinopathy: 'Tibialis posterior tendinopathy',
+  chronic_ankle_instability: 'Chronic ankle instability',
+  metatarsal_stress_fracture: 'Metatarsal stress fracture',
+  metatarsalgia: 'Metatarsalgia',
+  morton_neuroma: 'Morton’s neuroma',
+  gluteal_tendinopathy: 'Gluteal tendinopathy (gluteus medius)',
+  hip_flexor_tendinopathy: 'Hip flexor (psoas) tendinopathy',
+  pubalgia: 'Athletic pubalgia',
+  femoral_neck_stress_fracture: 'Femoral neck stress fracture',
+  low_back_pain: 'Low back pain',
+  sciatica: 'Sciatica',
+  sacroiliac_pain: 'Sacroiliac joint pain',
+}
+
+const labelIn = (c: HealthCondition, lang: Lang) => (lang === 'en' ? (EN_LABEL[c.key] ?? c.label) : c.label)
+
+/** GET /api/health/conditions in the request language (`Accept-Language`, fr or en). */
+export function conditionCatalog(lang: Lang = getLang()): HealthConditionCatalog {
+  return {
+    zones: ALL_BODY_ZONES.map((zone) => ({
+      zone,
+      zoneLabel: BODY_ZONE_META[zone].label,
+      conditions: [...BY_ZONE[zone], OTHER].map((c) => ({ key: c.key, label: labelIn(c, lang) })),
+    })),
+  }
 }
 
 const find = (zone: BodyZone, key: string | null | undefined): MockCondition | undefined => (key === OTHER.key ? OTHER : BY_ZONE[zone].find((c) => c.key === key))
@@ -83,9 +126,10 @@ export function normalizeCondition(z: HealthZone): { zone: HealthZone } | { erro
   return { zone: { ...base, condition, customLabel } }
 }
 
-export function conditionLabelOf(z: HealthZone): string | null {
+export function conditionLabelOf(z: HealthZone, lang: Lang = getLang()): string | null {
   if (z.condition === OTHER.key) return z.customLabel ?? null
-  return find(z.zone, z.condition)?.label ?? null
+  const c = find(z.zone, z.condition)
+  return c ? labelIn(c, lang) : null
 }
 
 /** Dedicated preset of a condition, `other` for any other condition, null without condition. */

@@ -3,6 +3,7 @@ import { Link, useLocation } from 'wouter'
 import { cn } from '../../lib/cn'
 import { ui } from '../../state/ui'
 import { isActive, NAV } from './nav'
+import { t } from '../../i18n'
 
 /** Mobile dock: four destinations + a central quick « Ressenti » action for one-thumb use after a run. */
 export function BottomNav() {
@@ -27,7 +28,7 @@ export function BottomNav() {
     )
   }
   return (
-    <nav aria-label="Navigation principale" className="bottom-dock lg:hidden">
+    <nav aria-label={t('layout.nav.main')} className="bottom-dock lg:hidden">
       <ul className="mx-auto grid max-w-lg grid-cols-5 items-center px-2 pt-1">
         {left.map(link)}
         <li className="flex justify-center">
@@ -35,7 +36,7 @@ export function BottomNav() {
             type="button"
             onClick={ui.openFeeling}
             className="btn btn-primary -mt-5 size-14 flex-col gap-0 rounded-[20px] p-0 text-[10px] shadow-[0_10px_24px_-8px_var(--shadow-1)]"
-            aria-label="Saisir mon ressenti sur la dernière séance"
+            aria-label={t('layout.nav.feeling')}
           >
             <HeartPulse className="size-6" aria-hidden="true" />
           </button>

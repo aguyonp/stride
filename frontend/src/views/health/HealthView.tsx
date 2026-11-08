@@ -18,6 +18,7 @@ import { PainScale } from '../../components/feeling/PainScale'
 import { HealthStatusCard } from '../../components/health/HealthStatusCard'
 import { primaryZone } from '../../components/health/healthStatus'
 import { ShareLinksPanel } from '../../components/share/ShareLinksPanel'
+import { ShareNotesCard } from '../../components/share/ShareNotesCard'
 import { Card } from '../../components/ui/Card'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Dialog } from '../../components/ui/Dialog'
@@ -29,6 +30,7 @@ import { useToast } from '../../components/ui/Toast'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { cn } from '../../lib/cn'
 import { capitalize, fmtDateLong, fmtDateShort, fmtNumber, todayISO } from '../../lib/format'
+import { t } from '../../i18n'
 
 type WindowDays = 30 | 90 | 180
 
@@ -63,9 +65,9 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
   const busy = mut.createEntry.isPending || mut.updateEntry.isPending
 
   const submit = () => {
-    if (!date) return setErrMsg('Indique une date.')
+    if (!date) return setErrMsg(t('health.view.dateRequired'))
     const score = painScore ?? 0
-    if (score < 0 || score > 10) return setErrMsg('Douleur entre 0 et 10.')
+    if (score < 0 || score > 10) return setErrMsg(t('health.view.painRange'))
     setErrMsg(null)
 
     const payload: BodyStressInput = {
@@ -83,7 +85,7 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
         { id: entry.id, ...payload },
         {
           onSuccess: () => {
-            toast({ title: 'Entrée corporelle mise à jour', tone: 'success' })
+            toast({ title: t('health.view.entryUpdated'), tone: 'success' })
             onClose()
           },
           onError: (e) => setErrMsg(e.message),
@@ -92,7 +94,7 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
     } else {
       mut.createEntry.mutate(payload, {
         onSuccess: () => {
-          toast({ title: 'Signal corporel enregistré', description: BODY_ZONE_META[zone].label, tone: 'success' })
+          toast({ title: t('health.view.entrySaved'), description: BODY_ZONE_META[zone].label, tone: 'success' })
           onClose()
         },
         onError: (e) => setErrMsg(e.message),
@@ -105,26 +107,26 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
       open={open}
       onClose={onClose}
       variant="drawer"
-      title={entry ? 'Modifier le signal corporel' : 'Enregistrer un signal corporel'}
-      description="Documente la gêne à chaud et le ressenti à froid le lendemain matin (J+1) pour affiner les corrélations."
+      title={entry ? t('health.view.editTitle') : t('health.view.newTitle')}
+      description={t('health.view.formHint')}
       footer={
         <div className="flex justify-end gap-2 pb-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-            Enregistrer
+            {t('common.actions.save')}
           </button>
         </div>
       }
     >
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Date">
+          <Field label={t('health.view.date')}>
             {(p) => <input {...p} type="date" className="field num" value={date} max={today} onChange={(e) => setDate(e.target.value)} />}
           </Field>
-          <Field label="Zone anatomique">
+          <Field label={t('health.view.zone')}>
             {(p) => (
               <select {...p} className="field" value={zone} onChange={(e) => setZone(e.target.value as BodyZone)}>
                 {ALL_BODY_ZONES.map((z) => (
@@ -138,34 +140,34 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
         </div>
 
         <div>
-          <p className="mb-1.5 text-sm font-medium text-ink-2">Côté concerné</p>
+          <p className="mb-1.5 text-sm font-medium text-ink-2">{t('health.view.side')}</p>
           <SegmentedControl<BodySide>
-            ariaLabel="Côté anatomique"
+            ariaLabel={t('health.view.sideAria')}
             value={side}
             onChange={setSide}
             options={[
-              { value: 'left', label: 'Gauche' },
-              { value: 'right', label: 'Droite' },
-              { value: 'both', label: 'Bilatéral' },
+              { value: 'left', label: BODY_SIDE_LABEL.left },
+              { value: 'right', label: BODY_SIDE_LABEL.right },
+              { value: 'both', label: BODY_SIDE_LABEL.both },
             ]}
           />
         </div>
 
         <PainScale
-          label="Douleur ressentie"
-          hint="Pendant la sortie ou au cours de la journée (0 = aucune, 10 = maximale)"
+          label={t('health.view.pain')}
+          hint={t('health.view.painHint')}
           value={painScore}
           onChange={(v) => setPainScore(v ?? 0)}
         />
 
         <PainScale
-          label="Ressenti à froid J+1"
-          hint="Raideur ou douleur aux premiers pas le lendemain matin (facultatif)"
+          label={t('health.view.cold')}
+          hint={t('health.view.coldHint')}
           value={coldNextDayScore}
           onChange={setColdNextDayScore}
         />
 
-        <Field label="Séance associée (facultatif)">
+        <Field label={t('health.view.session')}>
           {(p) => (
             <select
               {...p}
@@ -173,7 +175,7 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
               value={activityId ?? ''}
               onChange={(e) => setActivityId(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">Aucune séance liée</option>
+              <option value="">{t('health.view.noSession')}</option>
               {recentItems.map((a) => (
                 <option key={a.id} value={a.id}>
                   {fmtDateShort(a.date)} · {a.name}
@@ -183,7 +185,7 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
           )}
         </Field>
 
-        <Field label="Note clinique (facultatif)">
+        <Field label={t('health.view.note')}>
           {(p) => (
             <textarea
               {...p}
@@ -191,7 +193,7 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={800}
-              placeholder="Ex. tiraillement dans les escaliers en descente, disparaît après 10 min d’échauffement"
+              placeholder={t('health.view.notePlaceholder')}
             />
           )}
         </Field>
@@ -203,7 +205,7 @@ function BodyEntryDrawer({ open, entry, initialZone, initialSide, today, onClose
 }
 
 export default function HealthView() {
-  useDocumentTitle('Santé & forme')
+  useDocumentTitle(t('health.view.title'))
   const profile = useProfile()
   const today = todayISO(profile.data?.timezone)
   const [params, setParams] = useSearchParams()
@@ -257,28 +259,30 @@ export default function HealthView() {
   return (
     <div className="animate-in space-y-5">
       <PageHeader
-        title="Santé & forme"
+        title={t('health.view.title')}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <SegmentedControl<string>
-              ariaLabel="Fenêtre d’analyse"
+              ariaLabel={t('health.view.window')}
               size="sm"
               value={String(windowDays)}
               onChange={(v) => setWindowDays(Number(v) as WindowDays)}
               options={[
-                { value: '30', label: '30 j' },
-                { value: '90', label: '90 j' },
-                { value: '180', label: '180 j' },
+                { value: '30', label: t('health.view.days', { n: 30 }) },
+                { value: '90', label: t('health.view.days', { n: 90 }) },
+                { value: '180', label: t('health.view.days', { n: 180 }) },
               ]}
             />
             <button type="button" className="btn btn-primary" onClick={() => openNewForZone()}>
-              <Plus className="size-4" aria-hidden="true" /> Signaler une gêne
+              <Plus className="size-4" aria-hidden="true" /> {t('health.view.report')}
             </button>
           </div>
         }
       />
 
       <HealthStatusCard today={today} />
+
+      <ShareNotesCard today={today} />
 
       {mapQuery.isError && !data ? (
         <InlineError>{mapQuery.error.message}</InlineError>
@@ -293,12 +297,12 @@ export default function HealthView() {
             <Card
               className="lg:col-span-7"
               icon={<Stethoscope className="size-4" />}
-              title="Zones anatomiques"
-              subtitle="Clique une région pour filtrer l’historique ou enregistrer un signal"
+              title={t('health.view.zonesTitle')}
+              subtitle={t('health.view.zonesSubtitle')}
               action={
                 zoneFilter && (
                   <button type="button" className="btn btn-ghost h-8 min-h-8 px-2.5 text-xs" onClick={() => setZoneFilter(null)}>
-                    Toutes les zones
+                    {t('health.view.allZones')}
                   </button>
                 )
               }
@@ -320,8 +324,8 @@ export default function HealthView() {
             <Card
               className="lg:col-span-5"
               icon={<Activity className="size-4" />}
-              title="Synthèse par région"
-              subtitle={`État actuel et tendance sur ${data.windowDays} jours`}
+              title={t('health.view.summaryTitle')}
+              subtitle={t('health.view.summarySubtitle', { days: data.windowDays })}
             >
               <ul className="divide-y divide-line">
                 {ALL_BODY_ZONES.map((zoneKey) => {
@@ -342,11 +346,11 @@ export default function HealthView() {
                             selected && 'text-accent',
                           )}
                         >
-                          <span className="block truncate text-sm font-semibold">{z?.zoneLabel ?? meta.label}</span>
+                          <span className="block truncate text-sm font-semibold">{meta.label}</span>
                           <span className="num mt-0.5 block text-xs text-ink-3">
                             {z?.latestDate
-                              ? `Dernier : ${fmtDateShort(z.latestDate)}${z.latestSide ? ` (${BODY_SIDE_LABEL[z.latestSide]})` : ''} · ${z.entriesCount90d} ép. / 90 j`
-                              : 'Aucun épisode enregistré'}
+                              ? t('health.view.last', { date: fmtDateShort(z.latestDate), side: z.latestSide ? ` (${BODY_SIDE_LABEL[z.latestSide]})` : '', count: z.entriesCount90d })
+                              : t('health.view.noEpisode')}
                           </span>
                         </button>
                         <div className="flex flex-none items-center gap-1.5">
@@ -361,7 +365,7 @@ export default function HealthView() {
                             type="button"
                             className="icon-btn size-8"
                             onClick={() => openNewForZone(zoneKey, z?.latestSide ?? undefined)}
-                            aria-label={`Ajouter une entrée pour ${meta.label}`}
+                            aria-label={t('health.view.addFor', { zone: meta.label })}
                           >
                             <Plus className="size-3.5" />
                           </button>
@@ -378,8 +382,8 @@ export default function HealthView() {
             <Card
               className="lg:col-span-6"
               icon={<Activity className="size-4" />}
-              title="Corrélations biomécaniques & chaussage"
-              subtitle={zoneFilter ? `Facteurs observés sur : ${BODY_ZONE_META[zoneFilter].label}` : `Comparaison des sorties avec gêne vs référence (${windowDays} j)`}
+              title={t('health.view.corrTitle')}
+              subtitle={zoneFilter ? t('health.view.corrZone', { zone: BODY_ZONE_META[zoneFilter].label }) : t('health.view.corrAll', { days: windowDays })}
             >
               <BodyCorrelationList correlations={filteredCorrelations} />
             </Card>
@@ -387,20 +391,20 @@ export default function HealthView() {
             <Card
               className="lg:col-span-6"
               icon={<HeartCrack className="size-4" />}
-              title="Journal des signaux corporels"
-              subtitle={zoneFilter ? `${filteredEntries.length} entrée(s) · ${BODY_ZONE_META[zoneFilter].label}` : `${filteredEntries.length} entrée(s) sur ${windowDays} jours`}
+              title={t('health.view.journal')}
+              subtitle={zoneFilter ? t('health.view.journalZone', { count: filteredEntries.length, zone: BODY_ZONE_META[zoneFilter].label }) : t('health.view.journalAll', { count: filteredEntries.length, days: windowDays })}
             >
               {filteredEntries.length === 0 ? (
                 <EmptyState
                   icon={<Stethoscope />}
-                  title="Aucun signal sur cette période"
+                  title={t('health.view.emptyTitle')}
                   action={
                     <button type="button" className="btn btn-primary" onClick={() => openNewForZone()}>
-                      <Plus className="size-4" aria-hidden="true" /> Enregistrer une gêne
+                      <Plus className="size-4" aria-hidden="true" /> {t('health.view.logPain')}
                     </button>
                   }
                 >
-                  Note tes gênes articulaires ou tendineuses même légères (1–3/10) ainsi que la réaction à froid J+1 pour suivre l’adaptation tissulaire.
+                  {t('health.view.emptyHint')}
                 </EmptyState>
               ) : (
                 <ul className="divide-y divide-line">
@@ -410,13 +414,13 @@ export default function HealthView() {
                       <li key={e.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-ink">{e.zoneLabel || BODY_ZONE_META[e.zone].label}</span>
+                            <span className="font-semibold text-ink">{BODY_ZONE_META[e.zone]?.label ?? e.zoneLabel}</span>
                             <span className="chip h-5 border border-line bg-track px-2 text-[11px] text-ink-2">
                               {BODY_SIDE_LABEL[e.side]}
                             </span>
                             <span className={cn('chip num h-5 border px-2 text-[11px]', tone.badgeCls)}>
-                              Effort {fmtNumber(e.painScore, 1, { trim: true })}/10
-                              {e.coldNextDayScore !== null && ` · J+1 ${fmtNumber(e.coldNextDayScore, 1, { trim: true })}/10`}
+                              {t('health.view.effort', { value: fmtNumber(e.painScore, 1, { trim: true }) })}
+                              {e.coldNextDayScore !== null && t('health.view.nextDay', { value: fmtNumber(e.coldNextDayScore, 1, { trim: true }) })}
                             </span>
                           </div>
                           <p className="num mt-0.5 text-xs text-ink-3">
@@ -437,7 +441,7 @@ export default function HealthView() {
                             type="button"
                             className="icon-btn size-8"
                             onClick={() => setDrawer({ open: true, entry: e, zone: e.zone, side: e.side })}
-                            aria-label={`Modifier le signal du ${fmtDateShort(e.date)}`}
+                            aria-label={t('health.view.editEntry', { date: fmtDateShort(e.date) })}
                           >
                             <Pencil className="size-3.5" />
                           </button>
@@ -445,7 +449,7 @@ export default function HealthView() {
                             type="button"
                             className="icon-btn size-8"
                             onClick={() => setDeleteTarget(e)}
-                            aria-label={`Supprimer le signal du ${fmtDateShort(e.date)}`}
+                            aria-label={t('health.view.deleteEntry', { date: fmtDateShort(e.date) })}
                           >
                             <Trash2 className="size-3.5" />
                           </button>
@@ -477,25 +481,25 @@ export default function HealthView() {
       <ConfirmDialog
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
-        title="Supprimer cette entrée corporelle ?"
+        title={t('health.view.deleteTitle')}
         message={
           deleteTarget && (
             <p>
-              Le signal « {deleteTarget.zoneLabel || BODY_ZONE_META[deleteTarget.zone].label} » du {fmtDateLong(deleteTarget.date)} sera retiré de l’historique et du calcul des corrélations.
+              {t('health.view.deleteBody', { zone: BODY_ZONE_META[deleteTarget.zone]?.label ?? deleteTarget.zoneLabel, date: fmtDateLong(deleteTarget.date) })}
             </p>
           )
         }
-        confirmLabel="Supprimer"
+        confirmLabel={t('common.actions.delete')}
         danger
         busy={mut.removeEntry.isPending}
         onConfirm={() =>
           deleteTarget &&
           mut.removeEntry.mutate(deleteTarget.id, {
             onSuccess: () => {
-              toast({ title: 'Signal corporel supprimé' })
+              toast({ title: t('health.view.deleted') })
               setDeleteTarget(null)
             },
-            onError: (e) => toast({ tone: 'error', title: 'Suppression impossible', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('health.view.deleteFailed'), description: e.message }),
           })
         }
       />

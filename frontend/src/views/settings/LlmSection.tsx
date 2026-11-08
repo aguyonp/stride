@@ -9,6 +9,7 @@ import { InlineError, Spinner } from '../../components/ui/Misc'
 import { useToast } from '../../components/ui/Toast'
 import { fmtDateTime } from '../../lib/format'
 import { Section } from './Section'
+import { t, tx } from '../../i18n'
 
 const DEFAULT_MODEL: Record<LLMProvider, string> = { gemini: 'gemini-2.5-flash', anthropic: 'claude-sonnet-4-5', openai: 'gpt-4.1-mini', openai_compat: 'llama3.1:8b' }
 
@@ -32,15 +33,15 @@ export function LlmSection() {
     m.save.mutate(body, {
       onSuccess: () => {
         setDraft(null)
-        toast({ title: 'IA enregistrée', description: 'Le bouton « Analyser avec mon IA » est disponible sur le tableau de bord.', tone: 'success' })
+        toast({ title: t('settings.llm.saved'), description: t('settings.llm.savedHint'), tone: 'success' })
       },
     })
   }
 
   return (
-    <Section id="ia" title="IA" icon={<Bot />} description="Ton propre fournisseur IA (propre à ton compte) pour analyser une séance, générer ou adapter un plan. La clé est chiffrée côté serveur et n’est jamais réaffichée.">
+    <Section id="ia" title={t('settings.llm.title')} icon={<Bot />} description={t('settings.llm.description')}>
       {cfg.isPending ? (
-        <Spinner label="Chargement…" />
+        <Spinner label={t('common.actions.loading')} />
       ) : (
         <form
           className="space-y-4"
@@ -52,13 +53,13 @@ export function LlmSection() {
           {c?.configured && (
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2">
               <CircleCheck className="size-4 text-ok" aria-hidden="true" />
-              Connecté : <span className="font-semibold text-ink">{PROVIDER_LABEL[c.provider ?? ''] ?? c.provider}</span> · {c.model}
-              {c.keyHint && <span className="num text-ink-3">· clé {c.keyHint}</span>}
-              {c.updatedAt && <span className="text-xs text-ink-3">· mis à jour le {fmtDateTime(c.updatedAt)}</span>}
+              {tx('settings.llm.connected', { provider: <span className="font-semibold text-ink">{PROVIDER_LABEL[c.provider ?? ''] ?? c.provider}</span>, model: c.model })}
+              {c.keyHint && <span className="num text-ink-3">{t('settings.llm.keyHint', { hint: c.keyHint })}</span>}
+              {c.updatedAt && <span className="text-xs text-ink-3">{t('settings.llm.updated', { date: fmtDateTime(c.updatedAt) })}</span>}
             </p>
           )}
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Fournisseur">
+            <Field label={t('settings.llm.provider')}>
               {(p) => (
                 <select
                   {...p}
@@ -72,18 +73,18 @@ export function LlmSection() {
                   <option value="gemini">Gemini (Google)</option>
                   <option value="anthropic">Anthropic (Claude)</option>
                   <option value="openai">OpenAI</option>
-                  <option value="openai_compat">Ollama / compatible OpenAI (URL)</option>
+                  <option value="openai_compat">{t('settings.llm.compat')}</option>
                 </select>
               )}
             </Field>
-            <Field label="Modèle">{(p) => <input {...p} className="field" value={form.model} onChange={(e) => set('model', e.target.value)} required autoComplete="off" spellCheck={false} />}</Field>
+            <Field label={t('settings.llm.model')}>{(p) => <input {...p} className="field" value={form.model} onChange={(e) => set('model', e.target.value)} required autoComplete="off" spellCheck={false} />}</Field>
             {compat && (
-              <Field label="URL de base" hint="Ex. http://ollama:11434 : l’appel part du serveur Stride (les adresses privées doivent être autorisées par l’administrateur).">
+              <Field label={t('settings.llm.baseUrl')} hint={t('settings.llm.baseUrlHint')}>
                 {(p) => <input {...p} className="field" type="url" inputMode="url" placeholder="https://…" value={form.baseUrl} onChange={(e) => set('baseUrl', e.target.value)} required />}
               </Field>
             )}
-            <Field label={compat ? 'Clé API (facultative)' : 'Clé API'} hint={sameProvider && c?.keyHint ? `Clé actuelle ${c.keyHint} : laisse vide pour la conserver.` : 'Écriture seule : elle ne sera plus affichée.'}>
-              {(p) => <input {...p} className="field" type="password" autoComplete="new-password" spellCheck={false} placeholder={sameProvider && c?.keyHint ? `•••• ${c.keyHint}` : 'Colle ta clé'} value={form.apiKey} onChange={(e) => set('apiKey', e.target.value)} required={!compat && !(sameProvider && c?.keyHint)} />}
+            <Field label={compat ? t('settings.llm.apiKeyOptional') : t('settings.llm.apiKey')} hint={sameProvider && c?.keyHint ? t('settings.llm.keepKey', { hint: c.keyHint }) : t('settings.llm.writeOnly')}>
+              {(p) => <input {...p} className="field" type="password" autoComplete="new-password" spellCheck={false} placeholder={sameProvider && c?.keyHint ? `•••• ${c.keyHint}` : t('settings.llm.pasteKey')} value={form.apiKey} onChange={(e) => set('apiKey', e.target.value)} required={!compat && !(sameProvider && c?.keyHint)} />}
             </Field>
           </div>
           {m.save.isError && <InlineError>{m.save.error.message}</InlineError>}
@@ -97,27 +98,27 @@ export function LlmSection() {
           <div className="flex flex-wrap gap-2">
             <button type="submit" className="btn btn-primary" disabled={m.save.isPending}>
               {m.save.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-              Enregistrer
+              {t('common.actions.save')}
             </button>
-            <button type="button" className="btn btn-ghost" disabled={!c?.configured || m.test.isPending || draft !== null} onClick={() => m.test.mutate()} title={draft ? 'Enregistre d’abord tes modifications' : undefined}>
+            <button type="button" className="btn btn-ghost" disabled={!c?.configured || m.test.isPending || draft !== null} onClick={() => m.test.mutate()} title={draft ? t('settings.llm.saveFirst') : undefined}>
               {m.test.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <PlugZap className="size-4" aria-hidden="true" />}
-              Tester
+              {t('common.actions.test')}
             </button>
             {c?.configured && (
               <button type="button" className="btn btn-danger ml-auto" onClick={() => setConfirm(true)}>
-                <Trash2 className="size-4" aria-hidden="true" /> Déconnecter
+                <Trash2 className="size-4" aria-hidden="true" /> {t('settings.llm.disconnect')}
               </button>
             )}
           </div>
-          <p className="text-xs text-ink-3">Le prompt envoyé est le même que « Copier le prompt » (directive d’objectivité en tête). Aucune donnée n’est envoyée sans ton action.</p>
+          <p className="text-xs text-ink-3">{t('settings.llm.footnote')}</p>
         </form>
       )}
       <ConfirmDialog
         open={confirm}
         onClose={() => setConfirm(false)}
-        title="Déconnecter l’IA ?"
-        message="La clé est supprimée du serveur. Les analyses déjà générées restent consultables."
-        confirmLabel="Déconnecter"
+        title={t('settings.llm.confirmTitle')}
+        message={t('settings.llm.confirmBody')}
+        confirmLabel={t('settings.llm.disconnect')}
         danger
         busy={m.remove.isPending}
         onConfirm={() => m.remove.mutate(undefined, { onSuccess: () => setConfirm(false) })}

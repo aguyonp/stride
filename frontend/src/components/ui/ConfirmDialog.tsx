@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Dialog } from './Dialog'
+import { t, tx } from '../../i18n'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -28,7 +29,7 @@ export function ConfirmDialog({ open, onClose, title, message, confirmLabel, dan
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="button" className={danger ? 'btn btn-danger' : 'btn btn-primary'} disabled={blocked || busy} onClick={onConfirm}>
             {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
@@ -42,7 +43,7 @@ export function ConfirmDialog({ open, onClose, title, message, confirmLabel, dan
         {requireText !== undefined && (
           <label className="block">
             <span className="mb-1.5 block text-xs text-ink-3">
-              Tape <strong className="font-mono text-ink">{requireText}</strong> pour confirmer
+              {tx('common.ui.typeToConfirm', { text: <strong className="font-mono text-ink">{requireText}</strong> })}
             </span>
             <input className="field" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" spellCheck={false} />
           </label>

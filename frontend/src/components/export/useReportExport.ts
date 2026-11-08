@@ -3,6 +3,7 @@ import { api } from '../../api/client'
 import { canShare, copyText, downloadText, shareText } from '../../lib/clipboard'
 import { fmtNumber } from '../../lib/format'
 import { useToast } from '../ui/Toast'
+import { t } from '../../i18n'
 
 export interface ReportPayload {
   report: string
@@ -19,9 +20,9 @@ export function useReportExport(payload: ReportPayload | null, onCopyFailed?: ()
     const ok = await copyText(payload.report)
     if (ok) {
       void api.trackAction('prompt.copy').catch(() => {})
-      toast({ title: `Prompt copié ✓ · ≈ ${fmtNumber(payload.tokens)} tokens`, description: 'Colle-le dans ta conversation IA.' })
+      toast({ title: t('coach.prompt.copied', { count: fmtNumber(payload.tokens) }), description: t('coach.prompt.copiedHint') })
     } else {
-      toast({ tone: 'error', title: 'Copie impossible', description: 'Le navigateur bloque le presse-papiers : sélectionne le texte dans l’aperçu.' })
+      toast({ tone: 'error', title: t('coach.prompt.copyFailed'), description: t('coach.prompt.copyFailedHint') })
       onCopyFailed?.()
     }
   }, [payload, toast, onCopyFailed])
@@ -30,13 +31,13 @@ export function useReportExport(payload: ReportPayload | null, onCopyFailed?: ()
     if (!payload) return
     downloadText(payload.filename, payload.report)
     void api.trackAction('prompt.download').catch(() => {})
-    toast({ title: 'Fichier téléchargé', description: payload.filename })
+    toast({ title: t('coach.prompt.downloaded'), description: payload.filename })
   }, [payload, toast])
 
   const share = useCallback(async () => {
     if (!payload) return
     const res = await shareText(payload.title, payload.report)
-    if (res === 'error') toast({ tone: 'error', title: 'Partage impossible' })
+    if (res === 'error') toast({ tone: 'error', title: t('coach.prompt.shareFailed') })
     else if (res === 'shared') void api.trackAction('prompt.share').catch(() => {})
   }, [payload, toast])
 

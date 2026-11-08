@@ -5,6 +5,7 @@ import { fmtDateShort, fmtNumber } from '../../../lib/format'
 import { PHASE_TYPE_META, type CycleZoom } from './cycleMeta'
 import { isCurrentSpan } from './cycleModel'
 import { VolumeLoadGauges } from './Gauges'
+import { t } from '../../../i18n'
 
 export function PhaseList({
   phases,
@@ -19,7 +20,7 @@ export function PhaseList({
   onEditPhase: (p: TrainingPhase) => void
   onSelectWeek: (w: TrainingWeek) => void
 }) {
-  if (phases.length === 0) return <p className="text-sm text-ink-3">Aucun mésocycle enregistré pour ce plan.</p>
+  if (phases.length === 0) return <p className="text-sm text-ink-3">{t('plan.cycles.noPhase')}</p>
   return (
     <ul className="divide-y divide-line">
       {phases.map((p) => {
@@ -32,7 +33,7 @@ export function PhaseList({
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-semibold text-ink">{p.name}</h3>
                   <span className={cn('chip h-5 border px-2 text-[11px]', meta.chipCls)}>{meta.label}</span>
-                  {isCurrent && <span className="chip h-5 bg-accent/15 px-2 text-[10px] text-accent">En cours</span>}
+                  {isCurrent && <span className="chip h-5 bg-accent/15 px-2 text-[10px] text-accent">{t('plan.cycles.current')}</span>}
                   <span className="num text-xs text-ink-3">
                     {fmtDateShort(p.startDate)} → {fmtDateShort(p.endDate)} · {p.weeks.length} sem.
                   </span>
@@ -41,13 +42,13 @@ export function PhaseList({
               </div>
               <div className="flex items-center gap-2">
                 <span className="num text-xs text-ink-3">
-                  {p.actuals.sessionsCompleted}/{p.actuals.sessionsPlanned} séances
+                  {t('plan.cycles.sessionsCount', { done: p.actuals.sessionsCompleted, planned: p.actuals.sessionsPlanned })}
                 </span>
                 <button
                   type="button"
                   className="icon-btn size-8"
                   onClick={() => onEditPhase(p)}
-                  aria-label={`Modifier le mésocycle ${p.name}`}
+                  aria-label={t('plan.cycles.editPhase', { name: p.name })}
                 >
                   <Pencil className="size-3.5" />
                 </button>
@@ -70,11 +71,11 @@ export function PhaseList({
                       w.isAssimilation ? 'border-ok/35 bg-ok/[0.08] text-ink' : 'border-line bg-track/30 text-ink-2',
                     )}
                   >
-                    <span className="num font-semibold text-ink">S{w.weekNumber}</span>
+                    <span className="num font-semibold text-ink">{t('common.extra.weekShort', { n: w.weekNumber })}</span>
                     <span className="num text-ink-3">
                       {fmtNumber(w.actuals.actualVolumeKm, 0)}/{fmtNumber(w.targetVolumeKm ?? w.actuals.plannedVolumeKm, 0)} km
                     </span>
-                    {w.isAssimilation && <span className="text-[10px] font-semibold text-ok">Semaine d’assimilation</span>}
+                    {w.isAssimilation && <span className="text-[10px] font-semibold text-ok">{t('plan.cycles.assimWeek')}</span>}
                   </button>
                 ))}
               </div>

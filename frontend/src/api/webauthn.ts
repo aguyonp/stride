@@ -2,13 +2,11 @@ import { browserSupportsWebAuthn, startAuthentication, startRegistration, WebAut
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 import { api, ApiError, IS_MOCK } from './client'
 import type { Me, Passkey } from './types'
+import { lazyRecord, t } from '../i18n/t'
 
 export type PasskeyIssue = 'insecure' | 'unsupported'
 
-export const ISSUE_MESSAGE: Record<PasskeyIssue, string> = {
-  insecure: 'Les passkeys exigent une connexion sécurisée : ouvre Stride via son adresse https:// (http://localhost est accepté en local).',
-  unsupported: 'Ce navigateur ne prend pas en charge les passkeys (WebAuthn). Mets-le à jour ou utilise un Safari, Chrome, Edge ou Firefox récent.',
-}
+export const ISSUE_MESSAGE: Record<PasskeyIssue, string> = lazyRecord(['insecure', 'unsupported'] as const, (k) => t(`auth.passkey.${k}`))
 
 export function passkeyIssue(): PasskeyIssue | null {
   if (IS_MOCK) return null
@@ -30,36 +28,33 @@ function isCancel(err: unknown): boolean {
   return err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')
 }
 
-const NO_AUTHENTICATOR_REGISTER =
-  'Aucun authentificateur de passkey disponible. Active Windows Hello / Touch ID, utilise un gestionnaire de mots de passe (Bitwarden, 1Password, Proton Pass) ou branche une clé FIDO2.'
-const NO_AUTHENTICATOR_LOGIN =
-  'Aucun authentificateur de passkey disponible sur cet appareil ou navigateur. Active ton gestionnaire de passkeys ou branche ta clé de sécurité.'
+const noAuthenticator = (flow: 'login' | 'register' | 'add') => t(flow === 'login' ? 'auth.passkey.noAuthenticatorLogin' : 'auth.passkey.noAuthenticatorRegister')
 
 export function passkeyErrorMessage(err: unknown, flow: 'login' | 'register' | 'add'): string {
   if (err instanceof ApiError) {
-    if (err.code === 'INVITE_REQUIRED') return 'Une invitation valide est nécessaire pour créer un compte. Utilise le lien reçu de l’administrateur ou saisis ton code.'
+    if (err.code === 'INVITE_REQUIRED') return t('auth.passkey.inviteRequired')
     if (err.status === 0) return err.message
     return err.message
   }
-  if (isCancel(err)) return flow === 'login' ? 'Connexion annulée (ou délai dépassé). Réessaie quand tu es prêt.' : 'Création de la passkey annulée (ou délai dépassé).'
+  if (isCancel(err)) return t(flow === 'login' ? 'auth.passkey.loginCancelled' : 'auth.passkey.createCancelled')
   if (err instanceof WebAuthnError) {
-    if (err.code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED') return 'Cet appareil possède déjà une passkey pour ce compte.'
-    if (err.code === 'ERROR_INVALID_DOMAIN' || err.code === 'ERROR_INVALID_RP_ID') return 'Ce domaine n’est pas autorisé pour les passkeys (HTTPS et domaine configuré requis).'
-    if (err.code === 'ERROR_AUTHENTICATOR_MISSING_DISCOVERABLE_CREDENTIAL_SUPPORT') return 'Cet authentificateur ne sait pas stocker de passkey (clé résidente requise).'
+    if (err.code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED') return t('auth.passkey.alreadyRegistered')
+    if (err.code === 'ERROR_INVALID_DOMAIN' || err.code === 'ERROR_INVALID_RP_ID') return t('auth.passkey.invalidDomain')
+    if (err.code === 'ERROR_AUTHENTICATOR_MISSING_DISCOVERABLE_CREDENTIAL_SUPPORT') return t('auth.passkey.noResidentKey')
     if (err.code === 'ERROR_AUTHENTICATOR_MISSING_USER_VERIFICATION_SUPPORT' || err.code === 'ERROR_AUTO_REGISTER_USER_VERIFICATION_FAILURE') {
-      return 'Cet authentificateur ne permet pas la vérification d’identité requise (code PIN ou biométrie).'
+      return t('auth.passkey.noUserVerification')
     }
     if (err.code === 'ERROR_AUTHENTICATOR_GENERAL_ERROR' || err.code === 'ERROR_AUTHENTICATOR_NO_SUPPORTED_PUBKEYCREDPARAMS_ALG') {
-      return flow === 'login' ? NO_AUTHENTICATOR_LOGIN : NO_AUTHENTICATOR_REGISTER
+      return noAuthenticator(flow)
     }
   }
   if (err instanceof Error) {
     if (err.name === 'SecurityError') return ISSUE_MESSAGE.insecure
     if (err.name === 'UnknownError' || err.name === 'NotSupportedError') {
-      return flow === 'login' ? NO_AUTHENTICATOR_LOGIN : NO_AUTHENTICATOR_REGISTER
+      return noAuthenticator(flow)
     }
   }
-  return flow === 'login' ? 'Impossible d’utiliser la passkey. Vérifie que tu en as une pour ce site.' : 'La passkey n’a pas pu être créée.'
+  return t(flow === 'login' ? 'auth.passkey.loginFailed' : 'auth.passkey.createFailed')
 }
 
 function ensureEnvironment() {

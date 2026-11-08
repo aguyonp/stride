@@ -9,6 +9,10 @@ import { emitStreamEvent, getEventStoreState, resetEventStore, startLlmStream } 
 import { installDomPolyfills, mountWithProviders, waitFor } from '../test/domHarness'
 import { FALLBACK_POLL_MS } from './polling'
 import type { BodyMapOverview, PublicShareView } from './types'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const rawModules = import.meta.glob('../**/*.{ts,tsx}', {
   query: '?raw',

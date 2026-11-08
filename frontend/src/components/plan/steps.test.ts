@@ -6,6 +6,10 @@ import { projectTrack } from '../session/GpsTrack'
 import { Markdown } from '../ui/Markdown'
 import { parseDuration } from './StepsEditor'
 import { stepsSummary, targetText, totalDurationS } from './steps'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const steps: WorkoutStep[] = [
   { type: 'warmup', durationS: 600, target: { kind: 'pace', min: 330, max: 360 } },

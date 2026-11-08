@@ -4,6 +4,10 @@ import type { Shoe } from '../../api/types'
 import { seedShoes, syncStravaGear } from '../../mocks/gear'
 import { clickEl, mountWithProviders, waitFor, type MountedApp } from '../../test/domHarness'
 import ShoesView from './ShoesView'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ')
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })

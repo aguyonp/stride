@@ -5,6 +5,7 @@ import { fmtDateShort, fmtNumber, isNum } from '../../lib/format'
 import { GOAL_KIND_LABEL } from '../../lib/labels'
 import { MenuItem, Popover } from '../ui/Popover'
 import { relativeDays } from './planFormat'
+import { t } from '../../i18n'
 
 interface GoalRowProps {
   goal: Goal
@@ -34,13 +35,13 @@ export function GoalRow({ goal: g, today, onEdit, onStatus, onDelete, className 
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold tracking-wide text-ink-3 uppercase">
           {GOAL_KIND_LABEL[g.kind]}
-          {g.status === 'done' && <span className="text-ok"> · atteint</span>}
-          {g.status === 'archived' && <span> · archivé</span>}
+          {g.status === 'done' && <span className="text-ok">{t('plan.goals.reached')}</span>}
+          {g.status === 'archived' && <span>{t('plan.goals.archived')}</span>}
         </p>
         <p className="text-sm font-semibold break-words text-ink">{g.title}</p>
         {(target || g.targetDate) && (
           <p className="num mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-2">
-            {target && <span>Cible : {target}</span>}
+            {target && <span>{t('plan.goals.target', { value: target })}</span>}
             {g.targetDate && (
               <span className={cn('inline-flex items-center gap-1', overdue && 'text-warn')}>
                 <CalendarClock className="size-3.5" aria-hidden="true" />
@@ -55,7 +56,7 @@ export function GoalRow({ goal: g, today, onEdit, onStatus, onDelete, className 
         <Popover
           className="-mr-1 flex-none"
           trigger={(p) => (
-            <button {...p} type="button" className="grid size-9 place-items-center rounded-full text-ink-3 hover:bg-track hover:text-ink" aria-label={`Actions pour l’objectif « ${g.title} »`}>
+            <button {...p} type="button" className="grid size-9 place-items-center rounded-full text-ink-3 hover:bg-track hover:text-ink" aria-label={t('plan.goals.actions', { title: g.title })}>
               <MoreHorizontal className="size-4" aria-hidden="true" />
             </button>
           )}
@@ -65,27 +66,27 @@ export function GoalRow({ goal: g, today, onEdit, onStatus, onDelete, className 
             <>
               {onEdit && (
                 <MenuItem icon={<Pencil />} onSelect={() => (close(), onEdit())}>
-                  Modifier
+                  {t('plan.goals.edit')}
                 </MenuItem>
               )}
               {onStatus && g.status === 'active' && (
                 <MenuItem icon={<CircleCheck />} onSelect={() => (close(), onStatus('done'))}>
-                  Marquer comme atteint
+                  {t('plan.goals.markDone')}
                 </MenuItem>
               )}
               {onStatus && g.status !== 'archived' && (
                 <MenuItem icon={<Archive />} onSelect={() => (close(), onStatus('archived'))}>
-                  Archiver
+                  {t('plan.goals.archive')}
                 </MenuItem>
               )}
               {onStatus && g.status !== 'active' && (
                 <MenuItem icon={<RotateCcw />} onSelect={() => (close(), onStatus('active'))}>
-                  Réactiver
+                  {t('plan.goals.reactivate')}
                 </MenuItem>
               )}
               {onDelete && (
                 <MenuItem icon={<Trash2 />} danger onSelect={() => (close(), onDelete())}>
-                  Supprimer
+                  {t('plan.goals.delete')}
                 </MenuItem>
               )}
             </>

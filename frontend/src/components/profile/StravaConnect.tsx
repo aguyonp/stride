@@ -2,10 +2,11 @@ import { ExternalLink, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { goToStravaConnect } from '../../api/client'
 import type { Integrations } from '../../api/types'
+import { t } from '../../i18n'
 
-export const STRAVA_UNAVAILABLE = 'Strava n’est pas configuré sur ce serveur (identifiants d’application absents). Demande à l’administrateur.'
+export const stravaUnavailable = () => t('settings.providers.stravaUnavailable')
 
-export function StravaConnectButton({ strava, returnPath, label = 'Se connecter avec Strava' }: { strava: Integrations['strava'] | undefined; returnPath: string; label?: string }) {
+export function StravaConnectButton({ strava, returnPath, label = t('settings.providers.stravaConnect') }: { strava: Integrations['strava'] | undefined; returnPath: string; label?: string }) {
   const [busy, setBusy] = useState(false)
   const disabled = !strava?.available || busy
   return (
@@ -26,7 +27,7 @@ export function StravaConnectButton({ strava, returnPath, label = 'Se connecter 
       </button>
       {strava && !strava.available && (
         <p id="strava-unavailable" className="mt-2 text-xs text-ink-3">
-          {STRAVA_UNAVAILABLE}
+          {stravaUnavailable()}
         </p>
       )}
     </div>

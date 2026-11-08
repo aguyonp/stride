@@ -2,6 +2,7 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type {
   JobStatus,
   LLMAnalysis,
+  MorphPreview,
   PlanAdaptPreview,
   PlanDraftsResponse,
   StrideStreamEventMap,
@@ -18,6 +19,7 @@ export interface LLMStreamState {
   analysis: LLMAnalysis | null
   planDrafts: PlanDraftsResponse | null
   adaptPreview: PlanAdaptPreview | null
+  morphPreview: MorphPreview | null
   updatedAt: number
 }
 
@@ -119,6 +121,7 @@ export function startLlmStream(jobId: string, kind: string, ref: string) {
         analysis: null,
         planDrafts: null,
         adaptPreview: null,
+        morphPreview: null,
         updatedAt: Date.now(),
       },
     },
@@ -156,6 +159,7 @@ function recordToken(ev: StrideStreamEventMap['llm.token']) {
       analysis: null,
       planDrafts: null,
       adaptPreview: null,
+      morphPreview: null,
       updatedAt: Date.now(),
     }
     return {
@@ -189,6 +193,7 @@ function recordDone(ev: StrideStreamEventMap['llm.done']) {
       analysis: null,
       planDrafts: null,
       adaptPreview: null,
+      morphPreview: null,
       updatedAt: Date.now(),
     }
     return {
@@ -202,6 +207,7 @@ function recordDone(ev: StrideStreamEventMap['llm.done']) {
           analysis: ev.analysis ?? cur.analysis,
           planDrafts: ev.planDrafts ?? cur.planDrafts,
           adaptPreview: ev.adaptPreview ?? cur.adaptPreview,
+          morphPreview: ev.morphPreview ?? cur.morphPreview,
           text: ev.analysis?.markdown && !cur.text ? ev.analysis.markdown : cur.text,
           updatedAt: Date.now(),
         },

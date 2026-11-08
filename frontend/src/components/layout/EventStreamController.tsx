@@ -2,9 +2,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { IS_MOCK } from '../../api/client'
 import { invalidateDomain, qk, qk4, useJobs } from '../../api/queries'
+import { qk42, SHARE_UPDATE_ROOTS } from '../../api/queriesV42'
 import type { JobListResponse, JobState, StrideStreamEventMap } from '../../api/types'
 import { emitStreamEvent, setStreamConnected, subscribeStreamEvent } from '../../state/events'
 import { useToast } from '../ui/Toast'
+import { t } from '../../i18n'
 
 const INVALIDATE_ON_JOB_DONE = [
   'activities',
@@ -30,7 +32,10 @@ const STREAM_EVENTS: (keyof StrideStreamEventMap)[] = [
   'alert.triggered',
   'llm.token',
   'llm.done',
+  'share.updated',
 ]
+
+const SHARE_KINDS: StrideStreamEventMap['share.updated']['kind'][] = ['directive', 'remark', 'plan', 'event']
 
 /**
  * Maintains the authenticated SSE connection to `/api/events/stream` and routes
@@ -69,10 +74,13 @@ export function EventStreamController({ userId }: { userId: number }) {
         if (isSyncOrImport && job.state === 'completed' && prev !== 'completed') {
           void invalidateDomain(qc, INVALIDATE_ON_JOB_DONE)
           if (job.kind === 'import.activity') {
-            toast({ title: 'Séance importée', description: job.label, tone: 'success' })
+            toast({ title: t('layout.stream.imported'), description: job.label, tone: 'success' })
           }
+        } else if (job.kind.startsWith('backup.') && (job.state === 'completed' || job.state === 'failed') && prev !== job.state) {
+          void qc.invalidateQueries({ queryKey: qk42.backups })
+          if (job.state === 'failed' && job.error) toast({ title: t('layout.stream.backupFailed'), description: job.error, tone: 'error' })
         } else if (job.state === 'failed' && prev !== 'failed' && job.error) {
-          toast({ title: 'Échec de la tâche', description: job.error, tone: 'error' })
+          toast({ title: t('layout.stream.jobFailed'), description: job.error, tone: 'error' })
         }
       }),
 
@@ -86,6 +94,12 @@ export function EventStreamController({ userId }: { userId: number }) {
           description: alert.detail,
           tone: alert.level === 'critical' ? 'error' : 'info',
         })
+      }),
+
+      subscribeStreamEvent('share.updated', (ev) => {
+        void invalidateDomain(qc, SHARE_UPDATE_ROOTS[ev.kind] ?? ['share'])
+        if (SHARE_KINDS.includes(ev.kind))
+          toast({ title: t(`layout.stream.share.${ev.kind}`), description: ev.kind === 'plan' || ev.kind === 'event' ? t('layout.stream.visiblePlan') : t('layout.stream.visibleHealth'), tone: 'info' })
       }),
 
       subscribeStreamEvent('llm.done', (done) => {

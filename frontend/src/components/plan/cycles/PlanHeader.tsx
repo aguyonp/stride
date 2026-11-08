@@ -4,6 +4,7 @@ import { cn } from '../../../lib/cn'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { PLAN_STATUS_LABEL, type CycleZoom } from './cycleMeta'
 import { countdownLabel } from './cycleModel'
+import { t } from '../../../i18n'
 
 export function CyclesToolbar({
   plans,
@@ -28,7 +29,7 @@ export function CyclesToolbar({
     <div className="flex flex-wrap items-center gap-2">
       {plans.length > 1 && (
         <select
-          aria-label="Choisir un macrocycle"
+          aria-label={t('plan.cycles.choosePlan')}
           className="field h-9 min-h-9 w-auto py-1 text-xs"
           value={currentPlan?.id ?? ''}
           onChange={(e) => onSelectPlan(Number(e.target.value) || null)}
@@ -41,14 +42,14 @@ export function CyclesToolbar({
         </select>
       )}
       <SegmentedControl<CycleZoom>
-        ariaLabel="Niveau de zoom des cycles"
+        ariaLabel={t('plan.cycles.zoom')}
         size="sm"
         value={zoom}
         onChange={onZoom}
         options={[
-          { value: 'macro', label: 'Macrocycle' },
-          { value: 'meso', label: 'Mésocycles' },
-          { value: 'micro', label: 'Microcycles' },
+          { value: 'macro', label: t('plan.cycles.macro') },
+          { value: 'meso', label: t('plan.cycles.meso') },
+          { value: 'micro', label: t('plan.cycles.micro') },
         ]}
       />
       {currentPlan && (
@@ -57,7 +58,7 @@ export function CyclesToolbar({
             type="button"
             className="icon-btn size-9"
             onClick={() => onEditPlan(currentPlan)}
-            aria-label="Modifier le macrocycle"
+            aria-label={t('plan.cycles.editPlan')}
           >
             <Pencil className="size-4" />
           </button>
@@ -65,7 +66,7 @@ export function CyclesToolbar({
             type="button"
             className="icon-btn size-9"
             onClick={() => onDeletePlan(currentPlan)}
-            aria-label="Supprimer le macrocycle"
+            aria-label={t('plan.cycles.deletePlan')}
           >
             <Trash2 className="size-4" />
           </button>

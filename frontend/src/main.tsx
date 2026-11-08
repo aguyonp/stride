@@ -10,15 +10,18 @@ import { queryClient } from './api/queries'
 import App from './App'
 import { ToastProvider } from './components/ui/Toast'
 import { applyTheme } from './hooks/useTheme'
+import { I18nBoundary } from './i18n/I18nBoundary'
 
 applyTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <I18nBoundary>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </I18nBoundary>
     </QueryClientProvider>
   </StrictMode>,
 )

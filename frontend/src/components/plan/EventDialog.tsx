@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { ArrowLeft, Bandage, BatteryLow, BedDouble, Bot, CalendarClock, Loader2, Plane, Sparkles, Thermometer, Trash2, Wand2 } from 'lucide-react'
+import { ArrowLeft, Bandage, BatteryLow, BedDouble, Bot, CalendarClock, Loader2, Plane, Sparkles, Thermometer, Trash2, UserRound, Wand2 } from 'lucide-react'
 import { useEffect, useState, type ComponentType } from 'react'
 import { api } from '../../api/client'
 import { useLlmConfig } from '../../api/queriesV3'
@@ -15,19 +15,23 @@ import { InlineError } from '../ui/Misc'
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { useToast } from '../ui/Toast'
 import { adaptDiff, changeCounts, type ChangeKind } from './adaptDiff'
+import { prescribedByLine } from '../share/shareNotes'
+import { PrescribedByTag } from '../share/ShareMarkers'
+import { lazyRecord, t } from '../../i18n'
 
-const EVENT_ICON: Record<EventKind, ComponentType<{ className?: string }>> = { fatigue: BatteryLow, pain: Bandage, illness: Thermometer, unavailable: Plane, forced_rest: BedDouble }
+export const EVENT_ICON: Record<EventKind, ComponentType<{ className?: string }>> = { fatigue: BatteryLow, pain: Bandage, illness: Thermometer, unavailable: Plane, forced_rest: BedDouble }
 const KINDS = Object.keys(EVENT_KIND) as EventKind[]
-const EVENT_TONE: Record<EventKind, string> = { fatigue: 'text-warn bg-warn/10', pain: 'text-danger bg-danger/10', illness: 'text-danger bg-danger/10', unavailable: 'text-info bg-info/10', forced_rest: 'text-violet bg-violet/10' }
+export const EVENT_TONE: Record<EventKind, string> = { fatigue: 'text-warn bg-warn/10', pain: 'text-danger bg-danger/10', illness: 'text-danger bg-danger/10', unavailable: 'text-info bg-info/10', forced_rest: 'text-violet bg-violet/10' }
 
 /** Discreet event marker on a calendar day. */
 export function EventChip({ e, onOpen, compact }: { e: CalendarEvent; onOpen?: (e: CalendarEvent) => void; compact?: boolean }) {
   const Icon = EVENT_ICON[e.kind]
-  const label = `${EVENT_KIND[e.kind].label}, ${SEVERITY_LABEL[e.severity].toLowerCase()}${e.note ? ` : ${e.note}` : ''}`
+  const label = `${EVENT_KIND[e.kind].label}, ${SEVERITY_LABEL[e.severity].toLowerCase()}${e.note ? ` : ${e.note}` : ''}${e.prescribedBy ? ` · ${prescribedByLine(e.prescribedBy)}` : ''}`
   return (
-    <button type="button" onClick={() => onOpen?.(e)} title={label} aria-label={`Imprévu : ${label}`} className={cn('inline-flex max-w-full min-w-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold', EVENT_TONE[e.kind])}>
+    <button type="button" onClick={() => onOpen?.(e)} title={label} aria-label={t('plan.event.chipAria', { label })} className={cn('inline-flex max-w-full min-w-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold', EVENT_TONE[e.kind])}>
       <Icon className="size-3 flex-none" aria-hidden="true" />
       {!compact && <span className="truncate">{EVENT_KIND[e.kind].short}</span>}
+      {e.prescribedBy && <UserRound className="size-3 flex-none" aria-hidden="true" />}
       <span className="flex gap-px" aria-hidden="true">
         {[1, 2, 3].map((i) => (
           <span key={i} className={cn('size-1 rounded-full bg-current', i > e.severity && 'opacity-25')} />
@@ -37,12 +41,8 @@ export function EventChip({ e, onOpen, compact }: { e: CalendarEvent; onOpen?: (
   )
 }
 
-const CHANGE_META: Record<ChangeKind, { label: string; cls: string }> = {
-  moved: { label: 'Décalée', cls: 'bg-info/12 text-info' },
-  modified: { label: 'Allégée', cls: 'bg-warn/12 text-warn' },
-  removed: { label: 'Supprimée', cls: 'bg-danger/12 text-danger' },
-  created: { label: 'Ajoutée', cls: 'bg-ok/12 text-ok' },
-}
+const CHANGE_CLS: Record<ChangeKind, string> = { moved: 'bg-info/12 text-info', modified: 'bg-warn/12 text-warn', removed: 'bg-danger/12 text-danger', created: 'bg-ok/12 text-ok' }
+const CHANGE_META: Record<ChangeKind, { label: string; cls: string }> = lazyRecord(['moved', 'modified', 'removed', 'created'] as const, (k) => ({ label: t(`plan.event.change.${k}`), cls: CHANGE_CLS[k] }))
 
 function Preview({ preview, current }: { preview: PlanAdaptPreview; current: PlannedSession[] }) {
   const changes = adaptDiff(current, preview)
@@ -51,20 +51,19 @@ function Preview({ preview, current }: { preview: PlanAdaptPreview; current: Pla
     <div className="space-y-4">
       <p className="text-sm text-ink-2">{preview.summary}</p>
       {changes.length === 0 ? (
-        <p className="rounded-2xl bg-track/50 p-4 text-sm text-ink-3">Aucun changement proposé : ton plan reste tel quel.</p>
+        <p className="rounded-2xl bg-track/50 p-4 text-sm text-ink-3">{t('plan.event.noChange')}</p>
       ) : (
         <>
-          <ul className="flex flex-wrap gap-1.5 text-xs" aria-label="Résumé des changements">
+          <ul className="flex flex-wrap gap-1.5 text-xs" aria-label={t('plan.event.summary')}>
             {(Object.keys(counts) as ChangeKind[])
               .filter((k) => counts[k] > 0)
               .map((k) => (
                 <li key={k} className={cn('chip h-6', CHANGE_META[k].cls)}>
-                  {counts[k]} {CHANGE_META[k].label.toLowerCase()}
-                  {counts[k] > 1 ? 's' : ''}
+                  {t(`plan.event.changeCount.${k}`, { count: counts[k] })}
                 </li>
               ))}
           </ul>
-          <ul className="divide-y divide-line" aria-label="Changements proposés">
+          <ul className="divide-y divide-line" aria-label={t('plan.event.changes')}>
             {changes.map((c, i) => {
               const s = c.after ?? c.before!
               return (
@@ -153,7 +152,7 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
     const onSuccess = (e: CalendarEvent) => {
       setSaved(e)
       setStep('next')
-      toast({ title: event ? 'Imprévu mis à jour' : 'Imprévu enregistré', description: `${EVENT_KIND[e.kind].label} · ${SEVERITY_LABEL[e.severity].toLowerCase()}` })
+      toast({ title: event ? t('plan.event.updated') : t('plan.event.saved'), description: `${EVENT_KIND[e.kind].label} · ${SEVERITY_LABEL[e.severity].toLowerCase()}` })
     }
     if (event) mut.update.mutate({ id: event.id, ...body }, { onSuccess })
     else mut.create.mutate(body, { onSuccess })
@@ -162,7 +161,7 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
     event &&
     mut.remove.mutate(event.id, {
       onSuccess: () => {
-        toast({ title: 'Imprévu supprimé' })
+        toast({ title: t('plan.event.deleted') })
         onClose()
       },
     })
@@ -177,7 +176,7 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
       { removeIds: preview.removeIds, sessions: preview.sessions.map(({ id: _id, ...s }) => s) },
       {
         onSuccess: () => {
-          toast({ title: 'Plan adapté', description: `${preview.removeIds.length + preview.sessions.length > 0 ? 'Changements appliqués au planning.' : 'Aucun changement.'}`, tone: 'success' })
+          toast({ title: t('plan.event.adapted'), description: preview.removeIds.length + preview.sessions.length > 0 ? t('plan.event.applied') : t('plan.event.none'), tone: 'success' })
           onClose()
         },
       },
@@ -185,7 +184,7 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
   const shiftOne = (s: PlannedSession, days: number) =>
     plan.shift.mutate(
       { id: s.id, toDate: addDays(saved && saved.endDate >= s.date ? saved.endDate : s.date, days) },
-      { onSuccess: (p) => toast({ title: 'Séance décalée', description: `${p.title} · ${capitalize(fmtDateLong(p.date))}` }) },
+      { onSuccess: (p) => toast({ title: t('plan.event.shifted'), description: `${p.title} · ${capitalize(fmtDateLong(p.date))}` }) },
     )
 
   const isStreaming = Boolean(streamJobId && (!liveStream || !liveStream.done))
@@ -212,11 +211,11 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
         )}
         <span className="flex gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="button" className="btn btn-primary" onClick={save} disabled={endBefore || mut.create.isPending || mut.update.isPending}>
             {(mut.create.isPending || mut.update.isPending) && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-            {event ? 'Enregistrer' : 'Signaler'}
+            {event ? t('common.actions.save') : t('plan.event.report')}
           </button>
         </span>
       </div>
@@ -224,23 +223,23 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
       <div className="flex justify-between gap-2 pb-3">
         {!adaptOnly ? (
           <button type="button" className="btn btn-ghost" onClick={() => setStep('form')}>
-            <ArrowLeft className="size-4" aria-hidden="true" /> Imprévu
+            <ArrowLeft className="size-4" aria-hidden="true" /> {t('plan.event.back')}
           </button>
         ) : (
           <span />
         )}
         <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Terminé
+          {t('plan.event.done')}
         </button>
       </div>
     ) : (
       <div className="flex justify-between gap-2 pb-3">
         <button type="button" className="btn btn-ghost" onClick={() => setStep('next')}>
-          <ArrowLeft className="size-4" aria-hidden="true" /> Retour
+          <ArrowLeft className="size-4" aria-hidden="true" /> {t('plan.event.previous')}
         </button>
         <button type="button" className="btn btn-primary" onClick={apply} disabled={plan.replace.isPending || changesCount === 0}>
           {plan.replace.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-          Appliquer {changesCount > 0 ? `${changesCount} changement${changesCount > 1 ? 's' : ''}` : ''}
+          {changesCount > 0 ? t('plan.event.applyCount', { count: changesCount }) : t('plan.event.apply')}
         </button>
       </div>
     )
@@ -250,21 +249,22 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
       open={open}
       onClose={onClose}
       size="lg"
-      title={step === 'form' ? (event ? 'Modifier l’imprévu' : 'Signaler un imprévu') : step === 'next' ? (adaptOnly ? 'Adapter la suite du plan' : 'Et maintenant ?') : 'Changements proposés'}
+      title={step === 'form' ? (event ? t('plan.event.editTitle') : t('plan.event.newTitle')) : step === 'next' ? (adaptOnly ? t('plan.event.adaptTitle') : t('plan.event.nextTitle')) : t('plan.event.changes')}
       description={
         step === 'form'
-          ? 'Stride en tient compte dans tes prompts et peut ajuster le planning.'
+          ? t('plan.event.formHint')
           : saved
             ? `${EVENT_KIND[saved.kind].label} · ${SEVERITY_LABEL[saved.severity].toLowerCase()} · ${saved.startDate === saved.endDate ? fmtDateShort(saved.startDate) : `${fmtDateShort(saved.startDate)} → ${fmtDateShort(saved.endDate)}`}`
-            : `À partir du ${fmtDateLong(from)}`
+            : t('plan.event.fromDate', { date: fmtDateLong(from) })
       }
       footer={footer}
     >
       <div className="space-y-5" aria-busy={adaptBusy}>
         {step === 'form' && (
           <>
+            {event?.prescribedBy && <PrescribedByTag by={event.prescribedBy} className="text-xs" />}
             <fieldset>
-              <legend className="mb-2 text-sm font-medium text-ink-2">Type</legend>
+              <legend className="mb-2 text-sm font-medium text-ink-2">{t('plan.event.type')}</legend>
               <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
                 {KINDS.map((k) => {
                   const Icon = EVENT_ICON[k]
@@ -291,22 +291,22 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
               </div>
             </fieldset>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Du">{(p) => <input {...p} type="date" className="field" value={start} onChange={(e) => (setStart(e.target.value), end < e.target.value && setEnd(e.target.value))} />}</Field>
-              <Field label="Au (inclus)" error={endBefore ? 'La fin doit suivre le début.' : null}>
+              <Field label={t('plan.event.from')}>{(p) => <input {...p} type="date" className="field" value={start} onChange={(e) => (setStart(e.target.value), end < e.target.value && setEnd(e.target.value))} />}</Field>
+              <Field label={t('plan.event.to')} error={endBefore ? t('plan.event.endBefore') : null}>
                 {(p) => <input {...p} type="date" className="field" value={end} min={start} onChange={(e) => setEnd(e.target.value)} />}
               </Field>
             </div>
             <div>
-              <p className="mb-1.5 text-sm font-medium text-ink-2">Intensité</p>
+              <p className="mb-1.5 text-sm font-medium text-ink-2">{t('plan.event.intensity')}</p>
               <SegmentedControl<string>
-                ariaLabel="Intensité"
+                ariaLabel={t('plan.event.intensity')}
                 value={String(severity)}
                 onChange={(v) => setSeverity(Number(v) as EventSeverity)}
                 options={[1, 2, 3].map((n) => ({ value: String(n), label: SEVERITY_LABEL[n as EventSeverity] }))}
               />
             </div>
-            <Field label="Note (facultatif)">
-              {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Ex. genou gauche sensible dans les escaliers, fièvre 38,5" />}
+            <Field label={t('plan.event.note')}>
+              {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder={t('plan.event.notePlaceholder')} />}
             </Field>
           </>
         )}
@@ -316,7 +316,7 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
             {affected.length > 0 && (
               <section aria-labelledby="shift-title" className="space-y-2">
                 <h3 id="shift-title" className="flex items-center gap-2 text-sm font-semibold text-ink">
-                  <CalendarClock className="size-4 text-accent" aria-hidden="true" /> Décaler la séance du jour
+                  <CalendarClock className="size-4 text-accent" aria-hidden="true" /> {t('plan.event.shiftToday')}
                 </h3>
                 <ul className="space-y-1.5">
                   {affected.map((s) => (
@@ -327,48 +327,48 @@ export function EventDialog({ open, onClose, today, date, event, adaptOnly }: Ev
                       </span>
                       <span className="flex gap-1.5">
                         <button type="button" className="chip h-8 border border-line px-3 text-ink-2 hover:bg-track" onClick={() => shiftOne(s, 1)} disabled={plan.shift.isPending}>
-                          +1 j
+                          {t('plan.event.plusDays', { n: 1 })}
                         </button>
                         <button type="button" className="chip h-8 border border-line px-3 text-ink-2 hover:bg-track" onClick={() => shiftOne(s, 2)} disabled={plan.shift.isPending}>
-                          +2 j
+                          {t('plan.event.plusDays', { n: 2 })}
                         </button>
                       </span>
                     </li>
                   ))}
                 </ul>
-                {saved && saved.endDate > saved.startDate && <p className="text-xs text-ink-3">Le décalage part du lendemain de la fin de l’imprévu.</p>}
+                {saved && saved.endDate > saved.startDate && <p className="text-xs text-ink-3">{t('plan.event.shiftHint')}</p>}
               </section>
             )}
             <section aria-labelledby="adapt-title" className="space-y-3">
               <h3 id="adapt-title" className="flex items-center gap-2 text-sm font-semibold text-ink">
-                <Wand2 className="size-4 text-accent" aria-hidden="true" /> Adapter la suite du plan
+                <Wand2 className="size-4 text-accent" aria-hidden="true" /> {t('plan.event.adapt')}
               </h3>
               <p className="text-xs text-ink-3">
                 {mode === 'rules'
-                  ? 'Règles Stride : pas de séance pendant l’imprévu, reprise allégée (−20 à −40 % selon l’intensité, fractionné remplacé par du footing), jamais plus de +10 % de volume.'
-                  : 'Ton IA reçoit l’imprévu, ta charge récente, ta préparation et le plan restant, puis propose un plan au format stride-plan.'}
+                  ? t('plan.event.rulesHint')
+                  : t('plan.event.llmHint')}
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <SegmentedControl<'rules' | 'llm'>
-                  ariaLabel="Méthode d’adaptation"
+                  ariaLabel={t('plan.event.method')}
                   size="sm"
                   className="w-full sm:w-72"
                   value={mode}
                   onChange={(v) => setMode(v)}
                   options={[
-                    { value: 'rules', label: 'Auto (règles)', icon: <Wand2 /> },
-                    { value: 'llm', label: 'Mon IA', icon: <Bot /> },
+                    { value: 'rules', label: t('plan.event.rules'), icon: <Wand2 /> },
+                    { value: 'llm', label: t('plan.event.myAi'), icon: <Bot /> },
                   ]}
                 />
                 <button type="button" className="btn btn-primary max-sm:w-full" onClick={runAdapt} disabled={adaptBusy || (mode === 'llm' && !llmOn)}>
                   {adaptBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
-                  Prévisualiser
+                  {t('plan.event.preview')}
                 </button>
               </div>
-              {mode === 'llm' && !llmOn && llm.isSuccess && <p className="text-xs text-ink-3">Aucune IA connectée : branche-la dans Réglages › IA ou utilise les règles automatiques.</p>}
+              {mode === 'llm' && !llmOn && llm.isSuccess && <p className="text-xs text-ink-3">{t('plan.event.noAi')}</p>}
               {adaptBusy && mode === 'llm' && (
                 <div className="space-y-2 rounded-2xl border border-accent/25 bg-track/35 p-3">
-                  <p className="text-sm text-ink-2">{liveStream?.text ? 'Adaptation IA en direct…' : 'Ton IA prépare la proposition…'}</p>
+                  <p className="text-sm text-ink-2">{liveStream?.text ? t('plan.event.streaming') : t('plan.event.preparing')}</p>
                   {liveStream?.text && (
                     <pre className="scroll-thin max-h-36 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-ink-3">
                       {liveStream.text}

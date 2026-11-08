@@ -6,6 +6,10 @@ import { setFlags } from './flags'
 import { matchesActivity, parseQuery } from './search'
 import { mockFetch } from './server'
 import { focusFromHealth } from './v41'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const call = (method: string, path: string, body?: unknown) => mockFetch(path, { method, headers: { 'X-Stride-CSRF': '1' }, body: body === undefined ? undefined : JSON.stringify(body) })
 function setup() {

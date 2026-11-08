@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { Alert, AlertLevel } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { LEVEL_LABEL, LevelIcon } from '../ui/Badge'
+import { t } from '../../i18n'
 
 const ORDER: Record<AlertLevel, number> = { danger: 0, warn: 1, info: 2, ok: 3 }
 
@@ -14,11 +15,11 @@ export function TopAlerts({ alerts, max = 2, sectionOf, onOpen }: { alerts: Aler
   if (serious.length === 0) {
     const ok = alerts.find((a) => a.level === 'ok')
     return (
-      <section aria-label="Signaux" className="section-group flex items-center gap-3 px-4 py-3 sm:px-5">
+      <section aria-label={t('dashboard.alerts.signals')} className="section-group flex items-center gap-3 px-4 py-3 sm:px-5">
         <ShieldCheck className="size-5 flex-none text-ok" aria-hidden="true" />
         <p className="min-w-0 text-sm text-ink-2">
-          <span className="font-semibold text-ink">{ok?.title ?? 'Aucun signal d’alerte'}</span>
-          {all.length > 0 && <span className="text-ink-3"> · {all.length} info{all.length > 1 ? 's' : ''}</span>}
+          <span className="font-semibold text-ink">{ok?.title ?? t('dashboard.alerts.noAlert')}</span>
+          {all.length > 0 && <span className="text-ink-3"> · {t('dashboard.alerts.infos', { count: all.length })}</span>}
         </p>
       </section>
     )
@@ -28,7 +29,7 @@ export function TopAlerts({ alerts, max = 2, sectionOf, onOpen }: { alerts: Aler
   return (
     <section aria-labelledby="top-alerts-title" className="section-group overflow-hidden">
       <h2 id="top-alerts-title" className="sr-only">
-        Signaux à surveiller
+        {t('dashboard.alerts.watch')}
       </h2>
       <ul>
         {visible.map((a, i) => {
@@ -39,7 +40,7 @@ export function TopAlerts({ alerts, max = 2, sectionOf, onOpen }: { alerts: Aler
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-ink">
                   {a.title}
-                  <span className="sr-only"> — niveau {LEVEL_LABEL[a.level]}</span>
+                  <span className="sr-only">{t('dashboard.alerts.level', { level: LEVEL_LABEL[a.level] })}</span>
                 </span>
                 <span className="block truncate text-sm text-ink-3" title={a.message}>
                   {a.message}
@@ -51,7 +52,7 @@ export function TopAlerts({ alerts, max = 2, sectionOf, onOpen }: { alerts: Aler
           return (
             <li key={`${a.code}-${i}`} className={cn(i > 0 && 'border-t border-line')}>
               {target ? (
-                <button type="button" onClick={() => onOpen(target)} className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:px-5" aria-label={`${a.title} : voir le détail`}>
+                <button type="button" onClick={() => onOpen(target)} className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:px-5" aria-label={t('dashboard.alerts.seeDetail', { title: a.title })}>
                   {content}
                 </button>
               ) : (
@@ -63,7 +64,7 @@ export function TopAlerts({ alerts, max = 2, sectionOf, onOpen }: { alerts: Aler
       </ul>
       {rest > 0 && (
         <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} className="flex w-full items-center justify-center gap-1.5 border-t border-line py-2.5 text-sm font-medium text-ink-2 hover:text-ink">
-          {expanded ? 'Réduire' : `Voir plus (${rest})`}
+          {expanded ? t('dashboard.alerts.collapse') : t('dashboard.alerts.more', { count: rest })}
           <ChevronDown className={cn('size-4 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
         </button>
       )}

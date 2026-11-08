@@ -7,7 +7,8 @@ import { todayISO } from '../../lib/format'
 import { useEventStore } from '../../state/events'
 import { InlineError } from '../ui/Misc'
 import { SegmentedControl } from '../ui/SegmentedControl'
-import { HISTORY_RANGES, historyFrom, historyProgress, type HistoryRange } from './historyRange'
+import { historyRanges, historyFrom, historyProgress, type HistoryRange } from './historyRange'
+import { t } from '../../i18n'
 
 /** Backfills older activities (summaries only) as a low-priority job with live progress. */
 export function HistoryImport() {
@@ -26,20 +27,20 @@ export function HistoryImport() {
     <div className="glass-inset space-y-3 p-4">
       <div className="flex items-center gap-2">
         <History className="size-4 text-accent" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Historique complet</h3>
+        <h3 className="text-sm font-semibold text-ink">{t('settings.history.title')}</h3>
       </div>
-      <SegmentedControl<HistoryRange> ariaLabel="Période à importer" size="sm" value={range} onChange={setRange} options={HISTORY_RANGES} />
+      <SegmentedControl<HistoryRange> ariaLabel={t('settings.history.range')} size="sm" value={range} onChange={setRange} options={historyRanges()} />
       {range === 'date' && (
-        <input type="date" className="field num max-w-48" aria-label="Importer depuis le" value={custom} max={today} onChange={(e) => setCustom(e.target.value)} />
+        <input type="date" className="field num max-w-48" aria-label={t('settings.history.since')} value={custom} max={today} onChange={(e) => setCustom(e.target.value)} />
       )}
       <button type="button" className="btn btn-primary" disabled={running || start.isPending || from === undefined} onClick={() => from !== undefined && start.mutate(from)}>
         {(running || start.isPending) && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-        Importer tout l’historique
+        {t('settings.history.submit')}
       </button>
       {start.isError && <InlineError>{start.error.message}</InlineError>}
       {progress && job && (
         <div aria-live="polite">
-          <div className="h-1.5 overflow-hidden rounded-full bg-track" role="progressbar" aria-label="Progression de l’import" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.pct}>
+          <div className="h-1.5 overflow-hidden rounded-full bg-track" role="progressbar" aria-label={t('settings.history.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.pct}>
             <div className={cn('h-full rounded-full transition-[width] duration-300', job.state === 'failed' ? 'bg-danger' : 'bg-accent')} style={{ width: `${progress.pct}%` }} />
           </div>
           <p className="num mt-1 text-xs text-ink-3">{job.state === 'failed' && job.error ? job.error : progress.label}</p>

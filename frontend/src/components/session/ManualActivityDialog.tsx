@@ -8,6 +8,7 @@ import { Dialog } from '../ui/Dialog'
 import { Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
 import { useToast } from '../ui/Toast'
+import { t } from '../../i18n'
 
 type Existing = Pick<ActivityView['activity'], 'id' | 'date' | 'startLocal' | 'sport' | 'name' | 'distanceM' | 'durationS' | 'avgHR' | 'maxHR' | 'avgCadenceSpm' | 'elevGainM' | 'elevLossM'>
 
@@ -44,9 +45,9 @@ function toForm(a: Existing | null, today: string): FormState {
 }
 
 const num = (v: string) => {
-  const t = v.trim()
-  if (!t) return undefined
-  const n = Number(t.replace(',', '.'))
+  const raw = v.trim()
+  if (!raw) return undefined
+  const n = Number(raw.replace(',', '.'))
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
@@ -72,12 +73,12 @@ export function ManualActivityDialog({ open, onClose, today, activity, onCreated
   const durationS = parseDuration(f.duration)
   const vals = { km: num(f.km), avgHR: num(f.avgHR), maxHR: num(f.maxHR), cadence: num(f.cadence), gain: num(f.gain), loss: num(f.loss) }
   const errors = {
-    date: !/^\d{4}-\d{2}-\d{2}$/.test(f.date) ? 'Date invalide.' : f.date > today ? 'La séance ne peut pas être dans le futur.' : null,
-    duration: durationS === null || durationS < 60 ? 'Durée requise : h:mm:ss, mm:ss ou minutes.' : null,
-    km: vals.km === null ? 'Distance en km.' : null,
-    hr: vals.avgHR === null || vals.maxHR === null ? 'FC en bpm.' : vals.avgHR && vals.maxHR && vals.avgHR > vals.maxHR ? 'La FC moyenne dépasse la FC max.' : null,
-    cadence: vals.cadence === null || (vals.cadence ?? 0) > 260 ? 'Cadence en pas/min.' : null,
-    elev: vals.gain === null || vals.loss === null ? 'Dénivelé en mètres.' : null,
+    date: !/^\d{4}-\d{2}-\d{2}$/.test(f.date) ? t('session.manual.dateInvalid') : f.date > today ? t('session.manual.future') : null,
+    duration: durationS === null || durationS < 60 ? t('session.manual.durationRequired') : null,
+    km: vals.km === null ? t('session.manual.kmInvalid') : null,
+    hr: vals.avgHR === null || vals.maxHR === null ? t('session.manual.hrInvalid') : vals.avgHR && vals.maxHR && vals.avgHR > vals.maxHR ? t('session.manual.hrOrder') : null,
+    cadence: vals.cadence === null || (vals.cadence ?? 0) > 260 ? t('session.manual.cadenceInvalid') : null,
+    elev: vals.gain === null || vals.loss === null ? t('session.manual.elevInvalid') : null,
   }
   const show = (k: keyof typeof errors) => (submitted || k === 'hr' || k === 'km' ? errors[k] : null)
   const pending = m.create.isPending || m.update.isPending
@@ -106,12 +107,12 @@ export function ManualActivityDialog({ open, onClose, today, activity, onCreated
     if (activity)
       m.update.mutate(
         { id: activity.id, ...body },
-        { onSuccess: () => (toast({ title: 'Séance mise à jour', description: capitalize(fmtDateLong(body.date)) }), onClose()) },
+        { onSuccess: () => (toast({ title: t('session.manual.updated'), description: capitalize(fmtDateLong(body.date)) }), onClose()) },
       )
     else
       m.create.mutate(body, {
         onSuccess: (a) => {
-          toast({ title: 'Séance enregistrée', description: 'Ajoute ton ressenti pour enrichir les analyses.' })
+          toast({ title: t('session.manual.saved'), description: t('session.manual.savedHint') })
           onClose()
           onCreated?.(a)
         },
@@ -121,7 +122,7 @@ export function ManualActivityDialog({ open, onClose, today, activity, onCreated
     activity &&
     m.remove.mutate(activity.id, {
       onSuccess: () => {
-        toast({ title: 'Séance supprimée' })
+        toast({ title: t('session.manual.deleted') })
         onClose()
         onDeleted?.()
       },
@@ -132,19 +133,19 @@ export function ManualActivityDialog({ open, onClose, today, activity, onCreated
       open={open}
       onClose={onClose}
       size="lg"
-      title={activity ? 'Modifier la séance manuelle' : 'Saisir une séance manuelle'}
-      description="Seule la durée est obligatoire ; le reste affine les analyses et les prompts."
+      title={activity ? t('session.manual.editTitle') : t('session.manual.newTitle')}
+      description={t('session.manual.description')}
       initialFocus={activity ? undefined : 'input[name="title"]'}
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2">
           {activity ? (
             confirm ? (
               <button type="button" className="btn btn-danger" onClick={remove} disabled={m.remove.isPending}>
-                <Trash2 className="size-4" aria-hidden="true" /> Confirmer la suppression
+                <Trash2 className="size-4" aria-hidden="true" /> {t('session.manual.confirmDelete')}
               </button>
             ) : (
               <button type="button" className="btn btn-ghost text-danger" onClick={() => setConfirm(true)}>
-                <Trash2 className="size-4" aria-hidden="true" /> Supprimer
+                <Trash2 className="size-4" aria-hidden="true" /> {t('common.actions.delete')}
               </button>
             )
           ) : (
@@ -152,24 +153,24 @@ export function ManualActivityDialog({ open, onClose, today, activity, onCreated
           )}
           <span className="flex gap-2">
             <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Annuler
+              {t('common.actions.cancel')}
             </button>
             <button type="submit" form={formId} className="btn btn-primary" disabled={pending}>
               {pending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-              {activity ? 'Enregistrer' : 'Enregistrer et noter mon ressenti'}
+              {activity ? t('common.actions.save') : t('session.manual.saveAndFeel')}
             </button>
           </span>
         </div>
       }
     >
       <form id={formId} onSubmit={onSubmit} noValidate className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Field label="Date" className="col-span-1 sm:col-span-2" error={show('date')}>
+        <Field label={t('session.manual.date')} className="col-span-1 sm:col-span-2" error={show('date')}>
           {(p) => <input {...p} type="date" className="field" value={f.date} max={today} onChange={(e) => set('date', e.target.value)} />}
         </Field>
-        <Field label="Heure" className="col-span-1 sm:col-span-1">
+        <Field label={t('session.manual.time')} className="col-span-1 sm:col-span-1">
           {(p) => <input {...p} type="time" className="field" value={f.time} onChange={(e) => set('time', e.target.value)} />}
         </Field>
-        <Field label="Sport" className="col-span-2 sm:col-span-1">
+        <Field label={t('session.manual.sport')} className="col-span-2 sm:col-span-1">
           {(p) => (
             <select {...p} className="field" value={f.sport} onChange={(e) => set('sport', e.target.value as Sport)}>
               {(Object.keys(SPORT_LABEL) as Sport[]).map((s) => (
@@ -180,23 +181,23 @@ export function ManualActivityDialog({ open, onClose, today, activity, onCreated
             </select>
           )}
         </Field>
-        <Field label="Titre" className="col-span-2 sm:col-span-4">
-          {(p) => <input {...p} name="title" className="field" value={f.title} onChange={(e) => set('title', e.target.value)} maxLength={120} placeholder={isRun ? 'Footing du soir' : 'Séance'} autoComplete="off" />}
+        <Field label={t('session.manual.title')} className="col-span-2 sm:col-span-4">
+          {(p) => <input {...p} name="title" className="field" value={f.title} onChange={(e) => set('title', e.target.value)} maxLength={120} placeholder={isRun ? t('session.manual.titleRun') : t('session.manual.titleOther')} autoComplete="off" />}
         </Field>
         {hasDistance && (
-          <Field label="Distance (km)" className="col-span-1 sm:col-span-2" error={show('km')}>
+          <Field label={t('session.manual.distance')} className="col-span-1 sm:col-span-2" error={show('km')}>
             {(p) => <input {...p} className="field num" inputMode="decimal" value={f.km} onChange={(e) => set('km', e.target.value)} placeholder="8,4" />}
           </Field>
         )}
-        <Field label="Durée" className={hasDistance ? 'col-span-1 sm:col-span-2' : 'col-span-2 sm:col-span-4'} error={show('duration')} hint={!show('duration') ? 'h:mm:ss, mm:ss ou minutes' : undefined}>
+        <Field label={t('session.manual.duration')} className={hasDistance ? 'col-span-1 sm:col-span-2' : 'col-span-2 sm:col-span-4'} error={show('duration')} hint={!show('duration') ? t('session.manual.durationHint') : undefined}>
           {(p) => <input {...p} className="field num" inputMode="numeric" value={f.duration} onChange={(e) => set('duration', e.target.value)} placeholder="48:30" />}
         </Field>
-        <Field label="FC moyenne" error={show('hr')}>
+        <Field label={t('session.manual.avgHr')} error={show('hr')}>
           {(p) => <input {...p} className="field num" inputMode="numeric" value={f.avgHR} onChange={(e) => set('avgHR', e.target.value)} placeholder="145" />}
         </Field>
-        <Field label="FC max">{(p) => <input {...p} className="field num" inputMode="numeric" value={f.maxHR} onChange={(e) => set('maxHR', e.target.value)} placeholder="168" />}</Field>
+        <Field label={t('session.manual.maxHr')}>{(p) => <input {...p} className="field num" inputMode="numeric" value={f.maxHR} onChange={(e) => set('maxHR', e.target.value)} placeholder="168" />}</Field>
         {isRun ? (
-          <Field label="Cadence (spm)" error={show('cadence')}>
+          <Field label={t('session.manual.cadence')} error={show('cadence')}>
             {(p) => <input {...p} className="field num" inputMode="numeric" value={f.cadence} onChange={(e) => set('cadence', e.target.value)} placeholder="174" />}
           </Field>
         ) : (
@@ -205,10 +206,10 @@ export function ManualActivityDialog({ open, onClose, today, activity, onCreated
         <span className="max-sm:hidden" />
         {hasDistance && (
           <>
-            <Field label="D+ (m)" error={show('elev')}>
+            <Field label={t('session.manual.gain')} error={show('elev')}>
               {(p) => <input {...p} className="field num" inputMode="numeric" value={f.gain} onChange={(e) => set('gain', e.target.value)} placeholder="60" />}
             </Field>
-            <Field label="D− (m)">{(p) => <input {...p} className="field num" inputMode="numeric" value={f.loss} onChange={(e) => set('loss', e.target.value)} placeholder="60" />}</Field>
+            <Field label={t('session.manual.loss')}>{(p) => <input {...p} className="field num" inputMode="numeric" value={f.loss} onChange={(e) => set('loss', e.target.value)} placeholder="60" />}</Field>
           </>
         )}
         {error && <InlineError className="col-span-2 sm:col-span-4">{error.message}</InlineError>}

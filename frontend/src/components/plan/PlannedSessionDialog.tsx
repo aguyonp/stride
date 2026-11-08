@@ -10,6 +10,7 @@ import { InlineError } from '../ui/Misc'
 import { useToast } from '../ui/Toast'
 import { StepsEditor } from './StepsEditor'
 import { stepsSummary, totalDurationS } from './steps'
+import { t } from '../../i18n'
 
 interface PlannedSessionDialogProps {
   open: boolean
@@ -54,11 +55,25 @@ const num = (v: string) => {
   return v.trim() !== '' && Number.isFinite(n) && n > 0 ? n : null
 }
 
-/** Full planned-session form (create or edit), shared by the create dialog and the session drawer. */
-export function useSessionEditor(session: PlannedSession | null, defaultDate: string, open: boolean, onDone: (saved: PlannedSession) => void): { formId: string; pending: boolean; date: string; form: ReactNode } {
+/** Alternative persistence (e.g. the physio/coach share portal) with optional date bounds. */
+export interface SessionEditorOptions {
+  save?: {
+    create: (body: PlannedSessionInput, onSuccess: (saved: PlannedSession) => void) => void
+    update: (id: number, body: PlannedSessionInput, onSuccess: (saved: PlannedSession) => void) => void
+    pending: boolean
+    error: Error | null
+    reset: () => void
+  }
+  minDate?: string
+  maxDate?: string
+}
+
+/** Full planned-session form (create or edit), shared by the create dialog, the session drawer and the share portal. */
+export function useSessionEditor(session: PlannedSession | null, defaultDate: string, open: boolean, onDone: (saved: PlannedSession) => void, opts: SessionEditorOptions = {}): { formId: string; pending: boolean; date: string; form: ReactNode } {
   const formId = useId()
   const { toast } = useToast()
-  const { create, update } = usePlanMutations()
+  const own = usePlanMutations()
+  const { create, update } = own
   const [f, setF] = useState<FormState>(() => toForm(session, defaultDate))
   const [submitted, setSubmitted] = useState(false)
   const openKey = open ? `${session?.id ?? 'new'}:${defaultDate}` : null
@@ -72,12 +87,14 @@ export function useSessionEditor(session: PlannedSession | null, defaultDate: st
   }
   const resetCreate = create.reset
   const resetUpdate = update.reset
+  const resetOther = opts.save?.reset
   useEffect(() => {
     if (openKey) {
       resetCreate()
       resetUpdate()
+      resetOther?.()
     }
-  }, [openKey, resetCreate, resetUpdate])
+  }, [openKey, resetCreate, resetUpdate, resetOther])
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }))
   const isRest = f.sport === 'rest'
   const isRun = f.sport === 'run'
@@ -85,18 +102,18 @@ export function useSessionEditor(session: PlannedSession | null, defaultDate: st
   const paceMinS = f.paceMin.trim() ? parsePace(f.paceMin) : null
   const paceMaxS = f.paceMax.trim() ? parsePace(f.paceMax) : null
   const errors = {
-    title: !f.title.trim() ? 'Donne un titre à la séance.' : null,
-    date: !/^\d{4}-\d{2}-\d{2}$/.test(f.date) ? 'Date invalide.' : null,
-    paceMin: f.paceMin.trim() && paceMinS === null ? 'Format m:ss attendu (ex. 5:10).' : null,
-    paceMax: f.paceMax.trim() && paceMaxS === null ? 'Format m:ss attendu (ex. 5:20).' : null,
-    duration: f.durationMin.trim() && num(f.durationMin) === null ? 'Durée en minutes (nombre positif).' : null,
-    distance: f.distanceKm.trim() && num(f.distanceKm) === null ? 'Distance en km (nombre positif).' : null,
-    cadence: f.cadence.trim() && (num(f.cadence) === null || (num(f.cadence) as number) > 260) ? 'Cadence en pas/min (ex. 172).' : null,
+    title: !f.title.trim() ? t('plan.sessionDialog.titleRequired') : null,
+    date: !/^\d{4}-\d{2}-\d{2}$/.test(f.date) ? t('plan.sessionDialog.dateInvalid') : (opts.minDate && f.date < opts.minDate) || (opts.maxDate && f.date > opts.maxDate) ? t('plan.sessionDialog.dateOutOfRange') : null,
+    paceMin: f.paceMin.trim() && paceMinS === null ? t('plan.sessionDialog.paceMinFormat') : null,
+    paceMax: f.paceMax.trim() && paceMaxS === null ? t('plan.sessionDialog.paceMaxFormat') : null,
+    duration: f.durationMin.trim() && num(f.durationMin) === null ? t('plan.sessionDialog.durationInvalid') : null,
+    distance: f.distanceKm.trim() && num(f.distanceKm) === null ? t('plan.sessionDialog.distanceInvalid') : null,
+    cadence: f.cadence.trim() && (num(f.cadence) === null || (num(f.cadence) as number) > 260) ? t('plan.sessionDialog.cadenceInvalid') : null,
   }
   const invalid = Object.values(errors).some(Boolean)
   const show = (k: keyof typeof errors) => (submitted ? errors[k] : k === 'title' || k === 'date' ? null : errors[k])
-  const pending = create.isPending || update.isPending
-  const mutationError = create.error ?? update.error
+  const pending = opts.save ? opts.save.pending : create.isPending || update.isPending
+  const mutationError = opts.save ? opts.save.error : (create.error ?? update.error)
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -119,19 +136,22 @@ export function useSessionEditor(session: PlannedSession | null, defaultDate: st
     }
     if (body.targetDurationS === null && !isRest) body.targetDurationS = totalDurationS(f.steps)
     const done = (saved: PlannedSession) => {
-      toast({ title: session ? 'Séance mise à jour' : 'Séance planifiée', description: `${capitalize(fmtDateLong(body.date))} · ${body.title}` })
+      toast({ title: session ? t('plan.sessionDialog.updated') : t('plan.sessionDialog.planned'), description: `${capitalize(fmtDateLong(body.date))} · ${body.title}` })
       onDone(saved)
     }
-    if (session) update.mutate({ id: session.id, ...body }, { onSuccess: done })
+    if (opts.save) {
+      if (session) opts.save.update(session.id, body, done)
+      else opts.save.create(body, done)
+    } else if (session) update.mutate({ id: session.id, ...body }, { onSuccess: done })
     else create.mutate(body, { onSuccess: done })
   }
 
   const form = (
     <form id={formId} onSubmit={onSubmit} noValidate className="grid gap-4 sm:grid-cols-2">
-      <Field label="Date" error={show('date')}>
-        {(p) => <input {...p} type="date" className="field" value={f.date} onChange={(e) => set('date', e.target.value)} required />}
+      <Field label={t('plan.sessionDialog.date')} error={show('date')}>
+        {(p) => <input {...p} type="date" className="field" value={f.date} min={opts.minDate} max={opts.maxDate} onChange={(e) => set('date', e.target.value)} required />}
       </Field>
-      <Field label="Sport">
+      <Field label={t('plan.sessionDialog.sport')}>
         {(p) => (
           <select {...p} className="field" value={f.sport} onChange={(e) => set('sport', e.target.value as PlanSport)}>
             {SPORTS.map((s) => (
@@ -142,7 +162,7 @@ export function useSessionEditor(session: PlannedSession | null, defaultDate: st
           </select>
         )}
       </Field>
-      <Field label="Titre" className="sm:col-span-2" error={show('title')}>
+      <Field label={t('plan.sessionDialog.title')} className="sm:col-span-2" error={show('title')}>
         {(p) => (
           <input
             {...p}
@@ -150,44 +170,44 @@ export function useSessionEditor(session: PlannedSession | null, defaultDate: st
             className="field"
             value={f.title}
             onChange={(e) => set('title', e.target.value)}
-            placeholder={isRest ? 'Repos complet' : isRun ? 'Footing 45 min continu' : 'Séance'}
+            placeholder={isRest ? t('plan.sessionDialog.titleRest') : isRun ? t('plan.sessionDialog.titleRun') : t('plan.sessionDialog.titleOther')}
             maxLength={120}
             autoComplete="off"
           />
         )}
       </Field>
       {!isRest && (
-        <Field label="Durée cible (min)" error={show('duration')}>
+        <Field label={t('plan.sessionDialog.duration')} error={show('duration')}>
           {(p) => <input {...p} className="field num" inputMode="numeric" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} placeholder="45" />}
         </Field>
       )}
       {showDistance && (
-        <Field label="Distance cible (km)" error={show('distance')}>
+        <Field label={t('plan.sessionDialog.distance')} error={show('distance')}>
           {(p) => <input {...p} className="field num" inputMode="decimal" value={f.distanceKm} onChange={(e) => set('distanceKm', e.target.value)} placeholder="8,5" />}
         </Field>
       )}
       {isRun && (
         <>
-          <Field label="Allure rapide (m:ss/km)" error={show('paceMin')} hint="Borne la plus rapide de la plage">
+          <Field label={t('plan.sessionDialog.paceFast')} error={show('paceMin')} hint={t('plan.sessionDialog.paceFastHint')}>
             {(p) => <input {...p} className="field num" inputMode="numeric" value={f.paceMin} onChange={(e) => set('paceMin', e.target.value)} placeholder="5:10" />}
           </Field>
-          <Field label="Allure lente (m:ss/km)" error={show('paceMax')}>
+          <Field label={t('plan.sessionDialog.paceSlow')} error={show('paceMax')}>
             {(p) => <input {...p} className="field num" inputMode="numeric" value={f.paceMax} onChange={(e) => set('paceMax', e.target.value)} placeholder="5:20" />}
           </Field>
-          <Field label="Cadence cible (spm)" error={show('cadence')}>
+          <Field label={t('plan.sessionDialog.cadence')} error={show('cadence')}>
             {(p) => <input {...p} className="field num" inputMode="numeric" value={f.cadence} onChange={(e) => set('cadence', e.target.value)} placeholder="172" />}
           </Field>
         </>
       )}
-      <Field label="Consignes" className="sm:col-span-2" hint="Échauffement, blocs, sensations visées… (repris dans le prompt IA)">
+      <Field label={t('plan.sessionDialog.instructions')} className="sm:col-span-2" hint={t('plan.sessionDialog.instructionsHint')}>
         {(p) => (
-          <textarea {...p} className="field min-h-24 resize-y" value={f.instructions} onChange={(e) => set('instructions', e.target.value)} maxLength={2000} placeholder="10 min échauffement, 4 × 5 min allure seuil, récup 2 min trot" />
+          <textarea {...p} className="field min-h-24 resize-y" value={f.instructions} onChange={(e) => set('instructions', e.target.value)} maxLength={2000} placeholder={t('plan.sessionDialog.instructionsPlaceholder')} />
         )}
       </Field>
       {!isRest && (
         <fieldset className="sm:col-span-2">
-          <legend className="mb-1.5 text-sm font-medium text-ink-2">Structure (étapes)</legend>
-          <p className="mb-2 text-xs text-ink-3">{f.steps.length ? stepsSummary(f.steps) : 'Facultatif : utilisée pour le fichier .FIT et l’envoi sur la montre.'}</p>
+          <legend className="mb-1.5 text-sm font-medium text-ink-2">{t('plan.sessionDialog.structure')}</legend>
+          <p className="mb-2 text-xs text-ink-3">{f.steps.length ? stepsSummary(f.steps) : t('plan.sessionDialog.structureHint')}</p>
           <StepsEditor steps={f.steps} onChange={(steps) => set('steps', steps)} />
         </fieldset>
       )}
@@ -203,18 +223,18 @@ export function PlannedSessionDialog({ open, onClose, session, defaultDate }: Pl
     <Dialog
       open={open}
       onClose={onClose}
-      title={session ? 'Modifier la séance' : 'Planifier une séance'}
+      title={session ? t('plan.sessionDialog.editTitle') : t('plan.sessionDialog.newTitle')}
       description={ed.date ? capitalize(fmtDateLong(ed.date)) : undefined}
       size="lg"
       initialFocus={session ? undefined : 'input[name="title"]'}
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="submit" form={ed.formId} className="btn btn-primary" disabled={ed.pending}>
             {ed.pending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-            {session ? 'Enregistrer' : 'Planifier'}
+            {session ? t('common.actions.save') : t('plan.sessionDialog.plan')}
           </button>
         </div>
       }

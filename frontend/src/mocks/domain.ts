@@ -143,7 +143,9 @@ export function summarize(it: CatalogItem, d: UserData, planned: PlannedSession[
   const g = garminOn(mode)
   const n = d.notes[String(it.id)]
   const kudosOn = mode !== 'garmin' && it.stravaId !== null && !d.integrations.strava.missingScopes?.length
+  const remarks = ((d.v42 as { notes?: { kind: string; activityId: number | null }[] } | undefined)?.notes ?? []).filter((x) => x.kind === 'remark' && x.activityId === it.id).length
   return {
+    remarkCount: remarks,
     id: it.id,
     garminId: g && !it.manual ? it.garminId : null,
     stravaId: mode === 'garmin' ? null : it.stravaId,

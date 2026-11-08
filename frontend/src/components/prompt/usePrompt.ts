@@ -6,6 +6,7 @@ import { estimateTokens, fmtDateShort } from '../../lib/format'
 import { ALL_INCLUDE, effectiveInclude, parseInclude, serializeInclude } from '../../lib/include'
 import { STORAGE_KEYS } from '../../lib/storage'
 import { useReportExport, type ReportPayload } from '../export/useReportExport'
+import { t } from '../../i18n'
 
 export type PromptSubjectKind = 'activity' | 'day'
 
@@ -32,9 +33,9 @@ export function usePrompt(target: PromptTarget) {
     if (!text || stale) return null
     const tokens = estimateTokens(text)
     if (kind === 'activity' && target.activity) {
-      return { report: text, tokens, filename: `stride-${target.activity.date}-seance.md`, title: `Stride · ${target.activity.name}` }
+      return { report: text, tokens, filename: t('coach.prompt.sessionFile', { date: target.activity.date }), title: `Stride · ${target.activity.name}` }
     }
-    return { report: text, tokens, filename: `stride-${target.day}-bilan.md`, title: `Stride · bilan du ${fmtDateShort(target.day)}` }
+    return { report: text, tokens, filename: t('coach.prompt.dayFile', { date: target.day }), title: t('coach.prompt.dayTitle', { date: fmtDateShort(target.day) }) }
   }, [text, stale, kind, target.activity, target.day])
 
   const exporter = useReportExport(payload, () => setPreviewOpen(true))

@@ -12,6 +12,7 @@ import { PageHeader } from '../../components/ui/Misc'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { fmtDateTime, todayISO } from '../../lib/format'
 import { MultiExportSection } from './MultiExportSection'
+import { t } from '../../i18n'
 
 const AnalysisDrawer = lazy(() => import('../../components/ai/AnalysisDrawer').then((m) => ({ default: m.AnalysisDrawer })))
 
@@ -20,7 +21,7 @@ const firstLine = (md: string) => md.replace(/^[#>*\s-]+/gm, '').split('\n').fin
 function AnalysesCard({ today, latest, onOpen }: { today: string; latest: ActivitySummary | null; onOpen: (s: AnalysisSubject, run: boolean) => void }) {
   const day = useAnalyses('day', today)
   const session = useAnalyses('activity', latest ? String(latest.id) : null)
-  const daySubject: AnalysisSubject = { kind: 'day', date: today, label: 'Bilan du jour' }
+  const daySubject: AnalysisSubject = { kind: 'day', date: today, label: t('coach.view.dayReview') }
   const sessionSubject: AnalysisSubject | null = latest ? { kind: 'activity', activityId: latest.id, label: latest.name } : null
   const history = useMemo(
     () => [...(day.data ?? []), ...(session.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6),
@@ -29,7 +30,7 @@ function AnalysesCard({ today, latest, onOpen }: { today: string; latest: Activi
   const subjectOf = (a: LLMAnalysis): AnalysisSubject => (a.kind === 'activity' && sessionSubject ? sessionSubject : daySubject)
 
   return (
-    <Card title="Analyse IA" icon={<Bot className="size-4" />}>
+    <Card title={t('coach.view.analysis')} icon={<Bot className="size-4" />}>
       <div className="grid gap-2 sm:grid-cols-2">
         <button type="button" className="btn btn-primary" onClick={() => onOpen(daySubject, true)}>
           <CalendarDays className="size-4" aria-hidden="true" /> Bilan du jour
@@ -45,14 +46,14 @@ function AnalysesCard({ today, latest, onOpen }: { today: string; latest: Activi
         <History className="size-3.5" aria-hidden="true" /> Historique
       </h3>
       {history.length === 0 ? (
-        <p className="text-sm text-ink-3">Aucune analyse pour l’instant.</p>
+        <p className="text-sm text-ink-3">{t('coach.view.none')}</p>
       ) : (
         <ul className="divide-y divide-line">
           {history.map((a) => (
             <li key={a.id}>
               <button type="button" className="flex w-full min-w-0 flex-col py-2 text-left hover:text-ink" onClick={() => onOpen(subjectOf(a), false)}>
                 <span className="num text-xs text-ink-3">
-                  {a.kind === 'day' ? 'Bilan' : 'Séance'} · {fmtDateTime(a.createdAt)}
+                  {a.kind === 'day' ? t('coach.view.day') : t('coach.view.session')} · {fmtDateTime(a.createdAt)}
                 </span>
                 <span className="truncate text-sm text-ink-2">{firstLine(a.markdown)}</span>
               </button>
@@ -66,7 +67,7 @@ function AnalysesCard({ today, latest, onOpen }: { today: string; latest: Activi
 
 /** Coach IA: prompt for a session or the day, analysis and history with the user's LLM, multi-session export. */
 export default function CoachView() {
-  useDocumentTitle('Coach IA')
+  useDocumentTitle(t('coach.view.title'))
   const profile = useProfile()
   const today = todayISO(profile.data?.timezone)
   const list = useActivities()
@@ -78,20 +79,20 @@ export default function CoachView() {
   const [ai, setAi] = useState<{ subject: AnalysisSubject; run: number; key: number } | null>(null)
   const open = (subject: AnalysisSubject, run: boolean) => setAi((cur) => ({ subject, run: run ? (cur?.run ?? 0) + 1 : 0, key: (cur?.key ?? 0) + 1 }))
   const promptSubject: AnalysisSubject =
-    prompt.kind === 'activity' && latest ? { kind: 'activity', activityId: latest.id, label: latest.name } : { kind: 'day', date: today, label: 'Bilan du jour' }
+    prompt.kind === 'activity' && latest ? { kind: 'activity', activityId: latest.id, label: latest.name } : { kind: 'day', date: today, label: t('coach.view.dayReview') }
 
   return (
     <div className="animate-in space-y-6">
-      <PageHeader title="Coach IA" />
+      <PageHeader title={t('coach.view.title')} />
       <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
         <PromptGenerator p={prompt} llmConfigured={llmOn} onAnalyze={() => open(promptSubject, true)} />
         {llmOn ? (
           <AnalysesCard today={today} latest={latest} onOpen={open} />
         ) : (
-          <Card title="Analyse IA" icon={<Bot className="size-4" />}>
-            <p className="text-sm text-ink-2">Branche ton IA pour obtenir l’analyse et son historique ici.</p>
+          <Card title={t('coach.view.analysis')} icon={<Bot className="size-4" />}>
+            <p className="text-sm text-ink-2">{t('coach.view.connectHint')}</p>
             <Link href="/settings#ia" className="btn btn-ghost mt-3">
-              Configurer mon IA
+              {t('common.misc.configureAi')}
             </Link>
           </Card>
         )}

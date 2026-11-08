@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 import { isNum, ND } from '../../lib/format'
+import { t } from '../../i18n'
 
 /** Greyed « N/D » for missing values (never 0). */
 export function NA({ className, reason }: { className?: string; reason?: string | null }) {
@@ -14,7 +15,7 @@ export function NA({ className, reason }: { className?: string; reason?: string 
 
 /** Discreet notice for a health metric the backend could not compute (never a fallback number). */
 export function Insufficient({ className }: { className?: string }) {
-  return <span className={cn('text-xs font-normal text-ink-3', className)}>Données insuffisantes</span>
+  return <span className={cn('text-xs font-normal text-ink-3', className)}>{t('common.ui.insufficientData')}</span>
 }
 
 interface ValueProps {

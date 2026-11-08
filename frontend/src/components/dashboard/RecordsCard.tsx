@@ -10,6 +10,7 @@ import { Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
 import { Skeleton } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
+import { t, tDyn } from '../../i18n'
 
 const SOURCE_CLS: Record<PersonalRecord['source'], string> = { computed: 'bg-track text-ink-3', strava: 'bg-[#fc4c02]/12 text-[#c2410c] dark:text-[#fb923c]', manual: 'bg-violet/12 text-violet' }
 
@@ -17,12 +18,15 @@ const SOURCE_CLS: Record<PersonalRecord['source'], string> = { computed: 'bg-tra
 export function KudosBadge({ count, className }: { count: number | null | undefined; className?: string }) {
   if (count === null || count === undefined) return null
   return (
-    <span className={cn('inline-flex items-center gap-0.5 text-xs font-semibold', count > 0 ? 'text-[#c2410c] dark:text-[#fb923c]' : 'text-ink-3', className)} title="Kudos Strava" aria-label={`${count} kudos Strava`}>
+    <span className={cn('inline-flex items-center gap-0.5 text-xs font-semibold', count > 0 ? 'text-[#c2410c] dark:text-[#fb923c]' : 'text-ink-3', className)} title={t('dashboard.records.kudosTitle')} aria-label={t('dashboard.records.kudos', { count })}>
       <Heart className={cn('size-3.5', count > 0 && 'fill-current')} aria-hidden="true" />
       <span className="num">{count}</span>
     </span>
   )
 }
+
+/** Records are labelled by stable key in the active language (the API label is French). */
+export const recordLabel = (r: Pick<PersonalRecord, 'key' | 'label'>) => tDyn(`dashboard.records.keys.${r.key}`, undefined, r.label)
 
 const mainValue = (r: PersonalRecord) => (r.key === 'longest' ? (r.distanceM > 0 ? fmtKm(r.distanceM, 1) : '—') : r.timeS ? fmtDuration(r.timeS) : '—')
 const subValue = (r: PersonalRecord) => (r.key === 'longest' ? (r.timeS ? fmtDuration(r.timeS) : null) : r.paceSecPerKm ? fmtPace(r.paceSecPerKm) : null)
@@ -30,7 +34,7 @@ const subValue = (r: PersonalRecord) => (r.key === 'longest' ? (r.timeS ? fmtDur
 export function recordsSummary(records: PersonalRecord[] | undefined): string | undefined {
   if (!records) return undefined
   const pick = records.filter((r) => (r.key === '5k' || r.key === '10k' || r.key === 'half') && r.timeS)
-  return pick.length ? pick.map((r) => `${r.label.replace('Semi-marathon', 'Semi')} ${fmtDuration(r.timeS)}`).join(' · ') : 'Aucun record pour l’instant'
+  return pick.length ? pick.map((r) => `${r.key === 'half' ? t('dashboard.records.halfShort') : recordLabel(r)} ${fmtDuration(r.timeS)}`).join(' · ') : t('dashboard.records.none')
 }
 
 function Editor({ r, onDone }: { r: PersonalRecord; onDone: () => void }) {
@@ -46,36 +50,36 @@ function Editor({ r, onDone }: { r: PersonalRecord; onDone: () => void }) {
   const submit = () =>
     save.mutate(
       { key: r.key, timeS: timeS ?? undefined, distanceM: longest ? Math.round(distM) : undefined, date: date || undefined },
-      { onSuccess: () => (toast({ title: 'Record enregistré', description: r.label }), onDone()) },
+      { onSuccess: () => (toast({ title: t('dashboard.records.saved'), description: recordLabel(r) }), onDone()) },
     )
   return (
     <div className="mt-3 rounded-2xl bg-track/50 p-3">
-      <p className="mb-2 text-sm font-semibold text-ink">{r.label}</p>
+      <p className="mb-2 text-sm font-semibold text-ink">{recordLabel(r)}</p>
       <div className="grid gap-3 sm:grid-cols-3">
         {longest && (
-          <Field label="Distance (km)">{(p) => <input {...p} className="field num" inputMode="decimal" value={km} onChange={(e) => setKm(e.target.value)} placeholder="21,1" />}</Field>
+          <Field label={t('dashboard.records.distanceKm')}>{(p) => <input {...p} className="field num" inputMode="decimal" value={km} onChange={(e) => setKm(e.target.value)} placeholder="21,1" />}</Field>
         )}
-        <Field label={longest ? 'Temps (facultatif)' : 'Temps'} hint="h:mm:ss ou mm:ss">
+        <Field label={longest ? t('dashboard.records.timeOptional') : t('dashboard.records.time')} hint={t('dashboard.records.timeHint')}>
           {(p) => <input {...p} className="field num" inputMode="numeric" value={time} onChange={(e) => setTime(e.target.value)} placeholder={r.key === 'marathon' ? '3:45:00' : '22:41'} />}
         </Field>
-        <Field label="Date">{(p) => <input {...p} type="date" className="field" value={date} onChange={(e) => setDate(e.target.value)} />}</Field>
+        <Field label={t('dashboard.records.date')}>{(p) => <input {...p} type="date" className="field" value={date} onChange={(e) => setDate(e.target.value)} />}</Field>
       </div>
       {(save.error || reset.error) && <InlineError className="mt-2">{(save.error ?? reset.error)!.message}</InlineError>}
       <div className="mt-3 flex flex-wrap justify-between gap-2">
         {r.source === 'manual' ? (
-          <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={() => reset.mutate(r.key, { onSuccess: () => (toast({ title: 'Valeur manuelle retirée', description: 'Retour au record calculé.' }), onDone()) })} disabled={reset.isPending}>
-            <RotateCcw className="size-3.5" aria-hidden="true" /> Revenir au calcul
+          <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={() => reset.mutate(r.key, { onSuccess: () => (toast({ title: t('dashboard.records.manualRemoved'), description: t('dashboard.records.backToComputed') }), onDone()) })} disabled={reset.isPending}>
+            <RotateCcw className="size-3.5" aria-hidden="true" /> {t('dashboard.records.useComputed')}
           </button>
         ) : (
           <span />
         )}
         <span className="flex gap-2">
           <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={onDone}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="button" className="btn btn-primary h-9 min-h-9 px-3 text-xs" onClick={submit} disabled={invalid || save.isPending}>
             {save.isPending && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-            Enregistrer
+            {t('common.actions.save')}
           </button>
         </span>
       </div>
@@ -89,7 +93,7 @@ export function RecordsCard({ className }: { className?: string }) {
   const [editing, setEditing] = useState<string | null>(null)
   const current = q.data?.find((r) => r.key === editing) ?? null
   return (
-    <Card title="Records personnels" icon={<Trophy className="size-4" />} subtitle="Meilleur de tes séances, de Strava ou de ta saisie" className={className}>
+    <Card title={t('dashboard.records.title')} icon={<Trophy className="size-4" />} subtitle={t('dashboard.records.subtitle')} className={className}>
       {q.isError ? (
         <InlineError>{q.error.message}</InlineError>
       ) : !q.data ? (
@@ -110,10 +114,10 @@ export function RecordsCard({ className }: { className?: string }) {
                     onClick={() => setEditing(editing === r.key ? null : r.key)}
                     aria-expanded={editing === r.key}
                     className={cn('group w-full rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-track/60', editing === r.key && 'bg-track/60')}
-                    aria-label={`${r.label} : ${mainValue(r)}${r.date ? `, le ${fmtDateShort(r.date)}` : ''}, source ${RECORD_SOURCE[r.source]}. Modifier`}
+                    aria-label={t('dashboard.records.aria', { label: recordLabel(r), value: mainValue(r), date: r.date ? t('dashboard.records.ariaDate', { date: fmtDateShort(r.date) }) : '', source: RECORD_SOURCE[r.source] })}
                   >
                     <span className="flex items-center justify-between gap-1">
-                      <span className="truncate text-[11px] font-semibold tracking-wide text-ink-3 uppercase">{r.label}</span>
+                      <span className="truncate text-[11px] font-semibold tracking-wide text-ink-3 uppercase">{recordLabel(r)}</span>
                       <Pencil className="size-3 flex-none text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden="true" />
                     </span>
                     <span className={cn('num block text-lg leading-tight font-semibold tracking-tight', mainValue(r) === '—' ? 'text-ink-3' : 'text-ink')}>{mainValue(r)}</span>

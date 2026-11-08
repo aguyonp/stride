@@ -5,10 +5,15 @@ import type { PublicShareView } from '../../api/types'
 import { ALL_BODY_ZONES, BODY_ZONE_META } from '../../components/bodymap/bodyMapMeta'
 import { installDomPolyfills, mountWithProviders, waitFor, type MountedApp } from '../../test/domHarness'
 import SharePublicView from './SharePublicView'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 function sampleShareView(): PublicShareView {
   return {
     generatedAt: '2026-11-06T18:00:00Z',
+    linkId: 7,
     shareLabel: 'Kiné du sport',
     expiresAt: '2026-12-06T18:00:00Z',
     periodWeeks: 12,

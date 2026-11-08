@@ -3,6 +3,7 @@ import { useElementWidth } from '../../hooks/useElementWidth'
 import { cn } from '../../lib/cn'
 import { fmtDuration } from '../../lib/format'
 import { areaPath, extent, linear, linePath, nearestIndex, niceDomain, timeStep } from './scale'
+import { t } from '../../i18n'
 
 interface ChartBand {
   min: number
@@ -111,7 +112,7 @@ export function TimeSeriesStack({ tS, panels, shades = [], shadeLabel, ariaLabel
         ref={wrapRef}
         role="group"
         tabIndex={0}
-        aria-label={`${ariaLabel}. Flèches gauche et droite pour parcourir la séance.`}
+        aria-label={t('session.charts.keyboard', { label: ariaLabel })}
         onPointerMove={onPointerMove}
         onPointerDown={onPointerMove}
         onPointerLeave={onPointerLeave}

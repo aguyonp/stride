@@ -9,6 +9,8 @@ import { FreshnessPill } from '../ui/FreshnessPill'
 import { ActivityIcon } from '../ui/icons'
 import { Skeleton } from '../ui/Skeleton'
 import { KudosBadge } from './RecordsCard'
+import { RemarkMarker } from '../share/ShareMarkers'
+import { t } from '../../i18n'
 
 interface Props {
   summary: ActivitySummary | null
@@ -27,7 +29,7 @@ export function SessionHeader({ summary, view, loading, onOpenPicker, onPrev, on
   const a = view?.activity ?? summary
   const manual = a?.sources.includes('manual') ?? false
   return (
-    <section className="glass animate-in p-4 sm:p-5" aria-label="Séance sélectionnée">
+    <section className="glass animate-in p-4 sm:p-5" aria-label={t('dashboard.session.selected')}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className={cn('hidden size-11 flex-none place-items-center rounded-2xl sm:grid', a?.isRunning ? 'bg-accent/15 text-accent' : 'bg-track text-ink-2')}>
           {a ? <ActivityIcon sport={a.sport} type={a.type} className="size-6" /> : null}
@@ -56,38 +58,39 @@ export function SessionHeader({ summary, view, loading, onOpenPicker, onPrev, on
               <Skeleton className="h-3 w-40" />
             </div>
           ) : (
-            <p className="text-sm text-ink-3">Aucune séance sélectionnée.</p>
+            <p className="text-sm text-ink-3">{t('dashboard.session.noneSelected')}</p>
           )}
         </div>
         <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
           {view &&
             (view.activity.sources.length > 1 ? (
-              <span className="chip border border-violet/30 bg-violet/10 text-violet" title="Activité fusionnée : Garmin (physiologie, dynamique de course, FIT) + Strava (titre, RPE, équipement)">
+              <span className="chip border border-violet/30 bg-violet/10 text-violet" title={t('dashboard.session.mergedHint')}>
                 <GitMerge className="size-3.5" aria-hidden="true" />
                 Garmin + Strava
               </span>
             ) : (
-              <span className="chip border border-line bg-track text-ink-2" title={`Source : ${view.activity.sources.map((s) => SOURCE_LABEL[s] ?? s).join(' + ')}`}>
+              <span className="chip border border-line bg-track text-ink-2" title={t('dashboard.session.source', { sources: view.activity.sources.map((s) => SOURCE_LABEL[s] ?? s).join(' + ') })}>
                 {view.sourceLabel}
               </span>
             ))}
           {manual && onEditManual && (
             <button type="button" className="chip border border-line bg-transparent text-ink-2 hover:bg-track" onClick={onEditManual}>
-              <Pencil className="size-3.5" aria-hidden="true" /> Modifier
+              <Pencil className="size-3.5" aria-hidden="true" /> {t('dashboard.session.edit')}
             </button>
           )}
+          <RemarkMarker count={a?.remarkCount} />
           <KudosBadge count={a?.kudos} className="px-1" />
           {a?.planStatus && a.planStatus !== 'done' && <MatchBadge status={a.planStatus} />}
           {!manual && <FreshnessPill freshness={view?.freshness} className="max-sm:hidden" />}
           <span className="ml-auto flex items-center gap-1.5 sm:ml-1">
-            <button type="button" className="icon-btn size-10" onClick={onPrev ?? undefined} disabled={!onPrev} aria-label="Séance précédente (plus ancienne)">
+            <button type="button" className="icon-btn size-10" onClick={onPrev ?? undefined} disabled={!onPrev} aria-label={t('dashboard.session.prev')}>
               <ChevronLeft className="size-4" />
             </button>
             <button type="button" className="btn btn-ghost h-10 px-3" onClick={onOpenPicker}>
               <CalendarSearch className="size-4" aria-hidden="true" />
-              <span className="max-sm:sr-only">Changer</span>
+              <span className="max-sm:sr-only">{t('dashboard.session.change')}</span>
             </button>
-            <button type="button" className="icon-btn size-10" onClick={onNext ?? undefined} disabled={!onNext} aria-label="Séance suivante (plus récente)">
+            <button type="button" className="icon-btn size-10" onClick={onNext ?? undefined} disabled={!onNext} aria-label={t('dashboard.session.next')}>
               <ChevronRight className="size-4" />
             </button>
           </span>

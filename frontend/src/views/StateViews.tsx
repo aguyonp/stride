@@ -1,8 +1,9 @@
 import { CircleAlert, Compass, Lock, RotateCw } from 'lucide-react'
 import { Link } from 'wouter'
 import { Skeleton } from '../components/ui/Skeleton'
+import { t } from '../i18n'
 
-export function LoadingView({ label = 'Chargement…' }: { label?: string }) {
+export function LoadingView({ label = t('common.actions.loading') }: { label?: string }) {
   return (
     <div className="space-y-4" role="status" aria-label={label}>
       <Skeleton className="h-24" />
@@ -16,8 +17,8 @@ export function LoadingView({ label = 'Chargement…' }: { label?: string }) {
   )
 }
 
-export function ErrorView({ error, onRetry, title = 'Impossible de charger les données' }: { error: unknown; onRetry?: () => void; title?: string }) {
-  const message = error instanceof Error ? error.message : 'Erreur inconnue.'
+export function ErrorView({ error, onRetry, title = t('layout.state.loadFailed') }: { error: unknown; onRetry?: () => void; title?: string }) {
+  const message = error instanceof Error ? error.message : t('layout.state.unknownError')
   return (
     <section className="glass mx-auto max-w-xl p-6 text-center" role="alert">
       <span className="mx-auto mb-3 grid size-11 place-items-center rounded-2xl bg-danger/12 text-danger">
@@ -27,7 +28,7 @@ export function ErrorView({ error, onRetry, title = 'Impossible de charger les d
       <p className="mt-1 text-sm text-ink-2">{message}</p>
       {onRetry && (
         <button type="button" className="btn btn-ghost mt-4" onClick={onRetry}>
-          <RotateCw className="size-4" aria-hidden="true" /> Réessayer
+          <RotateCw className="size-4" aria-hidden="true" /> {t('common.actions.retry')}
         </button>
       )}
     </section>
@@ -37,7 +38,7 @@ export function ErrorView({ error, onRetry, title = 'Impossible de charger les d
 export function BootErrorView({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <div className="grid min-h-[60vh] place-items-center">
-      <ErrorView error={error} onRetry={onRetry} title="Stride ne répond pas" />
+      <ErrorView error={error} onRetry={onRetry} title={t('layout.state.down')} />
     </div>
   )
 }
@@ -48,10 +49,10 @@ export function NotFoundView() {
       <span className="mx-auto mb-3 grid size-11 place-items-center rounded-2xl bg-accent/12 text-accent">
         <Compass className="size-5" aria-hidden="true" />
       </span>
-      <h1 className="text-lg font-semibold">Page introuvable</h1>
-      <p className="mt-1 text-sm text-ink-3">Cette adresse ne correspond à aucune page de Stride.</p>
+      <h1 className="text-lg font-semibold">{t('layout.state.notFound')}</h1>
+      <p className="mt-1 text-sm text-ink-3">{t('layout.state.notFoundHint')}</p>
       <Link href="/" className="btn btn-primary mt-4">
-        Retour au tableau de bord
+        {t('layout.state.backHome')}
       </Link>
     </section>
   )
@@ -63,10 +64,10 @@ export function ForbiddenView() {
       <span className="mx-auto mb-3 grid size-11 place-items-center rounded-2xl bg-warn/12 text-warn">
         <Lock className="size-5" aria-hidden="true" />
       </span>
-      <h1 className="text-lg font-semibold">Accès réservé aux administrateurs</h1>
-      <p className="mt-1 text-sm text-ink-3">Ton compte n’a pas les droits nécessaires pour cette page.</p>
+      <h1 className="text-lg font-semibold">{t('layout.state.forbidden')}</h1>
+      <p className="mt-1 text-sm text-ink-3">{t('layout.state.forbiddenHint')}</p>
       <Link href="/" className="btn btn-ghost mt-4">
-        Retour au tableau de bord
+        {t('layout.state.backHome')}
       </Link>
     </section>
   )

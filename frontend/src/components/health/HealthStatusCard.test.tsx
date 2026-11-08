@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HealthStatus, HealthStatusInput } from '../../api/types'
-import { conditionLabelOf, MOCK_CONDITION_CATALOG } from '../../mocks/healthConditions'
+import { conditionCatalog, conditionLabelOf } from '../../mocks/healthConditions'
 import { clickEl, installDomPolyfills, mountWithProviders, setInputValue, waitFor, type MountedApp } from '../../test/domHarness'
 import { HealthStatusCard } from './HealthStatusCard'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 const button = (text: string) => Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === text) ?? null
@@ -21,7 +25,7 @@ describe('HealthStatusCard pathology picker', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
-        if (url.startsWith('/api/health/conditions')) return ok(MOCK_CONDITION_CATALOG)
+        if (url.startsWith('/api/health/conditions')) return ok(conditionCatalog('fr'))
         if (url.startsWith('/api/health/status') && init?.method === 'PUT') {
           const body = JSON.parse(String(init.body)) as HealthStatusInput
           puts.push(body)

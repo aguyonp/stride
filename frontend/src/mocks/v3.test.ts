@@ -6,6 +6,10 @@ import { setFlags } from './flags'
 import { mockFetch } from './server'
 import { calendar, efficiencyTrend, enrichActivityView, parsePlanText, readinessFor, trackFor } from './v3'
 import { buildActivityView } from './view'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 function setup(flags: string[]) {
   setFlags(flags)

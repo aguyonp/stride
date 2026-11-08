@@ -2,9 +2,10 @@ import { Footprints, Gauge } from 'lucide-react'
 import { useEfficiencyTrend } from '../../api/queriesV3'
 import type { ActivityView } from '../../api/types'
 import { cn } from '../../lib/cn'
-import { fmtDateShort, fmtNumber, isNum } from '../../lib/format'
+import { fmtDateShort, fmtNumber, fmtPct, isNum, ND } from '../../lib/format'
 import { Card } from '../ui/Card'
 import { Stat } from '../ui/Value'
+import { t, tx } from '../../i18n'
 
 function Sparkline({ values, highlight, className, label }: { values: (number | null)[]; highlight?: number; className?: string; label: string }) {
   const nums = values.filter(isNum)
@@ -41,23 +42,23 @@ export function EfficiencyImpact({ view }: { view: ActivityView }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       {ef && (
-        <Card title="Efficience aérobie" icon={<Gauge className="size-4" />}>
+        <Card title={t('session.efficiency.title')} icon={<Gauge className="size-4" />}>
           {ef.eligible ? (
             <>
               <div className="grid grid-cols-2 gap-2.5">
-                <Stat label="EF vitesse" sub="m/min par bpm">
+                <Stat label={t('session.efficiency.efSpeed')} sub={t('session.efficiency.efSpeedSub')}>
                   <span className="num">{fmtNumber(ef.efSpeed, 2)}</span>
                 </Stat>
-                <Stat label="EF puissance" sub="W par bpm (Pw:HR)">
-                  <span className="num">{isNum(ef.efPower) ? fmtNumber(ef.efPower, 2) : 'N/D'}</span>
+                <Stat label={t('session.efficiency.efPower')} sub={t('session.efficiency.efPowerSub')}>
+                  <span className="num">{isNum(ef.efPower) ? fmtNumber(ef.efPower, 2) : ND}</span>
                 </Stat>
               </div>
               <div className="mt-3">
                 <div className="mb-1 flex items-baseline justify-between text-xs text-ink-3">
-                  <span>Tendance 12 sem. (moyenne glissante)</span>
-                  {isNum(ch) && <span className={cn('num font-semibold', ch >= 0 ? 'text-ok' : 'text-warn')}>{`${ch >= 0 ? '+' : '−'}${fmtNumber(Math.abs(ch), 1)} %`}</span>}
+                  <span>{t('session.efficiency.trend')}</span>
+                  {isNum(ch) && <span className={cn('num font-semibold', ch >= 0 ? 'text-ok' : 'text-warn')}>{`${ch >= 0 ? '+' : '−'}${fmtPct(Math.abs(ch), 1)}`}</span>}
                 </div>
-                <Sparkline values={trend.data?.rollingEfSpeed ?? []} highlight={idx >= 0 ? idx : undefined} label={`Tendance de l’efficience sur 12 semaines${isNum(ch) ? ` : ${ch >= 0 ? '+' : ''}${fmtNumber(ch, 1)} %` : ''}`} />
+                <Sparkline values={trend.data?.rollingEfSpeed ?? []} highlight={idx >= 0 ? idx : undefined} label={t('session.efficiency.trendAria', { change: isNum(ch) ? `: ${ch >= 0 ? '+' : ''}${fmtPct(ch, 1)}` : '' })} />
                 {pts.length > 1 && (
                   <div className="flex justify-between text-[11px] text-ink-3">
                     <span>{fmtDateShort(pts[0].date)}</span>
@@ -65,27 +66,27 @@ export function EfficiencyImpact({ view }: { view: ActivityView }) {
                   </div>
                 )}
               </div>
-              <p className="mt-2 text-xs text-ink-3">Plus l’EF monte à effort stable, plus tu cours vite pour la même FC.</p>
+              <p className="mt-2 text-xs text-ink-3">{t('session.efficiency.hint')}</p>
             </>
           ) : (
-            <p className="text-sm text-ink-3">{ef.reason ?? 'Non calculée pour cette séance.'}</p>
+            <p className="text-sm text-ink-3">{ef.reason ?? t('session.efficiency.notComputed')}</p>
           )}
         </Card>
       )}
       {im && (
-        <Card title="Charge d’impact cumulée" icon={<Footprints className="size-4" />}>
+        <Card title={t('session.efficiency.impactTitle')} icon={<Footprints className="size-4" />}>
           <div className="grid grid-cols-2 gap-2.5">
-            <Stat label="Foulées" sub={isNum(im.stepsPerKm) ? `${fmtNumber(im.stepsPerKm)} / km` : undefined}>
-              <span className="num">{isNum(im.steps) ? fmtNumber(im.steps) : 'N/D'}</span>
+            <Stat label={t('session.efficiency.steps')} sub={isNum(im.stepsPerKm) ? `${fmtNumber(im.stepsPerKm)} / km` : undefined}>
+              <span className="num">{isNum(im.steps) ? fmtNumber(im.steps) : ND}</span>
             </Stat>
-            <Stat label="Indice articulaire" sub={`OV ×${fmtNumber(im.voFactor, 2)} · D− ×${fmtNumber(im.descentFactor, 2)}`}>
-              <span className="num">{isNum(im.jointIndex) ? fmtNumber(im.jointIndex, 1) : 'N/D'}</span>
+            <Stat label={t('session.efficiency.jointIndex')} sub={t('session.efficiency.voFactor', { vo: fmtNumber(im.voFactor, 2), descent: fmtNumber(im.descentFactor, 2) })}>
+              <span className="num">{isNum(im.jointIndex) ? fmtNumber(im.jointIndex, 1) : ND}</span>
             </Stat>
           </div>
           <p className="mt-3 text-sm text-ink-2">
-            Cumul 7 jours : <span className="num font-semibold text-ink">{isNum(im.jointIndex7d) ? fmtNumber(im.jointIndex7d, 1) : 'N/D'}</span>
+            {tx('session.efficiency.cumul7d', { value: <span className="num font-semibold text-ink">{isNum(im.jointIndex7d) ? fmtNumber(im.jointIndex7d, 1) : ND}</span> })}
           </p>
-          <p className="mt-1 text-xs text-ink-3">Foulées × oscillation verticale × dénivelé négatif. Distinct de la charge d’entraînement et de l’« impact load » Garmin.</p>
+          <p className="mt-1 text-xs text-ink-3">{t('session.efficiency.impactHint')}</p>
         </Card>
       )}
     </div>

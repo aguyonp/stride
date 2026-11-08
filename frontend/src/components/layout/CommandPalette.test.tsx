@@ -4,6 +4,10 @@ import type { Me } from '../../api/types'
 import { ui } from '../../state/ui'
 import { clickEl, installDomPolyfills, keyDownEl, mountWithProviders, setInputValue, waitFor, type MountedApp } from '../../test/domHarness'
 import { CommandPalette } from './CommandPalette'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const ADMIN_ME: Me = {
   id: 1,

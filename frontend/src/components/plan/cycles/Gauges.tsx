@@ -1,7 +1,8 @@
 import type { CycleActuals } from '../../../api/types'
 import { cn } from '../../../lib/cn'
-import { fmtNumber } from '../../../lib/format'
+import { fmtNumber, fmtPct } from '../../../lib/format'
 import { gaugeFill, sessionsPct } from './cycleModel'
+import { t } from '../../../i18n'
 
 function DualGauge({
   label,
@@ -31,13 +32,13 @@ function DualGauge({
             {' '}
             / {planned > 0 ? fmtNumber(planned, decimals) : '—'} {unit}
           </span>
-          {fill.pct !== null && <span className={cn('ml-1.5', fill.overload ? 'text-warn' : 'text-ink-3')}>({fill.pct} %)</span>}
+          {fill.pct !== null && <span className={cn('ml-1.5', fill.overload ? 'text-warn' : 'text-ink-3')}>({fmtPct(fill.pct, 0)})</span>}
         </span>
       </div>
       <div
         className={cn('mt-1 overflow-hidden rounded-full bg-track', compact ? 'h-1.5' : 'h-2')}
         role="progressbar"
-        aria-label={`${label} : ${fmtNumber(actual, decimals)} sur ${planned > 0 ? fmtNumber(planned, decimals) : 0} ${unit}`}
+        aria-label={t('plan.cycles.gaugeAria', { label, actual: fmtNumber(actual, decimals), planned: planned > 0 ? fmtNumber(planned, decimals) : 0, unit })}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={fill.width}
@@ -56,8 +57,8 @@ export function VolumeLoadGauges({
   actuals,
   plannedKm = actuals.plannedVolumeKm,
   plannedLoad = actuals.plannedLoad,
-  volumeLabel = 'Volume',
-  loadLabel = 'Charge',
+  volumeLabel = t('plan.cycles.volume'),
+  loadLabel = t('plan.cycles.load'),
 }: {
   actuals: CycleActuals
   plannedKm?: number
@@ -81,7 +82,7 @@ export function VolumeLoadGauges({
         actual={actuals.actualLoad}
         planned={plannedLoad}
         pct={actuals.loadCompletionPct}
-        unit="pts"
+        unit={t('plan.cycles.pts')}
         decimals={0}
         compact
       />
@@ -93,7 +94,7 @@ export function GlobalGauges({ totals }: { totals: CycleActuals }) {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <DualGauge
-        label="Volume cumulé"
+        label={t('plan.cycles.cumVolume')}
         actual={totals.actualVolumeKm}
         planned={totals.plannedVolumeKm}
         pct={totals.volumeCompletionPct}
@@ -101,19 +102,19 @@ export function GlobalGauges({ totals }: { totals: CycleActuals }) {
         decimals={1}
       />
       <DualGauge
-        label="Charge cumulée"
+        label={t('plan.cycles.cumLoad')}
         actual={totals.actualLoad}
         planned={totals.plannedLoad}
         pct={totals.loadCompletionPct}
-        unit="pts"
+        unit={t('plan.cycles.pts')}
         decimals={0}
       />
       <DualGauge
-        label="Séances validées"
+        label={t('plan.cycles.sessionsDone')}
         actual={totals.sessionsCompleted}
         planned={totals.sessionsPlanned}
         pct={sessionsPct(totals)}
-        unit="séances"
+        unit={t('plan.cycles.sessionsUnit')}
         decimals={0}
       />
     </div>

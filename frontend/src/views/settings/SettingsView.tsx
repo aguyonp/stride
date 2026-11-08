@@ -19,19 +19,51 @@ import { ProfileSection } from './ProfileSection'
 import { Section } from './Section'
 import { ShoesSection } from './ShoesSection'
 import { VersionFooter } from './VersionFooter'
+import { t } from '../../i18n'
+import { useLanguageSwitch, type LanguagePref } from '../../i18n/useLanguage'
 
-const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
-  { id: 'profil', label: 'Profil & seuils', icon: UserRound },
-  { id: 'apparence', label: 'Apparence', icon: Palette },
-  { id: 'integrations', label: 'Intégrations', icon: Plug },
-  { id: 'ia', label: 'IA', icon: Bot },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'chaussures', label: 'Chaussures', icon: Footprints },
-  { id: 'passkeys', label: 'Passkeys', icon: KeyRound },
-  { id: 'sauvegarde', label: 'Sauvegarde', icon: DatabaseBackup },
-  { id: 'import', label: 'Import de secours', icon: FileUp },
-  { id: 'compte', label: 'Compte', icon: CircleUser },
-]
+type SectionId = 'profil' | 'apparence' | 'integrations' | 'ia' | 'notifications' | 'chaussures' | 'passkeys' | 'sauvegarde' | 'import' | 'compte'
+const SECTIONS: { id: SectionId; icon: LucideIcon; readonly label: string }[] = (
+  [
+    ['profil', UserRound],
+    ['apparence', Palette],
+    ['integrations', Plug],
+    ['ia', Bot],
+    ['notifications', Bell],
+    ['chaussures', Footprints],
+    ['passkeys', KeyRound],
+    ['sauvegarde', DatabaseBackup],
+    ['import', FileUp],
+    ['compte', CircleUser],
+  ] as const
+).map(([id, icon]) => ({
+  id,
+  icon,
+  get label() {
+    return t(`settings.view.sections.${id}`)
+  },
+}))
+
+function LanguageSetting() {
+  const { pref, choose } = useLanguageSwitch()
+  return (
+    <div className="mt-4">
+      <p className="mb-1.5 text-xs font-medium text-ink-3">{t('settings.view.language')}</p>
+      <SegmentedControl<LanguagePref>
+        ariaLabel={t('settings.view.language')}
+        className="max-w-md"
+        value={pref}
+        onChange={choose}
+        options={[
+          { value: 'auto', label: t('common.lang.auto'), icon: <Monitor /> },
+          { value: 'fr', label: t('common.lang.fr') },
+          { value: 'en', label: t('common.lang.en') },
+        ]}
+      />
+      <p className="mt-1.5 text-xs text-ink-3">{t('settings.view.languageHint')}</p>
+    </div>
+  )
+}
 
 function scrollToHash(smooth = false) {
   const id = decodeURIComponent(window.location.hash.slice(1))
@@ -40,7 +72,7 @@ function scrollToHash(smooth = false) {
 }
 
 function useActiveSection(): string {
-  const [active, setActive] = useState(SECTIONS[0].id)
+  const [active, setActive] = useState<string>(SECTIONS[0].id)
   useEffect(() => {
     const els = SECTIONS.map((s) => document.getElementById(s.id)).filter((e): e is HTMLElement => !!e)
     const io = new IntersectionObserver(
@@ -57,7 +89,7 @@ function useActiveSection(): string {
 }
 
 export default function SettingsView({ me }: { me: Me }) {
-  useDocumentTitle('Réglages')
+  useDocumentTitle(t('settings.view.title'))
   const { toast } = useToast()
   const { pref, setPref } = useTheme()
   const active = useActiveSection()
@@ -65,18 +97,18 @@ export default function SettingsView({ me }: { me: Me }) {
   useEffect(() => {
     const strava = consumeStravaResult()
     if (strava) {
-      if (strava.status === 'connected') toast({ title: 'Strava connecté', description: 'Tes séances Strava seront fusionnées avec Garmin.' })
-      else toast({ tone: 'error', title: 'Connexion Strava échouée', description: strava.reason ?? undefined })
+      if (strava.status === 'connected') toast({ title: t('settings.view.stravaConnected'), description: t('settings.view.stravaConnectedHint') })
+      else toast({ tone: 'error', title: t('settings.view.stravaFailed'), description: strava.reason ?? undefined })
       if (!window.location.hash) window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#integrations`)
     }
     scrollToHash()
-    const t = window.setTimeout(scrollToHash, 450)
+    const timer = window.setTimeout(scrollToHash, 450)
     const onNav = () => window.setTimeout(() => scrollToHash(true), 0)
     window.addEventListener('hashchange', onNav)
     window.addEventListener('pushState', onNav)
     window.addEventListener('replaceState', onNav)
     return () => {
-      window.clearTimeout(t)
+      window.clearTimeout(timer)
       window.removeEventListener('hashchange', onNav)
       window.removeEventListener('pushState', onNav)
       window.removeEventListener('replaceState', onNav)
@@ -85,8 +117,8 @@ export default function SettingsView({ me }: { me: Me }) {
 
   return (
     <div>
-      <PageHeader title="Réglages" subtitle="Profil, intégrations, IA, notifications, équipement, sécurité et données." />
-      <nav aria-label="Sections des réglages" className="scroll-thin -mx-4 mb-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:hidden">
+      <PageHeader title={t('settings.view.title')} subtitle={t('settings.view.subtitle')} />
+      <nav aria-label={t('settings.view.sectionsNav')} className="scroll-thin -mx-4 mb-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:hidden">
         <ul className="flex w-max gap-2">
           {SECTIONS.map((s) => (
             <li key={s.id}>
@@ -99,7 +131,7 @@ export default function SettingsView({ me }: { me: Me }) {
         </ul>
       </nav>
       <div className="grid gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)]">
-        <nav aria-label="Sections des réglages" className="hidden self-start lg:sticky lg:top-24 lg:block">
+        <nav aria-label={t('settings.view.sectionsNav')} className="hidden self-start lg:sticky lg:top-24 lg:block">
           <ul className="glass space-y-0.5 p-2">
             {SECTIONS.map((s) => (
               <li key={s.id}>
@@ -117,18 +149,19 @@ export default function SettingsView({ me }: { me: Me }) {
         </nav>
         <div className="min-w-0 space-y-5">
           <ProfileSection me={me} />
-          <Section id="apparence" title="Apparence" icon={<Palette />} description="Thème de l’interface sur cet appareil.">
+          <Section id="apparence" title={t('settings.view.sections.apparence')} icon={<Palette />} description={t('settings.view.appearanceHint')}>
             <SegmentedControl<ThemePref>
-              ariaLabel="Thème"
+              ariaLabel={t('settings.view.theme')}
               className="max-w-md"
               value={pref}
               onChange={setPref}
               options={[
-                { value: 'system', label: 'Système', icon: <Monitor /> },
-                { value: 'light', label: 'Clair', icon: <Sun /> },
-                { value: 'dark', label: 'Sombre', icon: <Moon /> },
+                { value: 'system', label: t('settings.view.themeSystem'), icon: <Monitor /> },
+                { value: 'light', label: t('settings.view.themeLight'), icon: <Sun /> },
+                { value: 'dark', label: t('settings.view.themeDark'), icon: <Moon /> },
               ]}
             />
+            <LanguageSetting />
           </Section>
           <IntegrationsSection />
           <LlmSection />

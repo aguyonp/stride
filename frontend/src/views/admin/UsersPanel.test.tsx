@@ -4,6 +4,10 @@ import type { AdminUser, Me } from '../../api/types'
 import { clickEl, mountWithProviders, setInputValue, waitFor, type MountedApp } from '../../test/domHarness'
 import { isLastActiveAdmin } from './adminUtils'
 import { UsersPanel } from './UsersPanel'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const me: Me = { id: 1, displayName: 'Alex Démo', role: 'admin', createdAt: '2026-08-01T10:00:00Z', onboardingCompleted: true }
 

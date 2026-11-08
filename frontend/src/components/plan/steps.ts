@@ -1,17 +1,10 @@
 import type { StepType, TargetKind, WorkoutStep } from '../../api/types'
 import { fmtNumber, fmtPaceValue, isNum } from '../../lib/format'
+import { lazyRecord, t } from '../../i18n'
 
-export const STEP_LABEL: Record<StepType, string> = {
-  warmup: 'Échauffement',
-  run: 'Course',
-  interval: 'Fractionné',
-  recovery: 'Récupération',
-  rest: 'Repos',
-  cooldown: 'Retour au calme',
-  repeat: 'Répétition',
-}
+export const STEP_LABEL: Record<StepType, string> = lazyRecord(['warmup', 'run', 'interval', 'recovery', 'rest', 'cooldown', 'repeat'] as const, (k) => t(`plan.format.steps.${k}`))
 
-export const TARGET_LABEL: Record<TargetKind, string> = { none: 'Aucune', pace: 'Allure', hr: 'FC', cadence: 'Cadence', power: 'Puissance' }
+export const TARGET_LABEL: Record<TargetKind, string> = lazyRecord(['none', 'pace', 'hr', 'cadence', 'power'] as const, (k) => t(`plan.format.targets.${k}`))
 
 export const STEP_TONE: Record<StepType, string> = {
   warmup: 'bg-info',
@@ -60,7 +53,7 @@ export function stepAmount(s: WorkoutStep): string | null {
   return null
 }
 
-const SHORT: Partial<Record<StepType, string>> = { warmup: 'Éch.', recovery: 'récup', cooldown: 'Retour', rest: 'repos' }
+const SHORT: Partial<Record<StepType, string>> = lazyRecord(['warmup', 'recovery', 'cooldown', 'rest'] as const, (k) => t(`plan.format.stepShort.${k}`))
 
 /** One-line structure: « Éch. 10′ · 6 × (1′ @4:10–4:20/km + 1′30 récup) · Retour 10′ ». */
 export function stepsSummary(steps: WorkoutStep[]): string {

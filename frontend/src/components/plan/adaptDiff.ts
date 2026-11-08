@@ -1,5 +1,6 @@
 import type { PlanAdaptPreview, PlannedSession, PlannedSessionInput } from '../../api/types'
 import { capitalize, fmtDateShort, fmtHM, fmtKm, fmtPaceValue, fmtWeekdayShort, isNum } from '../../lib/format'
+import { t } from '../../i18n'
 
 export type ChangeKind = 'moved' | 'modified' | 'removed' | 'created'
 export interface PlanChange {
@@ -25,13 +26,13 @@ const stepsKey = (s: PlannedSessionInput) => JSON.stringify(s.steps ?? [])
 function details(b: PlannedSession, a: PlannedSessionInput): string[] {
   const out: string[] = []
   if (b.date !== a.date) out.push(`${dayLabel(b.date)} → ${dayLabel(a.date)}`)
-  if (b.title !== a.title) out.push(`« ${a.title} »`)
-  if ((b.targetDurationS ?? null) !== (a.targetDurationS ?? null)) out.push(`Durée ${dur(b.targetDurationS)} → ${dur(a.targetDurationS)}`)
-  if ((b.targetDistanceM ?? null) !== (a.targetDistanceM ?? null)) out.push(`Distance ${dist(b.targetDistanceM)} → ${dist(a.targetDistanceM)}`)
+  if (b.title !== a.title) out.push(t('common.ui.quoted', { text: a.title }))
+  if ((b.targetDurationS ?? null) !== (a.targetDurationS ?? null)) out.push(t('plan.format.diffDuration', { from: dur(b.targetDurationS), to: dur(a.targetDurationS) }))
+  if ((b.targetDistanceM ?? null) !== (a.targetDistanceM ?? null)) out.push(t('plan.format.diffDistance', { from: dist(b.targetDistanceM), to: dist(a.targetDistanceM) }))
   if ((b.targetPaceMinSecPerKm ?? null) !== (a.targetPaceMinSecPerKm ?? null) || (b.targetPaceMaxSecPerKm ?? null) !== (a.targetPaceMaxSecPerKm ?? null))
-    out.push(`Allure ${pace(b.targetPaceMinSecPerKm, b.targetPaceMaxSecPerKm)} → ${pace(a.targetPaceMinSecPerKm, a.targetPaceMaxSecPerKm)}`)
-  if (stepsKey(b) !== stepsKey(a)) out.push((a.steps ?? []).length < (b.steps ?? []).length ? 'Structure simplifiée' : 'Structure modifiée')
-  if ((b.instructions ?? '') !== (a.instructions ?? '') && out.length === 0) out.push('Consignes mises à jour')
+    out.push(t('plan.format.diffPace', { from: pace(b.targetPaceMinSecPerKm, b.targetPaceMaxSecPerKm), to: pace(a.targetPaceMinSecPerKm, a.targetPaceMaxSecPerKm) }))
+  if (stepsKey(b) !== stepsKey(a)) out.push((a.steps ?? []).length < (b.steps ?? []).length ? t('plan.format.simplified') : t('plan.format.modified'))
+  if ((b.instructions ?? '') !== (a.instructions ?? '') && out.length === 0) out.push(t('plan.format.instructions'))
   return out
 }
 

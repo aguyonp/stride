@@ -23,6 +23,8 @@ import { SegmentsTable } from '../../components/dashboard/SegmentsTable'
 import { KpiGrid, StravaCard, WeatherCard } from '../../components/dashboard/SessionCards'
 import { SessionHeader } from '../../components/dashboard/SessionHeader'
 import { TodayCard } from '../../components/dashboard/TodayCard'
+import { SessionAdaptStrip } from '../../components/plan/morph/MorphActions'
+import { DirectiveBadge } from '../../components/share/ShareMarkers'
 import { PromptGenerator } from '../../components/prompt/PromptGenerator'
 import { usePrompt } from '../../components/prompt/usePrompt'
 import { ManualActivityDialog } from '../../components/session/ManualActivityDialog'
@@ -33,11 +35,12 @@ import { cn } from '../../lib/cn'
 import { fmtNumber, isNum, todayISO } from '../../lib/format'
 import { ui } from '../../state/ui'
 import { ErrorView, LoadingView } from '../StateViews'
+import { t } from '../../i18n'
 
 const AnalysisDrawer = lazy(() => import('../../components/ai/AnalysisDrawer').then((m) => ({ default: m.AnalysisDrawer })))
 const GpsTrack = lazy(() => import('../../components/session/GpsTrack').then((m) => ({ default: m.GpsTrack })))
 const EfficiencyImpact = lazy(() => import('../../components/session/EfficiencyImpact').then((m) => ({ default: m.EfficiencyImpact })))
-const fallback = <Spinner label="Chargement…" />
+const Fallback = () => <Spinner label={t('common.actions.loading')} />
 
 const ALERT_SECTION: Record<string, string> = {
   CADENCE_LOW: 'biomech',
@@ -109,25 +112,31 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
   const segs = v.segments.primary === 'blocks' ? v.segments.blocks : v.segments.laps
   const hasTrack = v.activity.sources.includes('garmin') || v.series.tS.length > 1
   return (
-    <div className="section-group" aria-label="Détails de la séance">
+    <div className="section-group" aria-label={t('dashboard.view.details')}>
       {v.activity.isRunning && (
-        <Disclosure {...p('biomech')} title="Biomécanique, dérive & pente" icon={<Activity />} summary={join(n(b.cadenceAvgSpm, 0, ' spm'), n(b.groundContactTimeMs, 0, ' ms GCT'), n(b.verticalOscillationCm, 1, ' cm OV'))} cardTitles="hide">
+        <Disclosure
+          {...p('biomech')}
+          title={t('dashboard.view.biomech')}
+          icon={<Activity />}
+          summary={join(n(b.cadenceAvgSpm, 0, ' spm'), n(b.groundContactTimeMs, 0, t('dashboard.view.gctSuffix')), n(b.verticalOscillationCm, 1, t('dashboard.view.voSuffix')))}
+          cardTitles="hide"
+        >
           <BiomechanicsCard view={v} profile={profile} />
         </Disclosure>
       )}
       {segs.length > 0 && (
-        <Disclosure {...p('splits')} title="Intervalles & splits" icon={<Timer />} summary={`${segs.length} ${v.segments.primary === 'blocks' ? 'blocs' : 'tours'}`} cardTitles="hide">
+        <Disclosure {...p('splits')} title={t('dashboard.view.splits')} icon={<Timer />} summary={t(v.segments.primary === 'blocks' ? 'dashboard.view.blocks' : 'dashboard.view.laps', { count: segs.length })} cardTitles="hide">
           <SegmentsTable key={v.activity.id} segments={v.segments} />
         </Disclosure>
       )}
       {v.series.tS.length > 1 && (
-        <Disclosure {...p('charts')} title="Courbes" icon={<BarChart3 />} cardTitles="hide">
+        <Disclosure {...p('charts')} title={t('dashboard.view.charts')} icon={<BarChart3 />} cardTitles="hide">
           <SessionCharts view={v} profile={profile} />
         </Disclosure>
       )}
       {hasTrack && (
-        <Disclosure {...p('gps')} title="Tracé GPS" icon={<MapIcon />}>
-          <Suspense fallback={fallback}>
+        <Disclosure {...p('gps')} title={t('dashboard.view.gps')} icon={<MapIcon />}>
+          <Suspense fallback={<Fallback />}>
             <GpsTrack activityId={v.activity.id} thresholds={th} />
           </Suspense>
         </Disclosure>
@@ -135,31 +144,35 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
       {(v.efficiency || v.impact) && (
         <Disclosure
           {...p('efficiency')}
-          title="Efficience & impacts"
+          title={t('dashboard.view.efficiency')}
           icon={<Gauge />}
-          summary={join(v.efficiency?.eligible ? `EF ${fmtNumber(v.efficiency.efSpeed, 2)}` : v.efficiency ? 'EF non calculée' : null, n(v.impact?.steps, 0, ' foulées'), n(v.impact?.jointIndex, 1) && `indice ${fmtNumber(v.impact?.jointIndex, 1)}`)}
+          summary={join(
+            v.efficiency?.eligible ? `EF ${fmtNumber(v.efficiency.efSpeed, 2)}` : v.efficiency ? t('dashboard.view.efNotComputed') : null,
+            n(v.impact?.steps, 0, t('dashboard.view.stepsSuffix')),
+            n(v.impact?.jointIndex, 1) && t('dashboard.view.jointIndex', { value: fmtNumber(v.impact?.jointIndex, 1) }),
+          )}
         >
-          <Suspense fallback={fallback}>
+          <Suspense fallback={<Fallback />}>
             <EfficiencyImpact view={v} />
           </Suspense>
         </Disclosure>
       )}
-      <Disclosure {...p('load')} title="Charge & charge croisée" icon={<Flame />} summary={join(v.load.loadRatio?.ratio != null && `ratio ${fmtNumber(v.load.loadRatio.ratio, 2)}`, n(v.load.trainingLoad, 0) && `TL ${fmtNumber(v.load.trainingLoad)}`)}>
+      <Disclosure {...p('load')} title={t('dashboard.view.load')} icon={<Flame />} summary={join(v.load.loadRatio?.ratio != null && t('dashboard.view.ratio', { value: fmtNumber(v.load.loadRatio.ratio, 2) }), n(v.load.trainingLoad, 0) && `TL ${fmtNumber(v.load.trainingLoad)}`)}>
         <div className="grid gap-5 xl:grid-cols-2">
           <LoadCard view={v} thresholds={th} />
           <CrossLoadCard cross={v.crossLoad} thresholds={th} />
         </div>
       </Disclosure>
-      <Disclosure {...p('recovery')} title="Récupération & performance" icon={<Moon />} summary={join(v.readiness && v.readiness.level !== 'unknown' && v.readiness.title, n(v.recovery?.hrv?.lastNightAvgMs, 0, ' ms VFC'), n(v.recovery?.sleep?.score, 0, '/100 sommeil'))}>
+      <Disclosure {...p('recovery')} title={t('dashboard.view.recovery')} icon={<Moon />} summary={join(v.readiness && v.readiness.level !== 'unknown' && v.readiness.title, n(v.recovery?.hrv?.lastNightAvgMs, 0, t('dashboard.view.hrvSuffix')), n(v.recovery?.sleep?.score, 0, t('dashboard.view.sleepSuffix')))}>
         <div className="space-y-5">
-          {v.readiness && <ReadinessBanner r={v.readiness} label="Préparation avant la séance" compact />}
+          {v.readiness && <ReadinessBanner r={v.readiness} label={t('dashboard.view.preSession')} compact />}
           <div className="grid gap-5 xl:grid-cols-2">
-            <RecoveryCard rec={v.recovery} title="Nuit précédente" emptyReason={v.activity.sources.includes('garmin') ? undefined : 'Garmin non connecté'} />
+            <RecoveryCard rec={v.recovery} title={t('dashboard.view.lastNight')} emptyReason={v.activity.sources.includes('garmin') ? undefined : t('dashboard.view.garminOff')} />
             <PerformanceCard perf={v.performance} />
           </div>
         </div>
       </Disclosure>
-      <Disclosure {...p('conditions')} title="Mesures, météo & Strava" icon={<CloudSun />} summary={join(n(v.activity.gapSecPerKm) && 'GAP', n(v.weather?.temperatureC, 1, ' °C'), v.activity.strava?.rpe != null && `RPE ${v.activity.strava.rpe}`)}>
+      <Disclosure {...p('conditions')} title={t('dashboard.view.conditions')} icon={<CloudSun />} summary={join(n(v.activity.gapSecPerKm) && 'GAP', n(v.weather?.temperatureC, 1, ' °C'), v.activity.strava?.rpe != null && `RPE ${v.activity.strava.rpe}`)}>
         <div className="space-y-5">
           <KpiGrid view={v} />
           <div className="grid gap-5 md:grid-cols-2">
@@ -168,10 +181,10 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
           </div>
         </div>
       </Disclosure>
-      <Disclosure {...p('plan')} title="Prévu vs réalisé" icon={<CalendarCheck />} summary={v.plan?.summary ?? 'Séance hors plan'} cardTitles="hide">
+      <Disclosure {...p('plan')} title={t('dashboard.view.plan')} icon={<CalendarCheck />} summary={v.plan?.summary ?? t('dashboard.view.offPlan')} cardTitles="hide">
         <PlanMatchCard match={v.plan} upcoming={v.upcoming} />
       </Disclosure>
-      <Disclosure {...p('history')} title="Historique 14 jours" icon={<History />} cardTitles="hide">
+      <Disclosure {...p('history')} title={t('dashboard.view.history')} icon={<History />} cardTitles="hide">
         <HistoryTable rows={v.history} currentId={v.activity.id} />
       </Disclosure>
     </div>
@@ -207,7 +220,7 @@ export function DashboardView({ me, routeActivityId = null }: { me: Me; routeAct
   const v = view.data ?? null
   const stale = view.isPlaceholderData || (v !== null && v.activity.id !== selectedId)
   const summary = items.find((a) => a.id === selectedId) ?? (picked?.id === selectedId ? picked : null)
-  useDocumentTitle(v ? v.activity.name : 'Tableau de bord')
+  useDocumentTitle(v ? v.activity.name : t('dashboard.view.title'))
   const sections = useOpenSections(v && !stale ? v : null)
 
   const prompt = usePrompt({ activity: v && !stale ? { id: v.activity.id, name: v.activity.name, date: v.activity.date } : summary ? { id: summary.id, name: summary.name, date: summary.date } : null, day: today })
@@ -222,7 +235,7 @@ export function DashboardView({ me, routeActivityId = null }: { me: Me; routeAct
   const aiSubject =
     prompt.kind === 'activity' && v && !stale
       ? ({ kind: 'activity', activityId: v.activity.id, label: v.activity.name } as const)
-      : ({ kind: 'day', date: today, label: 'Bilan du jour' } as const)
+      : ({ kind: 'day', date: today, label: t('dashboard.view.dayReview') } as const)
 
   const select = (id: number) => {
     if (routeActivityId !== null) {
@@ -266,35 +279,35 @@ export function DashboardView({ me, routeActivityId = null }: { me: Me; routeAct
     main = standalone ? (
       <EmptyState
         icon={<PenLine />}
-        title="Aucune séance pour l’instant"
+        title={t('dashboard.view.noSession')}
         action={
           <div className="flex flex-wrap justify-center gap-2">
             <button type="button" className="btn btn-primary" onClick={() => setManual('new')}>
-              <Plus className="size-4" aria-hidden="true" /> Saisir une séance manuelle
+              <Plus className="size-4" aria-hidden="true" /> {t('dashboard.view.logManual')}
             </button>
             <Link href="/settings#integrations" className="btn btn-ghost">
-              Connecter Garmin ou Strava
+              {t('dashboard.view.connect')}
             </Link>
           </div>
         }
       >
-        Stride fonctionne sans montre connectée : saisis tes séances et ton ressenti, le planning, le suivi de douleur, les prompts et l’IA restent disponibles.
+        {t('dashboard.view.standaloneHint')}
       </EmptyState>
     ) : (
       <EmptyState
         icon={<Link2 />}
-        title="Aucune activité pour l’instant"
+        title={t('dashboard.view.noActivity')}
         action={
           <Link href="/settings#integrations" className="btn btn-primary">
-            Connecter Garmin ou Strava
+            {t('dashboard.view.connect')}
           </Link>
         }
       >
-        Connecte une source de données pour voir tes séances. Le bilan du jour, le planning et les objectifs restent disponibles.
+        {t('dashboard.view.connectHint')}
       </EmptyState>
     )
   else if (view.isError && !v) main = <ErrorView error={view.error} onRetry={() => void view.refetch()} />
-  else if (!v) main = <LoadingView label="Chargement de la séance…" />
+  else if (!v) main = <LoadingView label={t('dashboard.view.loadingSession')} />
   else main = <TopAlerts alerts={v.alerts} sectionOf={(c) => sectionForAlert(c, v)} onOpen={revealSection} />
   const details = v && !(view.isError && !v) && !noActivities && (
     <div className={cn('space-y-4 lg:space-y-5', stale && 'is-refetching')} aria-busy={view.isFetching}>
@@ -304,7 +317,7 @@ export function DashboardView({ me, routeActivityId = null }: { me: Me; routeAct
         aria-expanded={detailsOpen}
         onClick={() => setShowDetails({ id: v.activity.id, open: !detailsOpen })}
       >
-        {detailsOpen ? 'Masquer le détail' : 'Détail de la séance'}
+        {detailsOpen ? t('dashboard.view.hideDetails') : t('dashboard.view.showDetails')}
         <ChevronDown className={cn('size-4 transition-transform', detailsOpen && 'rotate-180')} aria-hidden="true" />
       </button>
       {detailsOpen && (
@@ -318,15 +331,19 @@ export function DashboardView({ me, routeActivityId = null }: { me: Me; routeAct
 
   return (
     <div className="space-y-4 lg:space-y-6">
-      <h1 className="sr-only">Tableau de bord de {me.displayName}</h1>
+      <h1 className="sr-only">{t('dashboard.view.heading', { name: me.displayName })}</h1>
       {day.data?.readiness && !(standalone && day.data.readiness.level === 'unknown') && <ReadinessBanner r={day.data.readiness} brief />}
+      <div className="space-y-2 empty:hidden">
+        <DirectiveBadge today={today} />
+        <SessionAdaptStrip today={today} />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-6 lg:gap-y-5">
         <div className="min-w-0 space-y-4 lg:col-span-8 lg:row-start-1 lg:space-y-5">
           {standalone && !noActivities && (
             <div className="-my-1 flex justify-end">
               <button type="button" className="inline-flex min-h-8 items-center gap-1 rounded-lg px-1.5 text-xs font-semibold text-ink-3 transition-colors hover:text-accent" onClick={() => setManual('new')}>
-                <Plus className="size-3.5" aria-hidden="true" /> Saisir une séance manuelle
+                <Plus className="size-3.5" aria-hidden="true" /> {t('dashboard.view.logManual')}
               </button>
             </div>
           )}
@@ -345,17 +362,17 @@ export function DashboardView({ me, routeActivityId = null }: { me: Me; routeAct
           )}
           <div className={cn(stale && 'is-refetching')}>{main}</div>
         </div>
-        <aside className="min-w-0 space-y-4 self-start lg:col-span-4 lg:col-start-9 lg:row-span-2 lg:row-start-1 lg:space-y-5" aria-label="Ressenti, coach IA et semaine">
+        <aside className="min-w-0 space-y-4 self-start lg:col-span-4 lg:col-start-9 lg:row-span-2 lg:row-start-1 lg:space-y-5" aria-label={t('dashboard.view.aside')}>
           {ready && <FeelingCard key={v.activity.id} view={v} />}
           <PromptGenerator p={prompt} llmConfigured={llmOn} onAnalyze={analyze} compact />
           <div className="section-group">
-            <Disclosure title="Cette semaine" icon={<CalendarCheck />} summary={day.data ? `${day.data.planned.length} prévue(s) aujourd’hui` : undefined} cardTitles="hide">
+            <Disclosure title={t('dashboard.view.thisWeek')} icon={<CalendarCheck />} summary={day.data ? t('dashboard.view.plannedToday', { count: day.data.planned.length }) : undefined} cardTitles="hide">
               <div className="space-y-5">
                 <TodayCard date={today} showReadiness={false} />
                 <WeekCard date={today} today={today} />
               </div>
             </Disclosure>
-            <Disclosure title="Objectifs & records" icon={<Target />} summary={recordsSummary(records.data)} cardTitles="hide">
+            <Disclosure title={t('dashboard.view.goalsRecords')} icon={<Target />} summary={recordsSummary(records.data)} cardTitles="hide">
               <div className="space-y-5">
                 <GoalsCard today={today} goals={v?.goals} />
                 <RecordsCard />

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { symptomWindowDays } from '../../api/queriesV41'
 import { clampMonth, yearsBack } from '../session/monthJump'
 import { historyFrom, historyProgress } from './historyRange'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 describe('history import and old sessions', () => {
   it('maps the chosen range to the `from` date of POST /api/sync/history', () => {

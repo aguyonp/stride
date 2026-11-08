@@ -1,0 +1,20 @@
+// English dictionary: same keys as fr.ts (checked by the compiler and i18n.test.ts).
+import admin from './en/admin'
+import auth from './en/auth'
+import coach from './en/coach'
+import common from './en/common'
+import dashboard from './en/dashboard'
+import errors from './en/errors'
+import health from './en/health'
+import labels from './en/labels'
+import layout from './en/layout'
+import onboarding from './en/onboarding'
+import plan from './en/plan'
+import session from './en/session'
+import settings from './en/settings'
+import share from './en/share'
+import shoes from './en/shoes'
+import type { Messages } from './fr'
+import type { Widen } from './t'
+
+export const en: Widen<Messages> = { admin, auth, coach, common, dashboard, errors, health, labels, layout, onboarding, plan, session, settings, share, shoes }

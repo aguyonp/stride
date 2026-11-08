@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TrainingCycleOverview } from '../../api/types'
 import { clickEl, installDomPolyfills, mountWithProviders, waitFor, type MountedApp } from '../../test/domHarness'
 import { CyclesTimeline } from './CyclesTimeline'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 function sampleCycles(): TrainingCycleOverview {
   return {

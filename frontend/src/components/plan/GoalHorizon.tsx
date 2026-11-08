@@ -3,6 +3,7 @@ import type { Goal, PlanPhase } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { capitalize, fmtDateLong, fmtDateShort, fmtNumber } from '../../lib/format'
 import { countdown, monthTicks, phaseLayout, phaseTone } from './longterm'
+import { t, tx } from '../../i18n'
 
 const TONE_BG = { accent: 'bg-accent', ok: 'bg-ok', warn: 'bg-warn', violet: 'bg-violet', info: 'bg-info' } as const
 
@@ -28,24 +29,24 @@ export function GoalHorizon({ goals, goal, onGoal, phases, today, onJump, onGene
   const weeks = cd ? Math.round(cd.days / 7) : 0
 
   return (
-    <section className="glass animate-in mb-4 p-4 sm:p-5" aria-label="Horizon de l’objectif">
+    <section className="glass animate-in mb-4 p-4 sm:p-5" aria-label={t('plan.goals.horizon')}>
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
           <p className="flex items-baseline gap-2">
             <span className="num text-3xl leading-none font-semibold tracking-tight text-ink">{cd?.label ?? '—'}</span>
             <span className="min-w-0 truncate text-sm text-ink-2">
-              avant <span className="font-semibold text-ink">{goal.title}</span>
+              {tx('plan.goals.before', { goal: <span className="font-semibold text-ink">{goal.title}</span> })}
             </span>
           </p>
           <p className="mt-1 text-xs text-ink-3">
             {capitalize(fmtDateLong(target))}
-            {cd && cd.days >= 14 ? ` · ${weeks} semaines` : ''}
-            {current ? ` · phase « ${current.name} »` : ''}
+            {cd && cd.days >= 14 ? t('plan.goals.weeks', { n: weeks }) : ''}
+            {current ? t('plan.goals.phase', { name: current.name }) : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {goals.length > 1 && (
-            <select className="field h-9 min-h-9 w-auto max-w-[14rem] py-0 text-xs" value={goal.id} onChange={(e) => onGoal(Number(e.target.value))} aria-label="Objectif affiché">
+            <select className="field h-9 min-h-9 w-auto max-w-[14rem] py-0 text-xs" value={goal.id} onChange={(e) => onGoal(Number(e.target.value))} aria-label={t('plan.goals.shown')}>
               {goals.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.title} · {fmtDateShort(g.targetDate as string)}
@@ -54,13 +55,13 @@ export function GoalHorizon({ goals, goal, onGoal, phases, today, onJump, onGene
             </select>
           )}
           <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={() => onJump(target)}>
-            <Flag className="size-3.5" aria-hidden="true" /> Voir l’échéance
+            <Flag className="size-3.5" aria-hidden="true" /> {t('plan.goals.jump')}
           </button>
         </div>
       </div>
 
       <div className="mt-8">
-        <div className="relative h-2.5 rounded-full bg-track" role="img" aria-label={phases.length ? `Phases jusqu’à l’objectif : ${segments.map((s) => s.phase.name).join(', ')}` : 'Aucune phase planifiée'}>
+        <div className="relative h-2.5 rounded-full bg-track" role="img" aria-label={phases.length ? t('plan.goals.phasesAria', { list: segments.map((s) => s.phase.name).join(', ') }) : t('plan.goals.noPhase')}>
           {segments.map((s, i) => (
             <span
               key={s.phase.id || i}
@@ -70,7 +71,7 @@ export function GoalHorizon({ goals, goal, onGoal, phases, today, onJump, onGene
           ))}
           {todayPct !== null && (
             <span className="absolute -top-1.5 -bottom-1.5 w-0.5 rounded-full bg-ink" style={{ left: `calc(${todayPct}% - 1px)` }} aria-hidden="true">
-              <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] font-semibold whitespace-nowrap text-ink-2">Auj.</span>
+              <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] font-semibold whitespace-nowrap text-ink-2">{t('plan.goals.todayShort')}</span>
             </span>
           )}
           <Flag className="absolute -top-4 -right-1 size-3.5 text-ink-2" aria-hidden="true" />
@@ -87,7 +88,7 @@ export function GoalHorizon({ goals, goal, onGoal, phases, today, onJump, onGene
       </div>
 
       {phases.length > 0 ? (
-        <ul className="mt-2 flex flex-wrap gap-x-1 gap-y-1" aria-label="Phases">
+        <ul className="mt-2 flex flex-wrap gap-x-1 gap-y-1" aria-label={t('plan.goals.phases')}>
           {segments.map((s, i) => (
             <li key={s.phase.id || i}>
               <button
@@ -100,18 +101,18 @@ export function GoalHorizon({ goals, goal, onGoal, phases, today, onJump, onGene
                 <span className={cn('font-semibold', s.past ? 'text-ink-3' : 'text-ink')}>{s.phase.name}</span>
                 <span className="num text-ink-3">
                   {fmtDateShort(s.phase.startDate)} → {fmtDateShort(s.phase.endDate)}
-                  {s.phase.weeklyVolumeKm ? ` · ${fmtNumber(s.phase.weeklyVolumeKm)} km/sem` : ''}
+                  {s.phase.weeklyVolumeKm ? t('plan.goals.perWeek', { km: fmtNumber(s.phase.weeklyVolumeKm) }) : ''}
                 </span>
-                {s.current && <span className="text-[10px] font-semibold text-accent uppercase">en cours</span>}
+                {s.current && <span className="text-[10px] font-semibold text-accent uppercase">{t('plan.goals.current')}</span>}
               </button>
             </li>
           ))}
         </ul>
       ) : (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-ink-3">Pas encore de périodisation jusqu’à cette date.</p>
+          <p className="text-xs text-ink-3">{t('plan.goals.noPeriodization')}</p>
           <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={onGenerate}>
-            <Sparkles className="size-3.5 text-accent" aria-hidden="true" /> Générer jusqu’à l’échéance
+            <Sparkles className="size-3.5 text-accent" aria-hidden="true" /> {t('plan.goals.generate')}
           </button>
         </div>
       )}

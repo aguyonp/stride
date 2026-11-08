@@ -19,6 +19,7 @@ import { PlanDialog } from './cycles/PlanDialog'
 import { CyclesToolbar, PlanStatusBar } from './cycles/PlanHeader'
 import { useCyclesOverview } from './cycles/useCyclesOverview'
 import { WeekTuneDialog } from './cycles/WeekTuneDialog'
+import { t } from '../../i18n'
 
 export function CyclesTimeline({
   today,
@@ -62,13 +63,13 @@ export function CyclesTimeline({
     <div className="space-y-5">
       <Card
         as="section"
-        aria-label="Macrocycle et frise temporelle"
+        aria-label={t('plan.cycles.timelineAria')}
         icon={<Layers className="size-4" />}
-        title={currentPlan ? currentPlan.name : 'Cycles d’entraînement'}
+        title={currentPlan ? currentPlan.name : t('plan.cycles.title')}
         subtitle={
           currentPlan
             ? `${fmtDateShort(currentPlan.startDate)} → ${fmtDateShort(currentPlan.endDate)}${currentPlan.targetEventLabel ? ` · ${currentPlan.targetEventLabel}` : ''}`
-            : 'Structure ta saison en macrocycle, mésocycles et microcycles.'
+            : t('plan.cycles.subtitle')
         }
         action={
           <CyclesToolbar
@@ -86,14 +87,14 @@ export function CyclesTimeline({
         {!currentPlan && phases.length === 0 ? (
           <EmptyState
             icon={<Layers />}
-            title="Aucun macrocycle actif"
+            title={t('plan.cycles.noPlan')}
             action={
               <button type="button" className="btn btn-primary" onClick={openNewPlan}>
-                <Plus className="size-4" aria-hidden="true" /> Créer un macrocycle
+                <Plus className="size-4" aria-hidden="true" /> {t('plan.cycles.createPlan')}
               </button>
             }
           >
-            Découpe automatiquement ta préparation en blocs Fondation, Développement, Spécifique et Affûtage avec suivi en direct du volume (km) et de la charge.
+            {t('plan.cycles.noPlanHint')}
           </EmptyState>
         ) : (
           <div className="space-y-4">
@@ -116,13 +117,13 @@ export function CyclesTimeline({
       {(currentPlan || phases.length > 0) && zoom !== 'micro' && (
         <Card
           as="section"
-          aria-label="Mésocycles"
+          aria-label={t('plan.cycles.mesoTitle')}
           icon={<CalendarRange className="size-4" />}
-          title="Mésocycles"
-          subtitle="Comparaison prévu vs réalisé en volume et en charge par bloc"
+          title={t('plan.cycles.mesoTitle')}
+            subtitle={t('plan.cycles.mesoSubtitle')}
           action={
             <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={() => openPhase(null)}>
-              <Plus className="size-4" aria-hidden="true" /> Ajouter un mésocycle
+              <Plus className="size-4" aria-hidden="true" /> {t('plan.cycles.addMeso')}
             </button>
           }
         >
@@ -133,10 +134,10 @@ export function CyclesTimeline({
       {allWeeks.length > 0 && zoom === 'micro' && (
         <Card
           as="section"
-          aria-label="Microcycles hebdomadaires"
+          aria-label={t('plan.cycles.microAria')}
           icon={<SlidersHorizontal className="size-4" />}
-          title="Microcycles (détail hebdomadaire)"
-          subtitle="Clique une semaine pour ajuster le volume/charge cible ou basculer vers le calendrier hebdomadaire"
+          title={t('plan.cycles.microTitle')}
+            subtitle={t('plan.cycles.microSubtitle')}
         >
           <MicrocycleList weeks={allWeeks} phases={phases} today={today} onTuneWeek={setWeekDlg} onJumpToWeek={onJumpToWeek} />
         </Card>
@@ -179,26 +180,26 @@ export function CyclesTimeline({
       <ConfirmDialog
         open={deletePlan !== null}
         onClose={() => setDeletePlan(null)}
-        title="Supprimer ce macrocycle ?"
+        title={t('plan.cycles.deleteTitle')}
         message={
           deletePlan && (
             <p>
-              « {deletePlan.name} » ainsi que son découpage en mésocycles seront supprimés. Les séances planifiées et activités réalisées sont conservées.
+              {t('plan.cycles.deleteBody', { name: deletePlan.name })}
             </p>
           )
         }
-        confirmLabel="Supprimer"
+        confirmLabel={t('common.actions.delete')}
         danger
         busy={mut.removePlan.isPending}
         onConfirm={() =>
           deletePlan &&
           mut.removePlan.mutate(deletePlan.id, {
             onSuccess: () => {
-              toast({ title: 'Macrocycle supprimé' })
+              toast({ title: t('plan.cycles.deleted') })
               setSelectedPlanId(null)
               setDeletePlan(null)
             },
-            onError: (e) => toast({ tone: 'error', title: 'Suppression impossible', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('plan.cycles.deleteFailed'), description: e.message }),
           })
         }
       />

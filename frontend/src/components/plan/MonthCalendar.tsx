@@ -2,14 +2,15 @@ import { Flag } from 'lucide-react'
 import { useCalendar } from '../../api/queriesV3'
 import type { CalendarDay, CalendarEvent, Goal, MatchStatus, PlannedSession, PlanPhase } from '../../api/types'
 import { cn } from '../../lib/cn'
-import { EVENT_KIND } from '../../lib/labels'
+import { EVENT_KIND, MATCH_STATUS } from '../../lib/labels'
 import { EventChip } from './EventDialog'
 import { phaseAt, phaseTone } from './longterm'
-import { addDays, capitalize, fmtDateLong, mondayOf, parseLocal } from '../../lib/format'
+import { addDays, capitalize, fmtDateLong, mondayOf, parseLocal, weekdayNames } from '../../lib/format'
 import { InlineError } from '../ui/Misc'
 import { PlanSportIcon } from '../ui/icons'
+import { t } from '../../i18n'
 
-const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+const weekdays = () => weekdayNames('short').map((w) => w.replace('.', ''))
 
 const STATUS_CLS: Record<MatchStatus, string> = {
   done: 'border-ok/35 bg-ok/10 text-ink',
@@ -28,9 +29,9 @@ function monthRange(month: string): { from: string; to: string } {
 
 function dayLabel(d: CalendarDay): string {
   const parts = [capitalize(fmtDateLong(d.date))]
-  if (d.planned.length) parts.push(`${d.planned.length} prévue(s) : ${d.planned.map((p) => p.title).join(', ')}`)
-  if (d.done.length) parts.push(`${d.done.length} réalisée(s)`)
-  for (const e of d.events ?? []) parts.push(`Imprévu : ${EVENT_KIND[e.kind].label}`)
+  if (d.planned.length) parts.push(t('plan.card.planned', { count: d.planned.length, list: d.planned.map((p) => p.title).join(', ') }))
+  if (d.done.length) parts.push(t('plan.card.doneCount', { count: d.done.length }))
+  for (const e of d.events ?? []) parts.push(t('plan.card.event', { kind: EVENT_KIND[e.kind].label }))
   return parts.join('. ')
 }
 
@@ -52,9 +53,9 @@ export function MonthCalendar({ month, today, onPickDay, onOpenSession, onOpenEv
   if (q.isError) return <InlineError>{q.error.message}</InlineError>
   return (
     <div className={cn('transition-opacity', q.isPlaceholderData && 'opacity-60')} aria-busy={q.isFetching}>
-      <div className="grid grid-cols-7 gap-1 sm:gap-1.5" role="group" aria-label="Calendrier du mois">
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5" role="group" aria-label={t('plan.card.monthGrid')}>
         <div className="contents" aria-hidden="true">
-          {WEEKDAYS.map((w) => (
+          {weekdays().map((w) => (
             <div key={w} className="pb-1 text-center text-[11px] font-semibold tracking-wide text-ink-3 uppercase">
               {w}
             </div>
@@ -74,7 +75,7 @@ export function MonthCalendar({ month, today, onPickDay, onOpenSession, onOpenEv
               key={d.date}
               className={cn('relative flex min-h-16 min-w-0 flex-col overflow-hidden rounded-xl border p-1 sm:min-h-24 sm:p-1.5', inMonth ? 'border-line bg-white/[0.02]' : 'border-transparent opacity-45', isToday && 'border-accent/60 ring-1 ring-accent/40', goal && 'border-violet/50')}
             >
-              <button type="button" onClick={() => onPickDay(d.date)} className="flex items-center justify-between gap-1 rounded-md px-0.5 text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent" aria-label={`${dayLabel(d)}${goal ? `. Objectif : ${goal.title}` : ''}. Ouvrir la semaine`}>
+              <button type="button" onClick={() => onPickDay(d.date)} className="flex items-center justify-between gap-1 rounded-md px-0.5 text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent" aria-label={`${dayLabel(d)}${goal ? t('plan.monthExtra.goal', { title: goal.title }) : ''}${t('plan.monthExtra.openWeek')}`}>
                 <span className={cn('num text-xs font-semibold', isToday ? 'text-accent' : 'text-ink-2')}>{p?.d}</span>
                 <span className="flex items-center gap-0.5">
                   {goal && <Flag className="size-3 text-violet" aria-hidden="true" />}
@@ -119,14 +120,14 @@ export function MonthCalendar({ month, today, onPickDay, onOpenSession, onOpenEv
           )
         })}
       </div>
-      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3" aria-label="Légende">
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3" aria-label={t('plan.card.legend')}>
         {(
           [
-            ['done', 'Réalisée'],
-            ['partial', 'Partielle'],
-            ['missed', 'Manquée'],
-            ['upcoming', 'À venir'],
-            ['extra', 'Hors plan'],
+            ['done', MATCH_STATUS.done.label],
+            ['partial', MATCH_STATUS.partial.label],
+            ['missed', MATCH_STATUS.missed.label],
+            ['upcoming', MATCH_STATUS.upcoming.label],
+            ['extra', MATCH_STATUS.extra.label],
           ] as [MatchStatus, string][]
         ).map(([k, l]) => (
           <li key={k} className="flex items-center gap-1.5">

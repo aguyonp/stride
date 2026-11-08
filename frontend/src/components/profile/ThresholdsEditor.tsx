@@ -4,6 +4,7 @@ import type { Thresholds } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtNumber } from '../../lib/format'
 import { THRESHOLD_FIELDS, type ThresholdDraft } from './profileUtils'
+import { t } from '../../i18n'
 
 interface Props {
   draft: ThresholdDraft
@@ -44,7 +45,7 @@ export function ThresholdsEditor({ draft, defaults, errors, onChange, onReset }:
                 <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-ink-3">{f.unit}</span>
               </div>
               <p id={`${id}-hint`} className={cn('mt-1 text-[11px]', err ? 'text-danger' : 'text-ink-3')}>
-                {err ?? (def !== undefined ? `Preset : ${fmtNumber(def, f.step < 1 ? 2 : 0, { trim: true })}${custom ? ' · personnalisé' : ''}` : ' ')}
+                {err ?? (def !== undefined ? `${t('settings.thresholds.preset', { value: fmtNumber(def, f.step < 1 ? 2 : 0, { trim: true }) })}${custom ? t('settings.thresholds.custom') : ''}` : ' ')}
               </p>
             </div>
           )
@@ -53,7 +54,7 @@ export function ThresholdsEditor({ draft, defaults, errors, onChange, onReset }:
       {onReset && defaults && (
         <button type="button" className="btn btn-ghost mt-2" onClick={onReset}>
           <RotateCcw className="size-4" aria-hidden="true" />
-          Réinitialiser aux valeurs du preset
+          {t('settings.thresholds.reset')}
         </button>
       )}
     </div>

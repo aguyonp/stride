@@ -4,6 +4,7 @@ import type { HistoryRow } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtDayMonth, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtWeekdayShort, isNum } from '../../lib/format'
 import { Card } from '../ui/Card'
+import { t } from '../../i18n'
 
 const pain = (v: number | null) =>
   isNum(v) ? <span className={cn('font-semibold', v >= 5 ? 'text-danger' : v >= 3 ? 'text-warn' : 'text-ok')}>{fmtNumber(v, 1, { trim: true })}</span> : <span className="text-ink-3">—</span>
@@ -11,16 +12,16 @@ const pain = (v: number | null) =>
 /** 14 days before (and including) the session, with shoes and pains. */
 export function HistoryTable({ rows, currentId, className }: { rows: HistoryRow[]; currentId: number; className?: string }) {
   return (
-    <Card title="Historique 14 jours" icon={<History className="size-4" />} subtitle="Course & ressenti · touche une ligne pour ouvrir la séance" className={className}>
+    <Card title={t('dashboard.cards.historyTitle')} icon={<History className="size-4" />} subtitle={t('dashboard.cards.historySubtitle')} className={className}>
       {rows.length === 0 ? (
-        <p className="text-sm text-ink-3">Aucune séance sur les 14 derniers jours.</p>
+        <p className="text-sm text-ink-3">{t('dashboard.cards.historyEmpty')}</p>
       ) : (
         <div className="scroll-thin -mx-1 overflow-x-auto px-1">
           <table className="num w-full min-w-[820px] border-separate border-spacing-0 text-sm whitespace-nowrap">
-            <caption className="sr-only">Historique des 14 derniers jours</caption>
+            <caption className="sr-only">{t('dashboard.cards.historyCaption')}</caption>
             <thead>
               <tr className="text-left text-xs text-ink-3">
-                {['Date', 'Type', 'Dist.', 'Durée', 'Allure', 'Cadence', 'GCT', 'D−', 'Load', 'Chaussures', 'Gêne E', 'Froid', 'Lendemain'].map((h) => (
+                {(['date', 'type', 'dist', 'duration', 'pace', 'cadence', 'gct', 'loss', 'load', 'shoes', 'painDuring', 'cold', 'nextDay'] as const).map((k) => t(`dashboard.cards.historyHeads.${k}`)).map((h) => (
                   <th key={h} scope="col" className="border-b border-line px-2 py-2 font-medium first:pl-1">
                     {h}
                   </th>
