@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { FALLBACK_POLL_MS, fallbackPollInterval, hasActiveJob, isJobActive } from './polling'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 describe('stream fallback polling', () => {
   it('polls slowly while the stream is down or work is in flight, never when healthy and idle', () => {

@@ -17,6 +17,7 @@ import (
 	"stride/internal/athlete"
 	"stride/internal/auth"
 	"stride/internal/domain"
+	"stride/internal/frfmt"
 	"stride/internal/httpx"
 	"stride/internal/provider/strava"
 )
@@ -32,15 +33,19 @@ type api struct {
 	s          *domain.Services
 	log        *slog.Logger
 	shareLimit *ipLimiter
+	// Portal writes are limited per token and per client IP.
+	portalTokenLimit *ipLimiter
+	portalIPLimit    *ipLimiter
 }
 
 // Register mounts every domain route on mux (Go 1.22 patterns, e.g. "GET /api/activities/{id}").
 func Register(mux *http.ServeMux, d Deps) {
-	a := &api{s: d.Services, log: d.Log, shareLimit: newIPLimiter(shareRateLimit)}
+	a := &api{s: d.Services, log: d.Log, shareLimit: newIPLimiter(shareRateLimit),
+		portalTokenLimit: newWindowLimiter(portalWritesByToken, portalWriteWindow), portalIPLimit: newWindowLimiter(portalWritesByIP, portalWriteWindow)}
 	if a.log == nil {
 		a.log = slog.Default()
 	}
-	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(h)) }
+	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(withLang(h))) }
 	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(d.RequireAdmin(h))) }
 
 	user("GET /api/integrations", a.integrations)
@@ -89,6 +94,7 @@ func Register(mux *http.ServeMux, d Deps) {
 	registerV3(user, a)
 	registerV31(user, a)
 	registerV4(mux, user, a)
+	registerV42(mux, user, a)
 
 	admin("GET /api/admin/connections", a.adminConnections)
 	admin("POST /api/admin/users/{id}/resync", a.adminResync)
@@ -104,6 +110,14 @@ func uid(r *http.Request) (int64, bool) {
 }
 
 // withUser runs h with the authenticated user id (never taken from the request).
+// withLang stores the Accept-Language choice (fr/en) in the request context; services resolve the
+// effective language as profile.language ?? Accept-Language ?? en (§15.2).
+func withLang(h http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h(w, r.WithContext(frfmt.WithLang(r.Context(), frfmt.FromAcceptLanguage(r.Header.Get("Accept-Language")))))
+	})
+}
+
 func (a *api) withUser(w http.ResponseWriter, r *http.Request, h func(id int64)) {
 	id, ok := uid(r)
 	if !ok {
@@ -136,6 +150,8 @@ func (a *api) fail(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	case errors.As(err, &br):
 		httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, br.Msg)
+	case errors.Is(err, domain.ErrShareForbidden):
+		httpx.Fail(w, http.StatusForbidden, httpx.CodeShareForbidden, "Action non autorisée par ce lien de partage.")
 	case errors.Is(err, domain.ErrGone):
 		httpx.Fail(w, http.StatusGone, "GONE", "Ce lien de partage a expiré.")
 	case errors.Is(err, domain.ErrNotFound) || errors.Is(err, athlete.ErrNotFound):

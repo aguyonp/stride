@@ -1,4 +1,4 @@
-import { Activity, CalendarRange, Eye, Footprints, Gauge, Link2Off, Moon, RotateCw, ShieldCheck, Stethoscope, Sun, Trophy } from 'lucide-react'
+import { CalendarRange, Eye, Footprints, Gauge, Link2Off, Moon, PenLine, RotateCw, Stethoscope, Sun, Trophy } from 'lucide-react'
 import { isApiError } from '../../api/client'
 import { usePublicShareView } from '../../api/queries'
 import type { PersonalRecord, PublicLoadPoint, PublicShareView } from '../../api/types'
@@ -11,18 +11,26 @@ import { Card } from '../../components/ui/Card'
 import { StrideMark } from '../../components/ui/icons'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { Insufficient } from '../../components/ui/Value'
+import { LanguageToggle } from '../../components/ui/LanguageToggle'
+import { recordLabel } from '../../components/dashboard/RecordsCard'
 import { ReadinessBanner } from '../../components/v3/ReadinessBanner'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { useTheme } from '../../hooks/useTheme'
 import { cn } from '../../lib/cn'
-import { fmtDateShort, fmtDateTime, fmtDayMonth, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtSigned, isNum } from '../../lib/format'
-import { ACWR_VERDICT, SHOE_TYPE_LABEL, SIDE_LABEL } from '../../lib/labels'
+import { fmtDateShort, fmtDateTime, fmtDayMonth, fmtDuration, fmtKm, fmtNumber, fmtSignedPct, isNum, ND, todayISO } from '../../lib/format'
+import { ACWR_VERDICT, SHOE_TYPE_LABEL } from '../../lib/labels'
+import { PortalCalendar } from './portal/PortalCalendar'
+import { PortalSessions } from './portal/PortalSessions'
+import { PortalSummary } from './portal/PortalSummary'
+import { permissionsOf } from './portal/portalUtils'
+import { t } from '../../i18n'
 
 function LoadTrendSvg({ series }: { series: PublicLoadPoint[] }) {
   if (series.length < 2) {
     return (
       <p className="py-6 text-center text-sm text-ink-3">
-        Historique de charge sur 42 jours insuffisant pour tracer la tendance.
+        {t('common.misc.noLoadHistory')}
       </p>
     )
   }
@@ -71,25 +79,25 @@ function LoadTrendSvg({ series }: { series: PublicLoadPoint[] }) {
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-1.5">
             <span className="size-2.5 rounded-full bg-accent" aria-hidden="true" />
-            Charge aiguë (7 j)
+            {t('share.public.acute')}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="size-2.5 rounded-full bg-info" aria-hidden="true" />
-            Charge chronique (28 j)
+            {t('share.public.chronic')}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="size-2.5 rounded-full bg-ok" aria-hidden="true" />
-            Ratio ACWR (zone optimale 0,8–1,3)
+            {t('share.public.acwrLegend')}
           </span>
         </div>
-        <span className="num">{series.length} jours</span>
+        <span className="num">{t('share.public.days', { count: series.length })}</span>
       </div>
 
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="h-auto w-full select-none"
         role="img"
-        aria-label="Évolution sur 42 jours de la charge aiguë, chronique et du ratio ACWR"
+        aria-label={t('share.public.trendAria')}
       >
         <rect
           x={padL}
@@ -196,6 +204,8 @@ function DualCompletionBar({
 
 function PublicHeader({ data }: { data: PublicShareView | null }) {
   const { theme, toggle } = useTheme()
+  const p = data ? permissionsOf(data) : null
+  const writable = Boolean(p && (p.comments || p.planning))
   return (
     <header className="app-header">
       <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6 lg:h-16 lg:px-8">
@@ -208,27 +218,35 @@ function PublicHeader({ data }: { data: PublicShareView | null }) {
           </span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold tracking-tight text-ink sm:text-base">
-              Stride · Dossier Athlète Partagé
+              {t('share.public.brand')}
             </p>
             {data && (
               <p className="num truncate text-[11px] text-ink-3">
                 {data.shareLabel}
-                {data.expiresAt ? ` · Expire le ${fmtDateTime(data.expiresAt)}` : ' · Sans date d’expiration'}
+                {data.expiresAt ? t('share.public.expires', { date: fmtDateTime(data.expiresAt) }) : t('share.public.noExpiry')}
               </p>
             )}
           </div>
         </div>
 
         <div className="flex flex-none items-center gap-2">
-          <span className="chip h-7 border border-info/35 bg-info/12 px-2.5 text-xs font-medium text-info">
-            <Eye className="size-3.5" aria-hidden="true" />
-            Lecture seule
-          </span>
+          {writable ? (
+            <span className="chip h-7 border border-accent/35 bg-accent/12 px-2.5 text-xs font-medium text-ink">
+              <PenLine className="size-3.5 text-accent" aria-hidden="true" />
+              <span className="max-sm:sr-only">{t('share.public.annotations')}</span>
+            </span>
+          ) : (
+            <span className="chip h-7 border border-info/35 bg-info/12 px-2.5 text-xs font-medium text-info">
+              <Eye className="size-3.5" aria-hidden="true" />
+              <span className="max-sm:sr-only">{t('share.public.readOnly')}</span>
+            </span>
+          )}
+          <LanguageToggle />
           <button
             type="button"
             className="icon-btn"
             onClick={toggle}
-            aria-label={theme === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'}
+            aria-label={theme === 'dark' ? t('layout.nav.lightTheme') : t('layout.nav.darkTheme')}
           >
             {theme === 'dark' ? <Sun className="size-[1.125rem]" /> : <Moon className="size-[1.125rem]" />}
           </button>
@@ -238,53 +256,89 @@ function PublicHeader({ data }: { data: PublicShareView | null }) {
   )
 }
 
-function ShareDossierContent({ data }: { data: PublicShareView }) {
-  const { athlete, loadSummary, cycles, bodyMap } = data
+function ShareDossierContent({ data, token }: { data: PublicShareView; token: string }) {
+  const { loadSummary, cycles, bodyMap } = data
   const shoes = data.shoes
-  const recentSessions = data.recentSessions
-  const showNotes = data.sections.includes('notes')
   const phases = cycles?.phases ?? []
   const acwrMeta = loadSummary?.verdict ? ACWR_VERDICT[loadSummary.verdict] : null
   const activePlan = cycles?.activePlan
   const activeZones = (bodyMap?.zones ?? []).filter((z) => effectiveZoneScore(z) > 0 || z.entriesCount90d > 0)
+  const inline = useMediaQuery('(min-width: 768px)')
+  const today = todayISO()
 
   return (
     <div className="space-y-5 lg:space-y-6">
-      <section className="glass p-5 sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">{athlete.displayName}</h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {athlete.focusLabel && (
-                <span className="chip border border-accent/35 bg-accent/12 text-ink">
-                  Focus : {athlete.focusLabel}
-                  {athlete.injuredSide ? ` (${SIDE_LABEL[athlete.injuredSide]})` : ''}
-                </span>
-              )}
-              <span className="chip border border-line bg-track/60 text-ink-2">
-                Destinataire : {data.shareLabel}
-              </span>
-              <span className="chip border border-ok/30 bg-ok/10 text-ok">
-                <ShieldCheck className="size-3.5" aria-hidden="true" />
-                Sans traces GPS ni données d’accès
-              </span>
-            </div>
-          </div>
-          <p className="num text-xs text-ink-3">Actualisé le {fmtDateTime(data.generatedAt)}</p>
-        </div>
-      </section>
+      <PortalSummary data={data} token={token} inline={inline} today={today} />
 
       <ReadinessBanner r={data.readiness} />
 
+      <div className="grid gap-5 lg:grid-cols-12">
+        {bodyMap && (
+        <Card
+          className="lg:col-span-6"
+          title={t('share.public.bodyMap')}
+          subtitle={t('share.public.bodyMapSubtitle', { days: bodyMap.windowDays })}
+          icon={<Stethoscope />}
+        >
+          <BodyAnatomySvg zones={bodyMap.zones} readOnly />
+          <div className="mt-4 space-y-2">
+            {activeZones.length === 0 ? (
+              <p className="text-sm text-ink-3">{t('share.public.noZone')}</p>
+            ) : (
+              <ul className="grid gap-2 sm:grid-cols-2" aria-label={t('share.public.zones')}>
+                {activeZones.map((z) => {
+                  const score = effectiveZoneScore(z)
+                  const tone = painScoreTone(score)
+                  const trend = TREND_META[z.trend]
+                  return (
+                    <li key={z.zone} className="glass-inset p-3 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-ink">{BODY_ZONE_META[z.zone].short}</span>
+                        <span className={cn('chip num h-5 border px-2 text-[11px]', tone.badgeCls)}>
+                          {fmtNumber(score, 1, { trim: true })}/10
+                        </span>
+                      </div>
+                      <p className="num mt-1 text-ink-3">
+                        {z.latestSide ? `${BODY_SIDE_LABEL[z.latestSide]} · ` : ''}
+                        {z.latestColdNextDayScore !== null
+                          ? t('share.public.cold', { value: fmtNumber(z.latestColdNextDayScore, 1, { trim: true }) })
+                          : ''}
+                        {t('share.public.reports', { count: z.entriesCount90d })}
+                      </p>
+                      <span className={cn('chip mt-2 h-5 border px-2 text-[11px]', trend.cls)}>{trend.label}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        </Card>
+        )}
+        {bodyMap && (
+          <Card
+            className="lg:col-span-6"
+            title={t('share.public.correlations')}
+            subtitle={t('share.public.correlationsSubtitle')}
+            icon={<Footprints />}
+          >
+            <BodyCorrelationList correlations={bodyMap.correlations} />
+          </Card>
+        )}
+      </div>
+
+      <PortalCalendar data={data} token={token} inline={inline} today={today} />
+
+      <PortalSessions data={data} token={token} inline={inline} />
+
       {loadSummary && (
       <Card
-        title="Charge d’entraînement & Efficience"
-        subtitle="Synthèse aiguë / chronique, facteur d’efficience aérobie et contrainte mécanique sur 7 jours"
+        title={t('share.public.loadTitle')}
+        subtitle={t('share.public.loadSubtitle')}
         icon={<Gauge />}
       >
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <div className="glass-inset p-3">
-            <dt className="text-xs text-ink-3">Ratio ACWR</dt>
+            <dt className="text-xs text-ink-3">{t('share.public.acwr')}</dt>
             <dd className="mt-1 flex flex-wrap items-center gap-2">
               <span className="num text-lg font-bold text-ink">
                 {isNum(loadSummary.acwr) ? fmtNumber(loadSummary.acwr, 2) : 'N/D'}
@@ -309,7 +363,7 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
           </div>
 
           <div className="glass-inset p-3">
-            <dt className="text-xs text-ink-3">Charge aiguë / chronique</dt>
+            <dt className="text-xs text-ink-3">{t('share.public.acuteChronic')}</dt>
             <dd className="num mt-1 text-lg font-bold text-ink">
               {fmtNumber(loadSummary.acute, 0)}{' '}
               <span className="text-sm font-normal text-ink-3">/ {fmtNumber(loadSummary.chronic, 0)}</span>
@@ -317,26 +371,26 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
           </div>
 
           <div className="glass-inset p-3">
-            <dt className="text-xs text-ink-3">Efficiency Factor</dt>
+            <dt className="text-xs text-ink-3">{t('share.public.ef')}</dt>
             <dd className="num mt-1 flex items-baseline gap-1.5 text-lg font-bold text-ink">
               {isNum(loadSummary.efLatest) ? <span>{fmtNumber(loadSummary.efLatest, 2)}</span> : <Insufficient />}
               {isNum(loadSummary.efLatest) && isNum(loadSummary.efTrendPct) && (
                 <span className={cn('text-xs font-semibold', loadSummary.efTrendPct >= 0 ? 'text-ok' : 'text-warn')}>
-                  {fmtSigned(loadSummary.efTrendPct, 1)} %
+                  {fmtSignedPct(loadSummary.efTrendPct, 1)}
                 </span>
               )}
             </dd>
           </div>
 
           <div className="glass-inset p-3">
-            <dt className="text-xs text-ink-3">Impact Load (7 j)</dt>
+            <dt className="text-xs text-ink-3">{t('share.public.impact7d')}</dt>
             <dd className="num mt-1 text-lg font-bold text-ink">
               {isNum(loadSummary.impactLoad7d) ? `${fmtNumber(loadSummary.impactLoad7d, 0)} pts` : <Insufficient />}
             </dd>
           </div>
 
           <div className="glass-inset p-3">
-            <dt className="text-xs text-ink-3">Indice articulaire (7 j)</dt>
+            <dt className="text-xs text-ink-3">{t('share.public.joint7d')}</dt>
             <dd className="num mt-1 text-lg font-bold text-ink">
               {isNum(loadSummary.jointIndex7d) ? fmtNumber(loadSummary.jointIndex7d, 1) : <Insufficient />}
             </dd>
@@ -351,38 +405,38 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
 
       {cycles && (
       <Card
-        title="Cycle d’entraînement actif"
+        title={t('share.public.cycleTitle')}
         subtitle={
           activePlan
-            ? `${activePlan.name}${activePlan.targetEventLabel ? ` · Objectif : ${activePlan.targetEventLabel}` : ''}`
-            : 'Planification macro et mésocycles'
+            ? `${activePlan.name}${activePlan.targetEventLabel ? t('share.public.cycleGoal', { label: activePlan.targetEventLabel }) : ''}`
+            : t('share.public.cycleDefault')
         }
         icon={<CalendarRange />}
       >
         {!activePlan && phases.length === 0 ? (
-          <p className="text-sm text-ink-3">Aucun macrocycle structuré actif pour le moment.</p>
+          <p className="text-sm text-ink-3">{t('share.public.noCycle')}</p>
         ) : (
           <div className="space-y-4">
             {activePlan && cycles.totals && (
               <div className="glass-inset grid gap-4 p-4 sm:grid-cols-3">
                 <div>
-                  <p className="text-xs text-ink-3">Période du macrocycle</p>
+                  <p className="text-xs text-ink-3">{t('share.public.cyclePeriod')}</p>
                   <p className="num mt-1 text-sm font-semibold text-ink">
                     {fmtDateShort(activePlan.startDate)} → {fmtDateShort(activePlan.endDate)}
                   </p>
                   <p className="num mt-1 text-xs text-ink-3">
-                    {cycles.totals.sessionsCompleted} / {cycles.totals.sessionsPlanned} séances complétées
+                    {t('share.public.sessionsDone', { done: cycles.totals.sessionsCompleted, planned: cycles.totals.sessionsPlanned })}
                   </p>
                 </div>
                 <DualCompletionBar
-                  label="Volume cumulé"
+                  label={t('share.public.cumVolume')}
                   actual={cycles.totals.actualVolumeKm}
                   planned={cycles.totals.plannedVolumeKm}
                   unit="km"
                   decimals={1}
                 />
                 <DualCompletionBar
-                  label="Charge cumulée"
+                  label={t('share.public.cumLoad')}
                   actual={cycles.totals.actualLoad}
                   planned={cycles.totals.plannedLoad}
                   unit="pts"
@@ -391,7 +445,7 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
             )}
 
             {phases.length > 0 && (
-              <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" aria-label="Mésocycles du plan">
+              <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3" aria-label={t('share.public.mesos')}>
                 {phases.map((phase) => {
                   const meta = PHASE_TYPE_META[phase.phaseType]
                   return (
@@ -405,7 +459,7 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
                         {phase.focus ? ` · ${phase.focus}` : ''}
                       </p>
                       <DualCompletionBar
-                        label="Volume"
+                        label={t('share.public.volume')}
                         actual={phase.actuals.actualVolumeKm}
                         planned={phase.actuals.plannedVolumeKm}
                         unit="km"
@@ -423,70 +477,19 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
       )}
 
       <div className="grid gap-5 lg:grid-cols-12">
-        {bodyMap && (
-        <Card
-          className="lg:col-span-6"
-          title="Cartographie corporelle"
-          subtitle={`Synthèse sur ${bodyMap.windowDays} jours (vue en lecture seule)`}
-          icon={<Stethoscope />}
-        >
-          <BodyAnatomySvg zones={bodyMap.zones} readOnly />
-          <div className="mt-4 space-y-2">
-            {activeZones.length === 0 ? (
-              <p className="text-sm text-ink-3">Aucune zone douloureuse signalée sur la période observée.</p>
-            ) : (
-              <ul className="grid gap-2 sm:grid-cols-2" aria-label="Zones signalées">
-                {activeZones.map((z) => {
-                  const score = effectiveZoneScore(z)
-                  const tone = painScoreTone(score)
-                  const trend = TREND_META[z.trend]
-                  return (
-                    <li key={z.zone} className="glass-inset p-3 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-ink">{BODY_ZONE_META[z.zone].short}</span>
-                        <span className={cn('chip num h-5 border px-2 text-[11px]', tone.badgeCls)}>
-                          {fmtNumber(score, 1, { trim: true })}/10
-                        </span>
-                      </div>
-                      <p className="num mt-1 text-ink-3">
-                        {z.latestSide ? `${BODY_SIDE_LABEL[z.latestSide]} · ` : ''}
-                        {z.latestColdNextDayScore !== null
-                          ? `À froid J+1 : ${fmtNumber(z.latestColdNextDayScore, 1, { trim: true })}/10 · `
-                          : ''}
-                        {z.entriesCount90d} signalement{z.entriesCount90d > 1 ? 's' : ''}
-                      </p>
-                      <span className={cn('chip mt-2 h-5 border px-2 text-[10px]', trend.cls)}>{trend.label}</span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        </Card>
-        )}
-        {bodyMap && (
-          <Card
-            className="lg:col-span-6"
-            title="Corrélations biomécaniques"
-            subtitle="Sorties avec gêne comparées aux sorties de référence"
-            icon={<Footprints />}
-          >
-            <BodyCorrelationList correlations={bodyMap.correlations} />
-          </Card>
-        )}
         {shoes && (
-          <Card className="lg:col-span-6" title="Chaussures" icon={<Footprints />}>
+          <Card className="lg:col-span-6" title={t('share.public.shoes')} icon={<Footprints />}>
             {shoes.length === 0 ? (
-              <p className="text-sm text-ink-3">Aucune paire enregistrée.</p>
+              <p className="text-sm text-ink-3">{t('share.public.noShoe')}</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-line text-ink-3">
-                      <th className="pb-2 pr-3 font-medium">Paire</th>
-                      <th className="pb-2 px-2 font-medium">Type</th>
-                      <th className="pb-2 px-2 text-right font-medium">Drop</th>
-                      <th className="pb-2 pl-2 text-right font-medium">Kilométrage</th>
+                      <th className="pb-2 pr-3 font-medium">{t('share.public.pair')}</th>
+                      <th className="pb-2 px-2 font-medium">{t('share.public.type')}</th>
+                      <th className="pb-2 px-2 text-right font-medium">{t('share.public.drop')}</th>
+                      <th className="pb-2 pl-2 text-right font-medium">{t('share.public.mileage')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
@@ -497,11 +500,11 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
                           {(s.brand || s.model) && (
                             <span className="ml-1.5 text-ink-3">{[s.brand, s.model].filter(Boolean).join(' ')}</span>
                           )}
-                          {s.retired && <span className="ml-1.5 text-ink-3">(retirée)</span>}
+                          {s.retired && <span className="ml-1.5 text-ink-3">{t('share.public.retired')}</span>}
                         </td>
                         <td className="py-2 px-2 text-ink-2">{SHOE_TYPE_LABEL[s.type]}</td>
                         <td className="num py-2 px-2 text-right text-ink-2">
-                          {isNum(s.dropMm) ? `${fmtNumber(s.dropMm, 1, { trim: true })} mm` : 'N/D'}
+                          {isNum(s.dropMm) ? `${fmtNumber(s.dropMm, 1, { trim: true })} mm` : ND}
                         </td>
                         <td className="num py-2 pl-2 text-right font-medium text-ink">
                           {fmtNumber(s.distanceKm, 1)} km
@@ -516,95 +519,6 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
         )}
         {data.records && <RecordsCard records={data.records} />}
       </div>
-
-      {recentSessions && (
-      <Card
-        title="Séances récentes"
-        subtitle="Métriques physiologiques, biomécaniques, matériel et douleur rapportée"
-        icon={<Activity />}
-      >
-        {recentSessions.length === 0 ? (
-          <p className="text-sm text-ink-3">Aucune séance récente enregistrée.</p>
-        ) : (
-          <div className="scroll-thin -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <table className="w-full min-w-[780px] text-left text-xs">
-              <thead>
-                <tr className="border-b border-line text-ink-3">
-                  <th className="pb-2.5 pr-3 font-medium">Date</th>
-                  <th className="pb-2.5 px-2 font-medium">Séance</th>
-                  <th className="pb-2.5 px-2 text-right font-medium">Distance</th>
-                  <th className="pb-2.5 px-2 text-right font-medium">Allure / GAP</th>
-                  <th className="pb-2.5 px-2 text-right font-medium">FC</th>
-                  <th className="pb-2.5 px-2 text-right font-medium">GCT</th>
-                  <th className="pb-2.5 px-2 text-right font-medium">D−</th>
-                  <th className="pb-2.5 px-2 text-right font-medium">Charge</th>
-                  <th className="pb-2.5 px-2 font-medium">Chaussure</th>
-                  {showNotes && <th className="pb-2.5 pl-2 text-right font-medium">Douleur / J+1</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {recentSessions.map((s) => {
-                  const maxPain = Math.max(s.painDuring ?? 0, s.painNextMorning ?? 0)
-                  const painTone = painScoreTone(maxPain)
-                  return (
-                    <tr key={s.id} className="hover:bg-track/30">
-                      <td className="num whitespace-nowrap py-2.5 pr-3 text-ink-2">{fmtDateShort(s.date)}</td>
-                      <td className="py-2.5 px-2">
-                        <p className="max-w-[14rem] truncate font-semibold text-ink">{s.name}</p>
-                        <p className="text-[11px] text-ink-3">{s.typeLabel}</p>
-                      </td>
-                      <td className="num whitespace-nowrap py-2.5 px-2 text-right font-medium text-ink">
-                        {fmtKm(s.distanceM)}
-                      </td>
-                      <td className="num whitespace-nowrap py-2.5 px-2 text-right text-ink-2">
-                        {fmtPace(s.avgPaceSecPerKm)}
-                        {isNum(s.gapSecPerKm) && s.gapSecPerKm !== s.avgPaceSecPerKm && (
-                          <span className="block text-[11px] text-ink-3">GAP {fmtPace(s.gapSecPerKm)}</span>
-                        )}
-                      </td>
-                      <td className="num whitespace-nowrap py-2.5 px-2 text-right text-ink-2">
-                        {isNum(s.avgHR) ? `${fmtNumber(s.avgHR)} bpm` : 'N/D'}
-                      </td>
-                      <td className="num whitespace-nowrap py-2.5 px-2 text-right text-ink-2">
-                        {isNum(s.gctMs) ? `${fmtNumber(s.gctMs)} ms` : 'N/D'}
-                      </td>
-                      <td className="num whitespace-nowrap py-2.5 px-2 text-right text-ink-2">
-                        {isNum(s.elevLossM) ? `${fmtNumber(s.elevLossM)} m` : 'N/D'}
-                      </td>
-                      <td className="num whitespace-nowrap py-2.5 px-2 text-right font-medium text-ink">
-                        {isNum(s.trainingLoad) ? fmtNumber(s.trainingLoad, 0) : 'N/D'}
-                      </td>
-                      <td className="py-2.5 px-2 text-ink-2">
-                        {s.shoeName ? (
-                          <span className="block max-w-[9rem] truncate">
-                            {s.shoeName}
-                            {isNum(s.shoeDropMm) ? ` (${fmtNumber(s.shoeDropMm, 0)} mm)` : ''}
-                          </span>
-                        ) : (
-                          <span className="text-ink-3">—</span>
-                        )}
-                      </td>
-{showNotes && (
-                      <td className="num whitespace-nowrap py-2.5 pl-2 text-right">
-                        {isNum(s.painDuring) || isNum(s.painNextMorning) ? (
-                          <span className={cn('chip h-5 border px-2 text-[11px]', painTone.badgeCls)}>
-                            {isNum(s.painDuring) ? fmtNumber(s.painDuring, 1, { trim: true }) : '—'} /{' '}
-                            {isNum(s.painNextMorning) ? fmtNumber(s.painNextMorning, 1, { trim: true }) : '—'}
-                          </span>
-                        ) : (
-                          <span className="text-ink-3">0 / 0</span>
-                        )}
-                      </td>
-                      )}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-      )}
     </div>
   )
 }
@@ -612,14 +526,14 @@ function ShareDossierContent({ data }: { data: PublicShareView }) {
 function RecordsCard({ records }: { records: PersonalRecord[] }) {
   const known = records.filter((r) => r.timeS !== null || r.key === 'longest')
   return (
-    <Card className="lg:col-span-6" title="Records personnels" icon={<Trophy />}>
+    <Card className="lg:col-span-6" title={t('share.public.records')} icon={<Trophy />}>
       {known.length === 0 ? (
-        <p className="text-sm text-ink-3">Aucun record enregistré.</p>
+        <p className="text-sm text-ink-3">{t('share.public.noRecord')}</p>
       ) : (
         <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {known.map((r) => (
             <div key={r.key} className="glass-inset p-3">
-              <dt className="text-xs text-ink-3">{r.label}</dt>
+              <dt className="text-xs text-ink-3">{recordLabel(r)}</dt>
               <dd className="num mt-0.5 font-semibold text-ink">{r.timeS !== null ? fmtDuration(r.timeS) : fmtKm(r.distanceM)}</dd>
               {r.date && <dd className="num text-[11px] text-ink-3">{fmtDateShort(r.date)}</dd>}
             </div>
@@ -633,7 +547,7 @@ function RecordsCard({ records }: { records: PersonalRecord[] }) {
 export default function SharePublicView({ token }: { token: string }) {
   const share = usePublicShareView(token)
   useDocumentTitle(
-    share.data ? `${share.data.athlete.displayName} · Dossier partagé` : 'Dossier Athlète Partagé',
+    share.data ? t('share.public.docTitle', { name: share.data.athlete.displayName }) : t('share.public.docTitleDefault'),
   )
 
   const unavailable =
@@ -650,14 +564,14 @@ export default function SharePublicView({ token }: { token: string }) {
         className="mx-auto w-full max-w-[1440px] px-4 pt-5 pb-14 sm:px-6 lg:px-8 lg:pt-7"
       >
         {share.isPending ? (
-          <div className="space-y-4" role="status" aria-label="Chargement du dossier partagé…">
+          <div className="space-y-4" role="status" aria-label={t('share.public.loading')}>
             <Skeleton className="h-28" />
             <Skeleton className="h-64" />
             <div className="grid gap-4 lg:grid-cols-2">
               <Skeleton className="h-80" />
               <Skeleton className="h-80" />
             </div>
-            <span className="sr-only">Chargement du dossier partagé…</span>
+            <span className="sr-only">{t('share.public.loading')}</span>
           </div>
         ) : unavailable ? (
           <section className="glass mx-auto mt-8 max-w-xl p-7 text-center" role="alert">
@@ -665,24 +579,24 @@ export default function SharePublicView({ token }: { token: string }) {
               <Link2Off className="size-6" aria-hidden="true" />
             </span>
             <h1 className="text-lg font-semibold text-ink">
-              Lien de partage introuvable, expiré ou révoqué
+              {t('share.public.notFound')}
             </h1>
             <p className="mt-1.5 text-sm text-ink-2">
-              Ce dossier athlète en lecture seule n’est plus accessible. Demande un nouveau lien de partage à l’athlète.
+              {t('share.public.notFoundHint')}
             </p>
           </section>
         ) : share.isError || !share.data ? (
           <section className="glass mx-auto mt-8 max-w-xl p-7 text-center" role="alert">
-            <h1 className="text-lg font-semibold text-ink">Impossible de charger ce dossier partagé</h1>
+            <h1 className="text-lg font-semibold text-ink">{t('share.public.loadFailed')}</h1>
             <p className="mt-1.5 text-sm text-ink-2">
-              {share.error instanceof Error ? share.error.message : 'Erreur temporaire de connexion.'}
+              {share.error instanceof Error ? share.error.message : t('share.public.tempError')}
             </p>
             <button type="button" className="btn btn-ghost mt-4" onClick={() => void share.refetch()}>
-              <RotateCw className="size-4" aria-hidden="true" /> Réessayer
+              <RotateCw className="size-4" aria-hidden="true" /> {t('common.actions.retry')}
             </button>
           </section>
         ) : (
-          <ShareDossierContent data={share.data} />
+          <ShareDossierContent data={share.data} token={token} />
         )}
       </main>
     </div>

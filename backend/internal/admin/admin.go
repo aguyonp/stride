@@ -16,6 +16,7 @@ import (
 	"stride/internal/apimeter"
 	"stride/internal/applog"
 	"stride/internal/auth"
+	"stride/internal/backup"
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/httpx"
@@ -41,6 +42,8 @@ type Deps struct {
 	StartedAt time.Time
 	// Maintenance purges expired sessions, invitations, API events, logs, jobs and share links.
 	Maintenance func(context.Context) (map[string]int64, error)
+	// Backups serves « Backups & S3 » (optional).
+	Backups *backup.Service
 }
 
 type Handler struct {
@@ -99,6 +102,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/admin/meter", a(http.HandlerFunc(h.meter)))
 	mux.Handle("POST /api/admin/cache/flush", a(http.HandlerFunc(h.flushCache)))
 	h.registerControl(mux)
+	h.registerBackups(mux)
 }
 
 func (h *Handler) internal(w http.ResponseWriter, r *http.Request, what string, err error) {

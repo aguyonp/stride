@@ -1,4 +1,5 @@
 import { CalendarRange, HeartPulse, LayoutDashboard, Settings, Sparkles, type LucideIcon } from 'lucide-react'
+import { t, type MessageKey } from '../../i18n'
 
 export interface NavItem {
   href: string
@@ -9,12 +10,24 @@ export interface NavItem {
 }
 
 /** The five menus (§14.1). Réglages stays out of the mobile dock: it is in the account menu there. */
+const item = (href: string, key: 'dashboard' | 'plan' | 'health' | 'coach' | 'settings', icon: LucideIcon, dock: boolean): NavItem => ({
+  href,
+  icon,
+  dock,
+  get label() {
+    return t(`layout.nav.${key}` as MessageKey)
+  },
+  get short() {
+    return t(`layout.nav.${key}Short` as MessageKey)
+  },
+})
+
 export const NAV: NavItem[] = [
-  { href: '/', label: 'Tableau de bord', short: 'Accueil', icon: LayoutDashboard, dock: true },
-  { href: '/plan', label: 'Planning', short: 'Planning', icon: CalendarRange, dock: true },
-  { href: '/health', label: 'Santé & forme', short: 'Santé', icon: HeartPulse, dock: true },
-  { href: '/coach', label: 'Coach IA', short: 'Coach', icon: Sparkles, dock: true },
-  { href: '/settings', label: 'Réglages', short: 'Réglages', icon: Settings, dock: false },
+  item('/', 'dashboard', LayoutDashboard, true),
+  item('/plan', 'plan', CalendarRange, true),
+  item('/health', 'health', HeartPulse, true),
+  item('/coach', 'coach', Sparkles, true),
+  item('/settings', 'settings', Settings, false),
 ]
 
 export const isActive = (href: string, path: string) =>

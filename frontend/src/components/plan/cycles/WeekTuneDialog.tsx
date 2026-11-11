@@ -9,6 +9,7 @@ import { InlineError } from '../../ui/Misc'
 import { useToast } from '../../ui/Toast'
 import { numberField, parseOptionalNumber, validateWeekTargets } from './cycleModel'
 import { VolumeLoadGauges } from './Gauges'
+import { t } from '../../../i18n'
 
 export function WeekTuneDialog({
   week,
@@ -50,7 +51,7 @@ export function WeekTuneDialog({
       },
       {
         onSuccess: () => {
-          toast({ title: `Microcycle S${week.weekNumber} enregistré`, tone: 'success' })
+          toast({ title: t('plan.cycleDialogs.weekSaved', { n: week.weekNumber }), tone: 'success' })
           onClose()
         },
         onError: (e) => setErrMsg(e.message),
@@ -62,8 +63,8 @@ export function WeekTuneDialog({
     <Dialog
       open
       onClose={onClose}
-      title={`Microcycle S${week.weekNumber} · ${fmtDateShort(week.weekStart)} → ${fmtDateShort(week.weekEnd)}`}
-      description="Ajuste les objectifs de volume, de charge ou marque une semaine d’assimilation."
+      title={t('plan.cycleDialogs.weekTitle', { n: week.weekNumber, from: fmtDateShort(week.weekStart), to: fmtDateShort(week.weekEnd) })}
+      description={t('plan.cycleDialogs.weekHint')}
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
           <button
@@ -78,11 +79,11 @@ export function WeekTuneDialog({
           </button>
           <div className="flex gap-2">
             <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Annuler
+              {t('common.actions.cancel')}
             </button>
             <button type="button" className="btn btn-primary" onClick={save} disabled={mut.upsertWeek.isPending}>
               {mut.upsertWeek.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-              Enregistrer
+              {t('common.actions.save')}
             </button>
           </div>
         </div>
@@ -90,24 +91,24 @@ export function WeekTuneDialog({
     >
       <div className="space-y-4">
         <div className="grid gap-3 rounded-2xl border border-line bg-track/30 p-3 sm:grid-cols-2">
-          <VolumeLoadGauges actuals={week.actuals} volumeLabel="Volume réalisé" loadLabel="Charge réalisée" />
+          <VolumeLoadGauges actuals={week.actuals} volumeLabel={t('plan.cycleDialogs.volumeDone')} loadLabel={t('plan.cycleDialogs.loadDone')} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Volume cible (km)">
+          <Field label={t('plan.cycleDialogs.targetVolume')}>
             {(p) => <input {...p} type="number" min={0} max={300} step={0.5} className="field num" value={volKm} onChange={(e) => setVolKm(e.target.value)} />}
           </Field>
-          <Field label="Charge cible (pts)">
+          <Field label={t('plan.cycleDialogs.targetLoad')}>
             {(p) => <input {...p} type="number" min={0} max={3000} step={5} className="field num" value={load} onChange={(e) => setLoad(e.target.value)} />}
           </Field>
         </div>
         <Checkbox
           checked={isAssimilation}
           onChange={setIsAssimilation}
-          label="Semaine d’assimilation"
-          description="Allège le volume (−20 à −30 %) pour absorber la charge des semaines précédentes."
+          label={t('plan.cycleDialogs.assimilation')}
+          description={t('plan.cycleDialogs.assimilationHint')}
         />
-        <Field label="Consigne de la semaine">
-          {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={400} placeholder="Ex. Priorité fraîcheur musculaire, 1 seul travail d’allure" />}
+        <Field label={t('plan.cycleDialogs.weekNote')}>
+        {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={400} placeholder={t('plan.cycleDialogs.weekNotePlaceholder')} />}
         </Field>
         {errMsg && <InlineError>{errMsg}</InlineError>}
       </div>

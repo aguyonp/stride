@@ -14,15 +14,13 @@ import { Markdown } from '../ui/Markdown'
 import { InlineError } from '../ui/Misc'
 import { Skeleton } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
+import { lazyRecord, t } from '../../i18n'
 
 export type AnalysisSubject = { kind: 'activity'; activityId: number; label: string } | { kind: 'day'; date: string; label: string }
 
-export const PROVIDER_LABEL: Record<string, string> = {
-  gemini: 'Gemini',
-  anthropic: 'Claude (Anthropic)',
-  openai: 'OpenAI',
-  openai_compat: 'Compatible OpenAI',
-}
+export const PROVIDER_LABEL: Record<string, string> = lazyRecord(['gemini', 'anthropic', 'openai', 'openai_compat'] as const, (k) =>
+  k === 'openai_compat' ? t('coach.analysis.compat') : { gemini: 'Gemini', anthropic: 'Claude (Anthropic)', openai: 'OpenAI' }[k],
+)
 
 const refOf = (s: AnalysisSubject) => (s.kind === 'activity' ? String(s.activityId) : s.date)
 
@@ -118,7 +116,7 @@ export function AnalysisDrawer({
       open={open}
       onClose={onClose}
       variant="drawer"
-      title="Analyse IA"
+      title={t('coach.analysis.title')}
       description={`${subject.label}${cfg?.configured ? ` · ${PROVIDER_LABEL[cfg.provider ?? ''] ?? cfg.provider} · ${cfg.model}` : ''}`}
       footer={
         <form
@@ -130,19 +128,19 @@ export function AnalysisDrawer({
           }}
         >
           <label className="sr-only" htmlFor="ai-question">
-            Question complémentaire (facultatif)
+            {t('coach.analysis.question')}
           </label>
           <input
             id="ai-question"
             className="field min-w-0 flex-1"
-            placeholder="Question complémentaire (facultatif)"
+            placeholder={t('coach.analysis.question')}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             maxLength={500}
           />
           <button type="submit" className="btn btn-primary flex-none" disabled={busy || !cfg?.configured}>
             {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
-            <span className="max-sm:sr-only">{list.length || current ? 'Relancer' : 'Analyser'}</span>
+            <span className="max-sm:sr-only">{list.length || current ? t('coach.analysis.rerun') : t('coach.analysis.run')}</span>
           </button>
         </form>
       }
@@ -152,10 +150,10 @@ export function AnalysisDrawer({
           <div className="space-y-3">
             <p className="flex items-center gap-2 text-sm text-ink-2">
               <Loader2 className="size-4 animate-spin text-accent" aria-hidden="true" />
-              {streamText ? 'Rédaction en direct par ton coach IA…' : 'Analyse en cours… préparation du contexte physiologique.'}
+              {streamText ? t('coach.analysis.streaming') : t('coach.analysis.preparing')}
             </p>
             {streamText ? (
-              <article aria-label="Flux de l’analyse en cours" className="rounded-2xl border border-accent/25 bg-track/35 p-3.5">
+              <article aria-label={t('coach.analysis.stream')} className="rounded-2xl border border-accent/25 bg-track/35 p-3.5">
                 <Markdown text={streamText} />
                 <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-xs bg-accent align-middle" aria-hidden="true" />
               </article>
@@ -176,24 +174,24 @@ export function AnalysisDrawer({
               <>
                 {' '}
                 <Link href="/settings#ia" className="font-semibold underline" onClick={onClose}>
-                  Configurer mon IA
+                  {t('coach.analysis.configure')}
                 </Link>
               </>
             )}
           </InlineError>
         )}
         {!busy && current && (
-          <article aria-label="Résultat de l’analyse">
+          <article aria-label={t('coach.analysis.result')}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-3">
               <span className="num">
-                {fmtDateTime(current.createdAt)} · {current.model} · {fmtNumber(current.durationMs / 1000, 1)} s · ≈ {fmtNumber(current.promptTokensEstimate)} tokens envoyés
+                {t('coach.analysis.meta', { date: fmtDateTime(current.createdAt), model: current.model, seconds: fmtNumber(current.durationMs / 1000, 1), tokens: fmtNumber(current.promptTokensEstimate) })}
               </span>
               <button
                 type="button"
                 className="btn btn-ghost h-8 px-2.5 text-xs"
-                onClick={async () => toast((await copyText(current.markdown)) ? { title: 'Analyse copiée', tone: 'success' } : { title: 'Copie impossible', tone: 'error' })}
+                onClick={async () => toast((await copyText(current.markdown)) ? { title: t('coach.analysis.copied'), tone: 'success' } : { title: t('coach.analysis.copyFailed'), tone: 'error' })}
               >
-                <Copy className="size-3.5" aria-hidden="true" /> Copier
+                <Copy className="size-3.5" aria-hidden="true" /> {t('coach.analysis.copy')}
               </button>
             </div>
             <Markdown text={current.markdown} />
@@ -202,10 +200,10 @@ export function AnalysisDrawer({
         {!busy && !current && !analyze.isError && !streamError && (
           <div className="grid place-items-center gap-2 py-10 text-center text-sm text-ink-3">
             <Bot className="size-8 text-ink-3" aria-hidden="true" />
-            {history.isPending ? 'Chargement…' : cfg?.configured ? 'Aucune analyse pour l’instant.' : 'Aucune IA configurée.'}
+            {history.isPending ? t('common.actions.loading') : cfg?.configured ? t('coach.analysis.none') : t('coach.analysis.noAi')}
             {!cfg?.configured && llm.isSuccess && (
               <Link href="/settings#ia" className="btn btn-ghost mt-1" onClick={onClose}>
-                <Settings className="size-4" aria-hidden="true" /> Réglages › IA
+                <Settings className="size-4" aria-hidden="true" /> {t('coach.analysis.settingsAi')}
               </Link>
             )}
           </div>
@@ -214,7 +212,7 @@ export function AnalysisDrawer({
         {list.length > 1 && (
           <section className="mt-6 border-t border-line pt-4" aria-labelledby="ai-history">
             <h3 id="ai-history" className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-ink-3">
-              <History className="size-3.5" aria-hidden="true" /> Analyses précédentes
+              <History className="size-3.5" aria-hidden="true" /> {t('coach.analysis.history')}
             </h3>
             <ul className="space-y-1">
               {list.map((a) => (

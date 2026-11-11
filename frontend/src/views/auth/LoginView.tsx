@@ -8,9 +8,10 @@ import { ISSUE_MESSAGE, loginWithPasskey, passkeyErrorMessage, passkeyIssue } fr
 import { InlineError } from '../../components/ui/Misc'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AuthLayout } from './AuthLayout'
+import { t } from '../../i18n'
 
 export function LoginView({ state }: { state: AuthState }) {
-  useDocumentTitle('Connexion')
+  useDocumentTitle(t('auth.login.title'))
   const qc = useQueryClient()
   const [, navigate] = useLocation()
   const search = useSearch()
@@ -37,16 +38,16 @@ export function LoginView({ state }: { state: AuthState }) {
     <AuthLayout>
       <section className="glass animate-in p-5 sm:p-7" aria-labelledby="login-title">
         <h1 id="login-title" className="text-xl font-semibold tracking-tight">
-          Connexion
+          {t('auth.login.title')}
         </h1>
-        <p className="mt-1 text-sm text-ink-3">Sans mot de passe : utilise la passkey enregistrée sur ton téléphone, ton ordinateur ou ton gestionnaire.</p>
+        <p className="mt-1 text-sm text-ink-3">{t('auth.login.intro')}</p>
 
         {state.firstUser && (
           <div className="mt-4 rounded-2xl border border-accent/35 bg-accent/10 p-3.5 text-sm">
-            <p className="font-semibold text-ink">Premier lancement</p>
-            <p className="mt-0.5 text-ink-2">Aucun compte n’existe encore. Le premier compte créé devient administrateur, sans invitation.</p>
+            <p className="font-semibold text-ink">{t('auth.login.firstRun')}</p>
+            <p className="mt-0.5 text-ink-2">{t('auth.login.firstRunHint')}</p>
             <Link href="/register" className="btn btn-primary mt-3 w-full">
-              <UserPlus className="size-4" aria-hidden="true" /> Créer le compte administrateur
+              <UserPlus className="size-4" aria-hidden="true" /> {t('auth.login.createAdmin')}
             </Link>
           </div>
         )}
@@ -61,7 +62,7 @@ export function LoginView({ state }: { state: AuthState }) {
         {!state.firstUser && (
           <button type="button" className="btn btn-primary mt-5 h-13 w-full text-base" onClick={() => void login()} disabled={busy || issue !== null}>
             {busy ? <Loader2 className="size-5 animate-spin" aria-hidden="true" /> : <Fingerprint className="size-5" aria-hidden="true" />}
-            {busy ? 'En attente de ta passkey…' : 'Se connecter avec une passkey'}
+            {busy ? t('auth.login.waiting') : t('auth.login.submit')}
           </button>
         )}
         {error && <InlineError className="mt-3">{error}</InlineError>}
@@ -70,18 +71,18 @@ export function LoginView({ state }: { state: AuthState }) {
           <div className="mt-6 border-t border-line pt-4 text-sm">
             {state.registrationMode === 'open' ? (
               <p className="text-ink-3">
-                Pas encore de compte ?{' '}
+                {t('auth.login.noAccount')}{' '}
                 <Link href="/register" className="font-semibold text-accent underline-offset-2 hover:underline">
-                  Créer un compte
+                  {t('auth.login.createAccount')}
                 </Link>
               </p>
             ) : (
               <p className="flex gap-2 text-ink-3">
                 <KeyRound className="mt-0.5 size-4 flex-none" aria-hidden="true" />
                 <span>
-                  Inscription sur invitation : demande un lien à l’administrateur.{' '}
+                  {t('auth.login.inviteOnly')}{' '}
                   <Link href="/register" className="font-semibold text-accent underline-offset-2 hover:underline">
-                    J’ai un code d’invitation
+                    {t('auth.login.haveCode')}
                   </Link>
                 </span>
               </p>

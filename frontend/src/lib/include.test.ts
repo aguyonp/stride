@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { ALL_INCLUDE, effectiveInclude, parseInclude, serializeInclude } from './include'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 describe('include chips', () => {
   it('round-trips in canonical order and drops unknown keys', () => {

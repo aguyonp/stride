@@ -12,12 +12,12 @@ import { cn } from '../../lib/cn'
 import { fmtNumber, fmtWhen } from '../../lib/format'
 import { ErrorView } from '../StateViews'
 import { FilterChips, JOB_GROUP_LABEL, JOB_STATE } from './adminUtils'
+import { lazyRecord, t } from '../../i18n'
 
-const EMPTY: Record<AdminJobFilter, { title: string; body: string }> = {
-  active: { title: 'Aucune tâche en cours', body: 'Synchronisations, imports, analyses IA et notifications apparaissent ici pendant leur exécution, tous comptes confondus.' },
-  failed: { title: 'Aucun échec récent', body: 'Les tâches en échec sont conservées 14 jours. Les synchronisations échouées peuvent être relancées d’ici.' },
-  all: { title: 'Aucune tâche enregistrée', body: 'Les tâches terminées sont purgées après 14 jours.' },
-}
+const EMPTY: Record<AdminJobFilter, { title: string; body: string }> = lazyRecord(['active', 'failed', 'all'] as const, (k) => ({
+  title: t(`admin.jobs.empty.${k}.title`),
+  body: t(`admin.jobs.empty.${k}.body`),
+}))
 
 function Progress({ j }: { j: AdminJob }) {
   if (j.state !== 'running' || j.progressPct === null) return null
@@ -43,8 +43,8 @@ export function JobsPanel() {
 
   const retry = (j: AdminJob) =>
     ctl.retryJob.mutate(j.id, {
-      onSuccess: () => toast({ title: 'Tâche relancée', description: `${j.label} · ${j.userName}` }),
-      onError: (e) => toast({ tone: 'error', title: 'Relance impossible', description: e.message }),
+      onSuccess: () => toast({ title: t('admin.jobs.retried'), description: `${j.label} · ${j.userName}` }),
+      onError: (e) => toast({ tone: 'error', title: t('admin.jobs.retryFailed'), description: e.message }),
     })
   const busy = (j: AdminJob) => (ctl.retryJob.isPending && ctl.retryJob.variables === j.id) || (ctl.cancelJob.isPending && ctl.cancelJob.variables === j.id)
 
@@ -59,13 +59,15 @@ export function JobsPanel() {
       {j.retryable && (
         <button type="button" className="btn btn-ghost min-h-9 px-3 text-xs" disabled={busy(j)} onClick={() => retry(j)}>
           {busy(j) ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-3.5" aria-hidden="true" />}
-          Relancer<span className="sr-only"> {j.label} de {j.userName}</span>
+          {t('admin.jobs.retry')}
+          <span className="sr-only">{t('admin.jobs.ofUser', { label: j.label, user: j.userName })}</span>
         </button>
       )}
       {j.cancellable && (
         <button type="button" className="btn btn-danger min-h-9 px-3 text-xs" disabled={busy(j)} onClick={() => setCancel(j)}>
           <Ban className="size-3.5" aria-hidden="true" />
-          Annuler<span className="sr-only"> {j.label} de {j.userName}</span>
+          {t('admin.jobs.cancel')}
+          <span className="sr-only">{t('admin.jobs.ofUser', { label: j.label, user: j.userName })}</span>
         </button>
       )}
     </span>
@@ -81,33 +83,33 @@ export function JobsPanel() {
   return (
     <div className="space-y-5">
       <Card
-        title="Tâches de fond"
+        title={t('admin.jobs.title')}
         icon={<ListChecks className="size-4" />}
-        subtitle="Tous les comptes · actualisation automatique"
+        subtitle={t('admin.jobs.subtitle')}
         action={
-          <button type="button" className="icon-btn size-9" onClick={() => void jobs.refetch()} disabled={jobs.isFetching} aria-label="Actualiser les tâches">
+          <button type="button" className="icon-btn size-9" onClick={() => void jobs.refetch()} disabled={jobs.isFetching} aria-label={t('admin.jobs.refresh')}>
             <RefreshCw className={cn('size-4', jobs.isFetching && 'animate-spin')} aria-hidden="true" />
           </button>
         }
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <FilterChips<AdminJobFilter>
-            ariaLabel="Filtrer les tâches"
+            ariaLabel={t('admin.jobs.filter')}
             value={filter}
             onChange={setFilter}
             options={[
-              { value: 'active', label: 'En cours' },
-              { value: 'failed', label: 'En échec' },
-              { value: 'all', label: 'Toutes' },
+              { value: 'active', label: t('admin.jobs.active') },
+              { value: 'failed', label: t('admin.jobs.failed') },
+              { value: 'all', label: t('admin.jobs.all') },
             ]}
           />
           {jobs.data && (
-            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3" aria-label="Charge des files">
+            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3" aria-label={t('admin.jobs.queues')}>
               {jobs.data.groups.map((g) => (
                 <li key={g.group} className="num">
                   <span className="text-ink-2">{JOB_GROUP_LABEL[g.group] ?? g.group}</span> {g.running}/{g.workers}
-                  {g.queued > 0 && ` · ${g.queued} en attente`}
-                  {g.delayed > 0 && ` · ${g.delayed} à réessayer`}
+                  {g.queued > 0 && t('admin.jobs.queued', { count: g.queued })}
+                  {g.delayed > 0 && t('admin.jobs.retryLater', { count: g.delayed })}
                 </li>
               ))}
             </ul>
@@ -115,7 +117,7 @@ export function JobsPanel() {
         </div>
 
         {jobs.isError ? (
-          <ErrorView error={jobs.error} onRetry={() => void jobs.refetch()} title="Tâches indisponibles" />
+          <ErrorView error={jobs.error} onRetry={() => void jobs.refetch()} title={t('admin.jobs.unavailable')} />
         ) : !jobs.data ? (
           <div className="space-y-2">
             <Skeleton className="h-14" />
@@ -129,12 +131,12 @@ export function JobsPanel() {
           <>
             <div className="scroll-thin hidden overflow-x-auto md:block">
               <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
-                <caption className="sr-only">Tâches de fond de tous les comptes</caption>
+                <caption className="sr-only">{t('admin.jobs.caption')}</caption>
                 <thead>
                   <tr className="text-left text-xs text-ink-3">
-                    {['Tâche', 'Compte', 'État', 'Mise à jour', 'Message', ''].map((h, i) => (
+                    {[...(['job', 'account', 'state', 'updated', 'message'] as const).map((k) => t(`admin.jobs.heads.${k}`)), ''].map((h, i) => (
                       <th key={i} scope="col" className="border-b border-line px-2 py-2 font-medium first:pl-1">
-                        {h || <span className="sr-only">Actions</span>}
+                        {h || <span className="sr-only">{t('admin.jobs.actions')}</span>}
                       </th>
                     ))}
                   </tr>
@@ -170,7 +172,7 @@ export function JobsPanel() {
                 </li>
               ))}
             </ul>
-            {items.length >= 100 && <p className="mt-3 text-xs text-ink-3">Les {fmtNumber(100)} tâches les plus récentes sont affichées.</p>}
+            {items.length >= 100 && <p className="mt-3 text-xs text-ink-3">{t('admin.jobs.latest', { count: fmtNumber(100) })}</p>}
           </>
         )}
       </Card>
@@ -178,23 +180,23 @@ export function JobsPanel() {
       <ConfirmDialog
         open={cancel !== null}
         onClose={() => setCancel(null)}
-        title="Annuler cette tâche ?"
+        title={t('admin.jobs.cancelTitle')}
         message={
           <p>
-            « {cancel?.label} » de {cancel?.userName}. Une tâche en attente est retirée de la file ; une tâche en cours est interrompue et marquée en échec sans nouvel essai.
+            {t('admin.jobs.cancelBody', { label: cancel?.label, user: cancel?.userName })}
           </p>
         }
-        confirmLabel="Annuler la tâche"
+        confirmLabel={t('admin.jobs.cancelConfirm')}
         danger
         busy={ctl.cancelJob.isPending}
         onConfirm={() =>
           cancel &&
           ctl.cancelJob.mutate(cancel.id, {
             onSuccess: () => {
-              toast({ title: 'Tâche annulée', description: `${cancel.label} · ${cancel.userName}` })
+              toast({ title: t('admin.jobs.cancelled'), description: `${cancel.label} · ${cancel.userName}` })
               setCancel(null)
             },
-            onError: (e) => toast({ tone: 'error', title: 'Annulation impossible', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('admin.jobs.cancelFailed'), description: e.message }),
           })
         }
       />

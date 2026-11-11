@@ -7,6 +7,7 @@ import { Checkbox, Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { useToast } from '../ui/Toast'
+import { t } from '../../i18n'
 
 export const FEEDBACK_MIN = 5
 export const FEEDBACK_MAX = 4000
@@ -68,7 +69,7 @@ export function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () =
       {
         onSuccess: () => {
           if (contactOk) remember(contactEmail)
-          toast({ title: 'Merci pour ton avis !', description: contactOk ? 'Nous pourrons te répondre par e-mail.' : 'Il a bien été transmis à l’administrateur.' })
+          toast({ title: t('coach.feedback.thanks'), description: contactOk ? t('coach.feedback.thanksContact') : t('coach.feedback.thanksSent') })
           setMessage('')
           setContactOk(false)
           close()
@@ -82,17 +83,17 @@ export function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () =
     <Dialog
       open={open}
       onClose={close}
-      title="Donner un avis"
-      description="Un bug, une idée, une remarque : ton message arrive directement à l’administrateur de ce serveur."
+      title={t('coach.feedback.title')}
+      description={t('coach.feedback.description')}
       initialFocus="textarea"
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={close}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="button" className="btn btn-primary" disabled={!valid || send.isPending} onClick={submit}>
             {send.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Send className="size-4" aria-hidden="true" />}
-            Envoyer
+            {t('coach.feedback.send')}
           </button>
         </div>
       }
@@ -105,24 +106,24 @@ export function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () =
         }}
       >
         <SegmentedControl<FeedbackCategory>
-          ariaLabel="Type d’avis"
+          ariaLabel={t('coach.feedback.type')}
           value={category}
           onChange={setCategory}
           options={[
-            { value: 'bug', label: 'Bug', icon: <Bug className="size-4" /> },
-            { value: 'idea', label: 'Idée', icon: <Lightbulb className="size-4" /> },
-            { value: 'other', label: 'Autre', icon: <MessageCircle className="size-4" /> },
+            { value: 'bug', label: t('coach.feedback.bug'), icon: <Bug className="size-4" /> },
+            { value: 'idea', label: t('coach.feedback.idea'), icon: <Lightbulb className="size-4" /> },
+            { value: 'other', label: t('coach.feedback.other'), icon: <MessageCircle className="size-4" /> },
           ]}
         />
         <Field
-          label="Message"
+          label={t('coach.feedback.message')}
           hint={
             <span className="num">
-              {category === 'bug' ? 'Ce que tu faisais, ce qui s’est passé, ce que tu attendais. ' : ''}
+              {category === 'bug' ? t('coach.feedback.bugHint') : ''}
               {length} / {FEEDBACK_MAX}
             </span>
           }
-          error={length > FEEDBACK_MAX ? `Message trop long (${FEEDBACK_MAX} caractères maximum).` : undefined}
+          error={length > FEEDBACK_MAX ? t('coach.feedback.tooLong', { max: FEEDBACK_MAX }) : undefined}
         >
           {(p) => (
             <textarea
@@ -132,26 +133,26 @@ export function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () =
               maxLength={FEEDBACK_MAX + 200}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder={category === 'idea' ? 'J’aimerais pouvoir…' : category === 'bug' ? 'Sur la page Planning, quand je…' : 'Ton message'}
+              placeholder={category === 'idea' ? t('coach.feedback.ideaPlaceholder') : category === 'bug' ? t('coach.feedback.bugPlaceholder') : t('coach.feedback.otherPlaceholder')}
             />
           )}
         </Field>
-        <Checkbox checked={contactOk} onChange={setContactOk} label="J’accepte d’être recontacté par e-mail" description="Sans cette case, aucune adresse n’est enregistrée." />
+        <Checkbox checked={contactOk} onChange={setContactOk} label={t('coach.feedback.contact')} description={t('coach.feedback.contactHint')} />
         {contactOk && (
-          <Field label="Adresse e-mail" error={email.trim() && !emailOk ? 'Adresse e-mail invalide.' : undefined}>
-            {(p) => <input {...p} type="email" autoComplete="email" inputMode="email" className="field text-sm" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="toi@exemple.fr" />}
+          <Field label={t('coach.feedback.email')} error={email.trim() && !emailOk ? t('coach.feedback.emailInvalid') : undefined}>
+            {(p) => <input {...p} type="email" autoComplete="email" inputMode="email" className="field text-sm" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('coach.feedback.emailPlaceholder')} />}
           </Field>
         )}
         <details className="rounded-xl border border-line px-3 py-2 text-xs text-ink-3">
-          <summary className="cursor-pointer font-medium text-ink-2">Informations jointes automatiquement</summary>
+          <summary className="cursor-pointer font-medium text-ink-2">{t('coach.feedback.attached')}</summary>
           <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
-            <dt>Version</dt>
+            <dt>{t('coach.feedback.version')}</dt>
             <dd className="num text-ink-2">{ctx.appVersion}</dd>
-            <dt>Page</dt>
+            <dt>{t('coach.feedback.page')}</dt>
             <dd className="break-all text-ink-2">{ctx.route}</dd>
-            <dt>Écran</dt>
+            <dt>{t('coach.feedback.screen')}</dt>
             <dd className="num text-ink-2">{ctx.viewport}</dd>
-            <dt>Navigateur</dt>
+            <dt>{t('coach.feedback.browser')}</dt>
             <dd className="break-all text-ink-2">{ctx.userAgent}</dd>
           </dl>
         </details>

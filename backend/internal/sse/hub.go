@@ -35,7 +35,15 @@ const (
 	EventAlertTriggered = "alert.triggered"
 	EventLLMToken       = "llm.token"
 	EventLLMDone        = "llm.done"
+	// EventShareUpdated tells the owner that a share link wrote through the portal (4.2.0).
+	EventShareUpdated = "share.updated"
 )
+
+// ShareUpdatedEvent names what a share link changed: directive | remark | plan | event.
+type ShareUpdatedEvent struct {
+	Kind   string `json:"kind"`
+	LinkID int64  `json:"linkId"`
+}
 
 type ConnectedEvent struct {
 	Status     string `json:"status"`
@@ -69,6 +77,7 @@ type StreamLLMDoneEvent struct {
 	Analysis     any     `json:"analysis,omitempty"`
 	PlanDrafts   any     `json:"planDrafts,omitempty"`
 	AdaptPreview any     `json:"adaptPreview,omitempty"`
+	MorphPreview any     `json:"morphPreview,omitempty"`
 }
 
 type pubsubEnvelope struct {

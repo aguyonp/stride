@@ -166,3 +166,25 @@ func TestLabels(t *testing.T) {
 		t.Fatal("describe / round")
 	}
 }
+
+func TestForecastFutureSlot(t *testing.T) {
+	srv, rec := fakeOM(t, func(int) int { return 200 })
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	p := provider(srv, now, apimeter.Nop())
+	var _ Forecaster = p
+	c, err := p.Forecast(context.Background(), 45.123456, 5.987654, time.Date(2026, 11, 5, 17, 50, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.path[0] != "/v1/forecast" || rec.reqs[0].Get("latitude") != "45.12" || *c.TemperatureC != 18 || c.Source != "open-meteo-forecast" {
+		t.Fatalf("forecast: %s %v %+v", rec.path[0], rec.reqs[0], c)
+	}
+	for _, at := range []time.Time{now.Add(-3 * time.Hour), now.AddDate(0, 0, 20)} {
+		if _, err := p.Forecast(context.Background(), 45, 5, at); !errors.Is(err, ErrNoData) {
+			t.Fatalf("%s: %v", at, err)
+		}
+	}
+	if _, err := p.Forecast(context.Background(), 0, 0, now.Add(time.Hour)); !errors.Is(err, ErrInvalidCoordinate) {
+		t.Fatal("null island accepted")
+	}
+}

@@ -15,6 +15,7 @@ import { cn } from '../../lib/cn'
 import { capitalize, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtRelative } from '../../lib/format'
 import { ALL_INCLUDE, effectiveInclude, INCLUDE_CHIPS, parseInclude, serializeInclude } from '../../lib/include'
 import { STORAGE_KEYS } from '../../lib/storage'
+import { t } from '../../i18n'
 
 type Mode = 'weeks' | 'manual'
 type Filter = 'run' | 'all'
@@ -27,14 +28,14 @@ const MAX_WEEKS = 12
 function WeeksStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
     <div className="flex items-center gap-3">
-      <button type="button" className="icon-btn size-11" onClick={() => onChange(Math.max(MIN_WEEKS, value - 1))} disabled={value <= MIN_WEEKS} aria-label="Une semaine de moins">
+      <button type="button" className="icon-btn size-11" onClick={() => onChange(Math.max(MIN_WEEKS, value - 1))} disabled={value <= MIN_WEEKS} aria-label={t('coach.multi.fewer')}>
         <Minus className="size-4" />
       </button>
       <output className="num min-w-[7.5rem] text-center" aria-live="polite">
         <span className="text-3xl font-semibold tracking-tight text-ink">{value}</span>
-        <span className="ml-1.5 text-sm text-ink-3">semaine{value > 1 ? 's' : ''}</span>
+        <span className="ml-1.5 text-sm text-ink-3">{t('coach.multi.weeksUnit', { count: value })}</span>
       </output>
-      <button type="button" className="icon-btn size-11" onClick={() => onChange(Math.min(MAX_WEEKS, value + 1))} disabled={value >= MAX_WEEKS} aria-label="Une semaine de plus">
+      <button type="button" className="icon-btn size-11" onClick={() => onChange(Math.min(MAX_WEEKS, value + 1))} disabled={value >= MAX_WEEKS} aria-label={t('coach.multi.more')}>
         <Plus className="size-4" />
       </button>
     </div>
@@ -109,27 +110,27 @@ function ManualSelection({ selected, onChange }: { selected: Set<number>; onChan
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1.5" role="group" aria-label="Filtrer les activités">
+        <div className="flex gap-1.5" role="group" aria-label={t('coach.multi.filter')}>
           <ChipToggle pressed={filter === 'run'} onChange={() => setFilter('run')}>
-            Course
+            {t('coach.multi.run')}
           </ChipToggle>
           <ChipToggle pressed={filter === 'all'} onChange={() => setFilter('all')}>
-            Toutes
+            {t('coach.multi.all')}
           </ChipToggle>
         </div>
         <div className="flex items-center gap-1">
           <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={toggleVisible} disabled={items.length === 0}>
-            {allVisibleSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
+            {allVisibleSelected ? t('coach.multi.unselectAll') : t('coach.multi.selectAll')}
           </button>
           {selected.size > 0 && (
             <button type="button" className="btn h-9 min-h-9 px-2.5 text-xs text-ink-3 hover:text-ink" onClick={() => onChange(new Set())}>
-              Effacer
+              {t('common.misc.clear')}
             </button>
           )}
         </div>
       </div>
       <p className="num mb-2 text-sm text-ink-2" aria-live="polite">
-        {selected.size === 0 ? 'Aucune séance sélectionnée' : `${selected.size} séance${selected.size > 1 ? 's' : ''} sélectionnée${selected.size > 1 ? 's' : ''}`}
+        {selected.size === 0 ? t('coach.multi.noneSelected') : t('coach.multi.selected', { count: selected.size })}
       </p>
       {list.isPending ? (
         <div className="space-y-2">
@@ -140,9 +141,9 @@ function ManualSelection({ selected, onChange }: { selected: Set<number>; onChan
       ) : list.isError ? (
         <InlineError>{list.error.message}</InlineError>
       ) : items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-line px-3 py-6 text-center text-sm text-ink-3">Aucune activité {filter === 'run' ? 'de course ' : ''}trouvée.</p>
+        <p className="rounded-2xl border border-dashed border-line px-3 py-6 text-center text-sm text-ink-3">{filter === 'run' ? t('coach.multi.emptyRun') : t('coach.multi.emptyAll')}</p>
       ) : (
-        <ul className="scroll-thin -mx-1 max-h-[26rem] space-y-1 overflow-y-auto px-1" aria-label="Activités">
+        <ul className="scroll-thin -mx-1 max-h-[26rem] space-y-1 overflow-y-auto px-1" aria-label={t('coach.multi.activities')}>
           {items.map((a) => (
             <ActivityCheckRow key={a.id} activity={a} checked={selected.has(a.id)} onToggle={() => toggle(a.id)} />
           ))}
@@ -151,7 +152,7 @@ function ManualSelection({ selected, onChange }: { selected: Set<number>; onChan
       {list.hasNextPage && (
         <button type="button" className="btn btn-ghost mt-3 w-full" onClick={() => void list.fetchNextPage()} disabled={list.isFetchingNextPage}>
           {list.isFetchingNextPage && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-          {list.isFetchingNextPage ? 'Chargement…' : 'Charger plus'}
+          {list.isFetchingNextPage ? t('common.actions.loading') : t('coach.multi.loadMore')}
         </button>
       )}
     </div>
@@ -182,7 +183,7 @@ export function MultiExportSection({ today }: { today: string }) {
   const canGenerate = mode === 'weeks' || selected.size > 0
 
   const payload: ReportPayload | null = result
-    ? { report: result.res.markdown, tokens: result.res.tokensEstimate, filename: `stride-multi-${today}.md`, title: 'Stride · export multi-séances' }
+    ? { report: result.res.markdown, tokens: result.res.tokensEstimate, filename: t('coach.multi.file', { date: today }), title: t('coach.multi.fileTitle') }
     : null
   const actions = useReportExport(payload, () => setPreviewOpen(true))
 
@@ -196,59 +197,59 @@ export function MultiExportSection({ today }: { today: string }) {
 
   return (
     <section aria-labelledby="multi-export-title">
-      <h2 id="multi-export-title" className="mb-3 text-base font-semibold tracking-tight text-ink">Export multi-séances</h2>
+      <h2 id="multi-export-title" className="mb-3 text-base font-semibold tracking-tight text-ink">{t('coach.multi.heading')}</h2>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-6">
         <div className="min-w-0 space-y-4">
-          <Card title="Séances à inclure" icon={<ListChecks className="size-4" />}>
+          <Card title={t('coach.multi.sessions')} icon={<ListChecks className="size-4" />}>
             <SegmentedControl<Mode>
-              ariaLabel="Mode de sélection"
+              ariaLabel={t('coach.multi.selectionMode')}
               className="mb-4"
               value={mode}
               onChange={setMode}
               options={[
-                { value: 'weeks', label: 'Dernières semaines', icon: <CalendarRange /> },
-                { value: 'manual', label: 'Sélection manuelle', icon: <ListChecks />, ariaLabel: 'Sélection manuelle des séances' },
+                { value: 'weeks', label: t('coach.multi.lastWeeks'), icon: <CalendarRange /> },
+              { value: 'manual', label: t('coach.multi.manual'), icon: <ListChecks />, ariaLabel: t('coach.multi.manualAria') },
               ]}
             />
             {mode === 'weeks' ? (
               <div className="flex flex-col items-center gap-2 py-2 text-center">
                 <WeeksStepper value={weeks} onChange={setWeeks} />
-                <p className="max-w-sm text-xs text-ink-3">Toutes les séances des {weeks} dernière{weeks > 1 ? 's' : ''} semaine{weeks > 1 ? 's' : ''}, avec les tendances hebdomadaires et le bilan prévu / réalisé.</p>
+                <p className="max-w-sm text-xs text-ink-3">{t('coach.multi.weeksHint', { count: weeks })}</p>
               </div>
             ) : (
               <ManualSelection selected={selected} onChange={setSelected} />
             )}
           </Card>
 
-          <Card title="Contenu du prompt" icon={<FileText className="size-4" />} subtitle="Choix mémorisé sur cet appareil">
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Sections à inclure">
+          <Card title={t('coach.multi.content')} icon={<FileText className="size-4" />} subtitle={t('coach.multi.remembered')}>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={t('coach.multi.sectionsAria')}>
               {MULTI_CHIPS.map((c) => (
                 <ChipToggle key={c.key} pressed={include.includes(c.key)} onChange={(on) => toggleChip(c.key, on)} title={c.hint}>
                   {c.label}
                 </ChipToggle>
               ))}
             </div>
-            <p className="mt-3 text-xs text-ink-3">La directive d’objectivité est toujours incluse. Les intervalles détaillés ne font pas partie de l’export multi-séances.</p>
+            <p className="mt-3 text-xs text-ink-3">{t('coach.multi.directive')}</p>
           </Card>
 
           <button type="button" className="btn btn-primary h-12 w-full text-[0.95rem]" onClick={generate} disabled={!canGenerate || exporter.isPending}>
             {exporter.isPending ? <Loader2 className="size-[1.125rem] animate-spin" aria-hidden="true" /> : <Sparkles className="size-[1.125rem]" aria-hidden="true" />}
-            {exporter.isPending ? 'Génération…' : result ? 'Régénérer le prompt' : 'Générer le prompt'}
+            {exporter.isPending ? t('coach.multi.generating') : result ? t('coach.multi.regenerate') : t('coach.multi.generate')}
           </button>
-          {!canGenerate && <p className="-mt-2 text-center text-xs text-ink-3">Sélectionne au moins une séance.</p>}
+          {!canGenerate && <p className="-mt-2 text-center text-xs text-ink-3">{t('coach.multi.selectOne')}</p>}
           {exporter.isError && <InlineError>{exporter.error.message}</InlineError>}
         </div>
 
         <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           <Card
-            title="Prompt multi-séances"
+            title={t('coach.multi.promptTitle')}
             icon={<Sparkles className="size-4" />}
-            subtitle={result ? `${fmtNumber(result.res.sessions)} séance${result.res.sessions > 1 ? 's' : ''} · ≈ ${fmtNumber(result.res.tokensEstimate)} tokens` : 'Génère le prompt pour l’afficher ici'}
+            subtitle={result ? t('coach.multi.promptMeta', { count: fmtNumber(result.res.sessions), tokens: fmtNumber(result.res.tokensEstimate) }) : t('coach.multi.promptEmpty')}
           >
             {!result ? (
-              <EmptyState icon={<FileText />} title="Le prompt apparaîtra ici">
-                Choisis les séances et les sections, puis « Générer le prompt ». Tu pourras le copier, le télécharger ou le partager.
+              <EmptyState icon={<FileText />} title={t('coach.multi.placeholderTitle')}>
+                {t('coach.multi.placeholderHint')}
               </EmptyState>
             ) : (
               <>
@@ -256,17 +257,17 @@ export function MultiExportSection({ today }: { today: string }) {
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2" role="status">
                     <p className="flex items-center gap-2 text-sm text-warn">
                       <TriangleAlert className="size-4 flex-none" aria-hidden="true" />
-                      Paramètres modifiés — régénère le prompt.
+                      {t('coach.multi.changed')}
                     </p>
                     <button type="button" className="btn btn-ghost h-8 min-h-8 px-3 text-xs" onClick={generate} disabled={!canGenerate || exporter.isPending}>
-                      <RefreshCw className={cn('size-3.5', exporter.isPending && 'animate-spin')} aria-hidden="true" /> Régénérer
+                      <RefreshCw className={cn('size-3.5', exporter.isPending && 'animate-spin')} aria-hidden="true" /> {t('coach.multi.regenerateShort')}
                     </button>
                   </div>
                 )}
-                {result.res.sessions === 0 && <p className="mb-3 rounded-xl border border-line bg-track px-3 py-2 text-sm text-ink-2">Aucune séance trouvée sur la période : le prompt ne contient que le contexte.</p>}
+                {result.res.sessions === 0 && <p className="mb-3 rounded-xl border border-line bg-track px-3 py-2 text-sm text-ink-2">{t('coach.multi.noSession')}</p>}
                 <pre
                   tabIndex={0}
-                  aria-label="Texte du prompt multi-séances"
+                  aria-label={t('coach.multi.textAria')}
                   className={cn(
                     'scroll-thin glass-inset max-h-[26rem] overflow-auto px-3.5 py-3 font-mono text-[12px] leading-[1.6] whitespace-pre-wrap text-ink-2 select-text lg:max-h-[calc(100dvh-19rem)]',
                     (outdated || exporter.isPending) && 'is-refetching',
@@ -277,17 +278,17 @@ export function MultiExportSection({ today }: { today: string }) {
                 </pre>
                 <div className={cn('mt-3 grid gap-2', actions.canShare ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
                   <button type="button" className={cn('btn btn-primary px-3', actions.canShare && 'col-span-2 sm:col-span-1')} onClick={() => void actions.copy()}>
-                    <Copy className="size-4" aria-hidden="true" /> Copier
+                    <Copy className="size-4" aria-hidden="true" /> {t('coach.multi.copy')}
                   </button>
                   <button type="button" className="btn btn-ghost px-3" onClick={() => setPreviewOpen(true)}>
-                    <Eye className="size-4" aria-hidden="true" /> Aperçu
+                    <Eye className="size-4" aria-hidden="true" /> {t('coach.multi.preview')}
                   </button>
-                  <button type="button" className="btn btn-ghost px-3" onClick={actions.download} aria-label="Télécharger le prompt en .md">
+                  <button type="button" className="btn btn-ghost px-3" onClick={actions.download} aria-label={t('coach.multi.download')}>
                     <Download className="size-4" aria-hidden="true" /> .md
                   </button>
                   {actions.canShare && (
                     <button type="button" className="btn btn-ghost px-3" onClick={() => void actions.share()}>
-                      <Share2 className="size-4" aria-hidden="true" /> Partager
+                      <Share2 className="size-4" aria-hidden="true" /> {t('coach.multi.share')}
                     </button>
                   )}
                 </div>
@@ -300,7 +301,7 @@ export function MultiExportSection({ today }: { today: string }) {
       <ReportPreview
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        title="Prompt multi-séances"
+        title={t('coach.multi.promptTitle')}
         payload={payload}
         refreshing={exporter.isPending}
         onCopy={() => void actions.copy()}

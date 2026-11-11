@@ -45,9 +45,13 @@ type PlannedSession struct {
 	TargetCadenceSpm      *float64       `json:"targetCadenceSpm"`
 	Instructions          string         `json:"instructions"`
 	Steps                 []workout.Step `json:"steps"`
-	Source                string         `json:"source"` // manual | llm | import
+	Source                string         `json:"source"` // manual | llm | import | share
 	Garmin                GarminPush     `json:"garmin"`
 	Match                 *PlanMatch     `json:"match"`
+	// PrescribedBy names the share link that created the session (physio/coach portal).
+	PrescribedBy *Prescriber `json:"prescribedBy"`
+	// Morph keeps the planned trace of a session adapted by Smart Workout Morphing.
+	Morph *PlanMorph `json:"morph"`
 }
 
 // GarminPush is the state of the Garmin Connect workout push of a planned session.
@@ -58,7 +62,7 @@ type GarminPush struct {
 	Error     *string `json:"error"`
 }
 
-var PlanSources = []string{"manual", "llm", "import"}
+var PlanSources = []string{"manual", "llm", "import", "share"}
 
 type Shoe struct {
 	ID           int64    `json:"id"`
@@ -354,7 +358,7 @@ var (
 	NotesFields     = []string{"painDuring", "painCold", "painNextMorning", "rpe", "shoeId", "tags", "note"}
 	CheckinFields   = []string{"trainingReadiness", "readinessStatus", "note"}
 	GoalReadOnly    = []string{"id"}
-	PlanReadOnly    = []string{"id", "match", "garmin"}
+	PlanReadOnly    = []string{"id", "match", "garmin", "prescribedBy", "morph"}
 	ShoeReadOnly    = []string{"id", "distanceKm", "analyzedKm", "distanceSource", "stravaDistanceKm", "stravaPrimary", "stravaState", "stravaSyncedAt"}
 	NotesReadOnly   = []string{"shoe", "shoeAuto", "updatedAt"}
 	CheckinReadOnly = []string{"date", "updatedAt"}

@@ -3,6 +3,7 @@ import { cn } from '../../../lib/cn'
 import { fmtDateShort, fmtNumber } from '../../../lib/format'
 import { PHASE_TYPE_META, type CycleZoom } from './cycleMeta'
 import { ganttScale, isCurrentSpan, phaseBar } from './cycleModel'
+import { t } from '../../../i18n'
 
 export function GanttStrip({
   startDate,
@@ -31,7 +32,7 @@ export function GanttStrip({
       <div className={cn('relative space-y-2.5', minWidthCls)}>
         <div className="num flex items-center justify-between text-[11px] text-ink-3">
           <span>{fmtDateShort(startDate)}</span>
-          {todayPct !== null && <span className="font-semibold text-accent">Aujourd’hui · {fmtDateShort(today)}</span>}
+          {todayPct !== null && <span className="font-semibold text-accent">{t('plan.cycles.today', { date: fmtDateShort(today) })}</span>}
           <span>{fmtDateShort(endDate)}</span>
         </div>
 
@@ -43,7 +44,7 @@ export function GanttStrip({
               aria-hidden="true"
             >
               <span className="absolute -top-1.5 -translate-x-1/2 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-semibold text-on-accent">
-                J
+                {t('common.misc.dayMarker')}
               </span>
             </div>
           )}
@@ -63,7 +64,7 @@ export function GanttStrip({
                       'absolute inset-y-0 flex flex-col justify-between overflow-hidden rounded-lg border px-2 py-1 text-left transition-opacity hover:opacity-90',
                       meta.barCls,
                     )}
-                    aria-label={`Mésocycle ${p.name} (${meta.label}) du ${fmtDateShort(p.startDate)} au ${fmtDateShort(p.endDate)}`}
+                    aria-label={t('plan.cycles.mesoAria', { name: p.name, type: meta.label, from: fmtDateShort(p.startDate), to: fmtDateShort(p.endDate) })}
                   >
                     <span className="flex items-center gap-1.5 truncate text-xs font-semibold">
                       <span className={cn('size-2 flex-none rounded-full', meta.dotCls)} aria-hidden="true" />
@@ -77,7 +78,7 @@ export function GanttStrip({
               })}
             </div>
           ) : (
-            <p className="py-3 text-center text-xs text-ink-3">Aucun mésocycle découpé sur cette période.</p>
+            <p className="py-3 text-center text-xs text-ink-3">{t('plan.cycles.noMeso')}</p>
           )}
         </div>
 
@@ -85,7 +86,7 @@ export function GanttStrip({
           <div
             className="grid gap-1"
             style={{ gridTemplateColumns: `repeat(${allWeeks.length}, minmax(0, 1fr))` }}
-            aria-label="Repères hebdomadaires (microcycles)"
+            aria-label={t('plan.cycles.weeklyMarks')}
           >
             {allWeeks.map((w) => {
               const isCurrent = isCurrentSpan(w.weekStart, w.weekEnd, today)
@@ -103,15 +104,15 @@ export function GanttStrip({
                         ? 'border-ok/35 bg-ok/[0.07]'
                         : 'border-line bg-surface/30',
                   )}
-                  aria-label={`Semaine S${w.weekNumber} (${fmtDateShort(w.weekStart)})${w.isAssimilation ? ', semaine d’assimilation' : ''}`}
+                  aria-label={t('plan.cycles.weekAria', { n: w.weekNumber, date: fmtDateShort(w.weekStart), assim: w.isAssimilation ? t('plan.cycles.assimSuffix') : '' })}
                 >
                   <span className="flex items-center justify-between gap-1">
                     <span className={cn('num text-[10px] font-semibold', isCurrent ? 'text-accent' : 'text-ink-2')}>
                       S{w.weekNumber}
                     </span>
                     {w.isAssimilation && (
-                      <span className="truncate rounded-sm bg-ok/20 px-1 text-[9px] font-semibold text-ok" title="Semaine d’assimilation">
-                        Assim.
+                      <span className="truncate rounded-sm bg-ok/20 px-1 text-[9px] font-semibold text-ok" title={t('plan.cycles.assimWeek')}>
+                        {t('common.misc.assimShort')}
                       </span>
                     )}
                   </span>

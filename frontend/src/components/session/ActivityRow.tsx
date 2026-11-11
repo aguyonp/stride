@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn'
 import { capitalize, fmtDuration, fmtKm, fmtNumber, fmtPace, fmtRelative } from '../../lib/format'
 import { KudosBadge } from '../dashboard/RecordsCard'
 import { ActivityIcon } from '../ui/icons'
+import { t } from '../../i18n'
 
 export function ActivityRow({ activity: a, selected, onSelect }: { activity: ActivitySummary; selected: boolean; onSelect: () => void }) {
   return (
@@ -24,7 +25,8 @@ export function ActivityRow({ activity: a, selected, onSelect }: { activity: Act
           </span>
           <span className="block truncate text-xs text-ink-3">
             {capitalize(fmtRelative(a.startLocal))} · {a.typeLabel}
-            {a.painDuring !== null && <span className={cn('ml-1', a.painDuring >= 3 ? 'text-warn' : '')}>· gêne {fmtNumber(a.painDuring, 1, { trim: true })}/10</span>}
+            {a.painDuring !== null && <span className={cn('ml-1', a.painDuring >= 3 ? 'text-warn' : '')}>{t('common.ui.pain', { value: fmtNumber(a.painDuring, 1, { trim: true }) })}</span>}
+            {!!a.remarkCount && <span className="ml-1 text-info">{t('session.calendar.remark')}</span>}
           </span>
         </span>
         <span className="num flex-none text-right text-xs">

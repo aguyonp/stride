@@ -1,14 +1,11 @@
 import type { JobStatus } from '../../api/types'
 import { addDays } from '../../lib/format'
+import { t } from '../../i18n'
 
 export type HistoryRange = '12m' | '24m' | 'all' | 'date'
 
-export const HISTORY_RANGES: { value: HistoryRange; label: string }[] = [
-  { value: '12m', label: '12 mois' },
-  { value: '24m', label: '24 mois' },
-  { value: 'all', label: 'Tout' },
-  { value: 'date', label: 'Depuis une date' },
-]
+export const historyRanges = (): { value: HistoryRange; label: string }[] =>
+  (['12m', '24m', 'all', 'date'] as const).map((value) => ({ value, label: t(`settings.history.ranges.${value}`) }))
 
 /** `from` sent to POST /api/sync/history: null means everything the provider returns; undefined means invalid input. */
 export function historyFrom(range: HistoryRange, today: string, custom: string): string | null | undefined {
@@ -20,8 +17,8 @@ export function historyFrom(range: HistoryRange, today: string, custom: string):
 
 export function historyProgress(job: Pick<JobStatus, 'state' | 'processed' | 'total' | 'progressPct'>): { pct: number; label: string } {
   const pct = job.progressPct ?? (job.total ? Math.round(((job.processed ?? 0) / job.total) * 100) : 0)
-  if (job.state === 'completed') return { pct: 100, label: `${job.processed ?? 0} séances importées` }
-  if (job.state === 'failed') return { pct, label: 'Import interrompu' }
-  if (job.state === 'queued') return { pct: 0, label: 'En attente…' }
-  return { pct, label: job.total ? `${job.processed ?? 0} / ${job.total} séances` : 'Import en cours…' }
+  if (job.state === 'completed') return { pct: 100, label: t('settings.history.imported', { count: job.processed ?? 0 }) }
+  if (job.state === 'failed') return { pct, label: t('settings.history.interrupted') }
+  if (job.state === 'queued') return { pct: 0, label: t('settings.history.waiting') }
+  return { pct, label: job.total ? t('settings.history.counted', { processed: job.processed ?? 0, total: job.total }) : t('settings.history.running') }
 }

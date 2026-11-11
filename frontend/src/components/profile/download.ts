@@ -1,3 +1,6 @@
+import { getLang, LOCALE, t } from '../../i18n'
+import { ND } from '../../lib/format'
+
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -14,7 +17,7 @@ export function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader()
     r.onload = () => resolve(String(r.result ?? ''))
-    r.onerror = () => reject(r.error ?? new Error('Lecture impossible'))
+    r.onerror = () => reject(r.error ?? new Error(t('settings.providers.readFailed')))
     r.readAsText(file)
   })
 }
@@ -34,10 +37,10 @@ export function inspectBackup(text: string): { ok: true; summary: BackupSummary 
   try {
     data = JSON.parse(text)
   } catch {
-    return { ok: false, error: 'Ce fichier n’est pas un JSON valide.' }
+    return { ok: false, error: t('settings.providers.invalidJson') }
   }
   if (!data || typeof data !== 'object' || (data as { format?: unknown }).format !== 'stride-backup') {
-    return { ok: false, error: 'Ce fichier n’est pas une sauvegarde Stride (format « stride-backup » attendu).' }
+    return { ok: false, error: t('settings.providers.notBackup') }
   }
   const d = data as Record<string, unknown>
   const len = (k: string) => (Array.isArray(d[k]) ? (d[k] as unknown[]).length : 0)
@@ -54,11 +57,9 @@ export function inspectBackup(text: string): { ok: true; summary: BackupSummary 
   }
 }
 
-const F_DAY = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
-
-/** RFC3339 → « 4 nov. 2026 ». */
+/** RFC3339 → « 4 nov. 2026 » (browser time, active language). */
 export function fmtDay(rfc3339: string | null | undefined): string {
-  if (!rfc3339) return 'N/D'
+  if (!rfc3339) return ND
   const d = new Date(rfc3339)
-  return Number.isNaN(d.getTime()) ? 'N/D' : F_DAY.format(d)
+  return Number.isNaN(d.getTime()) ? ND : new Intl.DateTimeFormat(LOCALE[getLang()], { day: 'numeric', month: 'short', year: 'numeric' }).format(d)
 }

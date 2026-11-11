@@ -68,9 +68,9 @@ func affected(res sql.Result, err error) error {
 
 func (r Repo) Profile(ctx context.Context, uid int64, defaultTZ string) (Profile, error) {
 	var area, label, tz, ov, pts string
-	var side sql.NullString
-	err := r.DB.QueryRowContext(ctx, `SELECT focus_area, focus_label, injured_side, timezone, overrides, pace_targets FROM athlete_profiles WHERE user_id = ?`, uid).
-		Scan(&area, &label, &side, &tz, &ov, &pts)
+	var side, lang sql.NullString
+	err := r.DB.QueryRowContext(ctx, `SELECT focus_area, focus_label, injured_side, timezone, overrides, pace_targets, language FROM athlete_profiles WHERE user_id = ?`, uid).
+		Scan(&area, &label, &side, &tz, &ov, &pts, &lang)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultProfile(defaultTZ), nil
 	}
@@ -81,7 +81,7 @@ func (r Repo) Profile(ctx context.Context, uid int64, defaultTZ string) (Profile
 	var overrides map[string]float64
 	_ = json.Unmarshal([]byte(ov), &overrides)
 	p := Profile{FocusArea: preset.FocusArea, FocusLabel: label, InjuredSide: ns(side), Timezone: tz,
-		Thresholds: applyOverrides(preset.Thresholds, overrides), PaceTargets: []PaceTarget{}}
+		Thresholds: applyOverrides(preset.Thresholds, overrides), PaceTargets: []PaceTarget{}, Language: ns(lang)}
 	_ = json.Unmarshal([]byte(pts), &p.PaceTargets)
 	if p.FocusLabel == "" {
 		p.FocusLabel = preset.Label
@@ -98,12 +98,12 @@ func (r Repo) PutProfile(ctx context.Context, uid int64, p Profile) error {
 	}
 	ov, _ := json.Marshal(overrides(p.Thresholds, PresetFor(p.FocusArea).Thresholds))
 	pts, _ := json.Marshal(p.PaceTargets)
-	_, err := r.DB.ExecContext(ctx, `INSERT INTO athlete_profiles (user_id, focus_area, focus_label, injured_side, timezone, overrides, pace_targets, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := r.DB.ExecContext(ctx, `INSERT INTO athlete_profiles (user_id, focus_area, focus_label, injured_side, timezone, overrides, pace_targets, language, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET focus_area = excluded.focus_area, focus_label = excluded.focus_label,
 		injured_side = excluded.injured_side, timezone = excluded.timezone, overrides = excluded.overrides,
-		pace_targets = excluded.pace_targets, updated_at = excluded.updated_at`,
-		uid, p.FocusArea, p.FocusLabel, p.InjuredSide, p.Timezone, string(ov), string(pts), r.ts())
+		pace_targets = excluded.pace_targets, language = excluded.language, updated_at = excluded.updated_at`,
+		uid, p.FocusArea, p.FocusLabel, p.InjuredSide, p.Timezone, string(ov), string(pts), p.Language, r.ts())
 	return err
 }
 
@@ -179,16 +179,18 @@ func (r Repo) DeleteGoal(ctx context.Context, uid, id int64) error {
 // ---------- plan ----------
 
 const planCols = `id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions,
-	steps, source, garmin_status, garmin_workout_id, garmin_pushed_at, garmin_error`
+	steps, source, garmin_status, garmin_workout_id, garmin_pushed_at, garmin_error, share_link_id, prescribed_label, prescribed_author, morph_json`
 
 func scanPlanned(sc interface{ Scan(...any) error }) (PlannedSession, error) {
 	var p PlannedSession
 	var d, dist, pmin, pmax, cad sql.NullFloat64
 	var steps string
 	var wid, pushed sql.NullInt64
-	var gerr sql.NullString
+	var gerr, label, author, morph sql.NullString
+	var link sql.NullInt64
 	err := sc.Scan(&p.ID, &p.Date, &p.Sport, &p.Title, &d, &dist, &pmin, &pmax, &cad, &p.Instructions,
-		&steps, &p.Source, &p.Garmin.Status, &wid, &pushed, &gerr)
+		&steps, &p.Source, &p.Garmin.Status, &wid, &pushed, &gerr, &link, &label, &author, &morph)
+	p.PrescribedBy, p.Morph = prescriber(link, label, author), morphOf(morph)
 	p.TargetDurationS, p.TargetDistanceM, p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm = nf(d), nf(dist), nf(pmin), nf(pmax), nf(cad)
 	_ = json.Unmarshal([]byte(steps), &p.Steps)
 	if p.Steps == nil {
@@ -252,9 +254,10 @@ func (r Repo) CreatePlanned(ctx context.Context, uid int64, p *PlannedSession) e
 		return err
 	}
 	now := r.ts()
-	res, err := r.DB.ExecContext(ctx, `INSERT INTO planned_sessions (user_id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions, steps, source, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, p.Date, p.Sport, p.Title, p.TargetDurationS, p.TargetDistanceM,
-		p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm, p.Instructions, stepsJSON(p.Steps), p.Source, now, now)
+	link, label, author := prescriberArgs(p.PrescribedBy)
+	res, err := r.DB.ExecContext(ctx, `INSERT INTO planned_sessions (user_id, date, sport, title, target_duration_s, target_distance_m, target_pace_min, target_pace_max, target_cadence, instructions, steps, source, share_link_id, prescribed_label, prescribed_author, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, p.Date, p.Sport, p.Title, p.TargetDurationS, p.TargetDistanceM,
+		p.TargetPaceMinSecPerKm, p.TargetPaceMaxSecPerKm, p.TargetCadenceSpm, p.Instructions, stepsJSON(p.Steps), p.Source, link, label, author, now, now)
 	if err != nil {
 		return err
 	}

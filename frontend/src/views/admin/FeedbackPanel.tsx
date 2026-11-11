@@ -13,13 +13,18 @@ import { cn } from '../../lib/cn'
 import { fmtDateTime, fmtWhen } from '../../lib/format'
 import { ErrorView } from '../StateViews'
 import { FilterChips } from './adminUtils'
+import { lazyRecord, t, tx } from '../../i18n'
 
-const CATEGORY: Record<FeedbackCategory, { label: string; icon: LucideIcon; cls: string }> = {
-  bug: { label: 'Bug', icon: Bug, cls: 'border-danger/30 bg-danger/10 text-danger' },
-  idea: { label: 'Idée', icon: Lightbulb, cls: 'border-info/30 bg-info/10 text-info' },
-  other: { label: 'Autre', icon: MessageCircle, cls: 'border-line bg-track/60 text-ink-2' },
+const CATEGORY_STYLE: Record<FeedbackCategory, { icon: LucideIcon; cls: string }> = {
+  bug: { icon: Bug, cls: 'border-danger/30 bg-danger/10 text-danger' },
+  idea: { icon: Lightbulb, cls: 'border-info/30 bg-info/10 text-info' },
+  other: { icon: MessageCircle, cls: 'border-line bg-track/60 text-ink-2' },
 }
-const STATUS_LABEL: Record<FeedbackStatus, string> = { new: 'Nouveau', read: 'Lu', done: 'Traité' }
+const CATEGORY: Record<FeedbackCategory, { label: string; icon: LucideIcon; cls: string }> = lazyRecord(['bug', 'idea', 'other'] as const, (k) => ({
+  ...CATEGORY_STYLE[k],
+  label: t(`admin.feedback.category.${k}`),
+}))
+const STATUS_LABEL: Record<FeedbackStatus, string> = lazyRecord(['new', 'read', 'done'] as const, (k) => t(`admin.feedback.status.${k}`))
 
 function CategoryChip({ c }: { c: FeedbackCategory }) {
   const m = CATEGORY[c]
@@ -59,39 +64,39 @@ function FeedbackDetail({ item, onClose }: { item: FeedbackItem; onClose: () => 
 
   const setAndSave = (s: FeedbackStatus) => {
     setStatus(s)
-    update.mutate({ id: item.id, status: s }, { onError: (e) => toast({ tone: 'error', title: 'Statut non enregistré', description: e.message }) })
+    update.mutate({ id: item.id, status: s }, { onError: (e) => toast({ tone: 'error', title: t('admin.feedback.statusFailed'), description: e.message }) })
   }
   const saveNote = () =>
     update.mutate(
       { id: item.id, adminNote: note },
-      { onSuccess: () => toast({ title: 'Note enregistrée' }), onError: (e) => toast({ tone: 'error', title: 'Note non enregistrée', description: e.message }) },
+      { onSuccess: () => toast({ title: t('admin.feedback.noteSaved') }), onError: (e) => toast({ tone: 'error', title: t('admin.feedback.noteFailed'), description: e.message }) },
     )
 
   return (
-    <Dialog open onClose={onClose} variant="drawer" title={`Avis de ${item.userName || `#${item.userId}`}`} description={`${CATEGORY[item.category].label} · ${fmtDateTime(item.createdAt)}`}>
+    <Dialog open onClose={onClose} variant="drawer" title={t('admin.feedback.from', { name: item.userName || `#${item.userId}` })} description={`${CATEGORY[item.category].label} · ${fmtDateTime(item.createdAt)}`}>
       <div className="space-y-5">
         <p className="rounded-2xl border border-line bg-track/40 px-4 py-3 text-sm leading-relaxed break-words whitespace-pre-wrap text-ink">{item.message}</p>
 
-        <section aria-label="Contact">
+        <section aria-label={t('admin.feedback.contact')}>
           {item.contactOk && item.contactEmail ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="min-w-0 text-sm text-ink-2">
-                Accepte d’être recontacté : <span className="font-medium break-all text-ink">{item.contactEmail}</span>
+                {tx('admin.feedback.contactOk', { email: <span className="font-medium break-all text-ink">{item.contactEmail}</span> })}
               </span>
               <a className="btn btn-primary" href={mailto(item)}>
                 <Mail className="size-4" aria-hidden="true" />
-                Répondre par e-mail
+                {t('admin.feedback.reply')}
               </a>
             </div>
           ) : (
-            <p className="text-sm text-ink-3">Pas de contact souhaité : aucune adresse e-mail n’a été transmise.</p>
+            <p className="text-sm text-ink-3">{t('admin.feedback.noContact')}</p>
           )}
         </section>
 
         <div>
-          <p className="mb-1.5 text-sm font-medium text-ink-2">Statut</p>
+          <p className="mb-1.5 text-sm font-medium text-ink-2">{t('admin.feedback.statusLabel')}</p>
           <SegmentedControl<FeedbackStatus>
-            ariaLabel="Statut de l’avis"
+            ariaLabel={t('admin.feedback.statusAria')}
             className="max-w-sm"
             value={status}
             onChange={setAndSave}
@@ -99,22 +104,22 @@ function FeedbackDetail({ item, onClose }: { item: FeedbackItem; onClose: () => 
           />
         </div>
 
-        <Field label="Note interne" hint="Visible des administrateurs uniquement.">
-          {(p) => <textarea {...p} className="field min-h-24 resize-y text-sm" maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex. : corrigé en 4.1.1, ticket ouvert…" />}
+        <Field label={t('admin.feedback.note')} hint={t('admin.feedback.noteHint')}>
+          {(p) => <textarea {...p} className="field min-h-24 resize-y text-sm" maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('admin.feedback.notePlaceholder')} />}
         </Field>
         <button type="button" className="btn btn-ghost" onClick={saveNote} disabled={update.isPending || note === item.adminNote}>
           {update.isPending && update.variables?.adminNote !== undefined && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-          Enregistrer la note
+          {t('admin.feedback.saveNote')}
         </button>
 
-        <section aria-label="Contexte technique" className="border-t border-line pt-4">
-          <p className="label-caps mb-2">Contexte joint</p>
+        <section aria-label={t('admin.feedback.technical')} className="border-t border-line pt-4">
+          <p className="label-caps mb-2">{t('admin.feedback.attached')}</p>
           <KeyValue
             items={[
-              ['Version', <span className="num">{item.context.appVersion || '—'}</span>],
-              ['Page', <span className="font-mono text-xs break-all">{item.context.route || '—'}</span>],
-              ['Écran', <span className="num">{item.context.viewport || '—'}</span>],
-              ['Navigateur', <span className="text-xs break-all">{item.context.userAgent || '—'}</span>],
+              [t('admin.feedback.version'), <span className="num">{item.context.appVersion || '—'}</span>],
+              [t('admin.feedback.page'), <span className="font-mono text-xs break-all">{item.context.route || '—'}</span>],
+              [t('admin.feedback.screen'), <span className="num">{item.context.viewport || '—'}</span>],
+              [t('admin.feedback.browser'), <span className="text-xs break-all">{item.context.userAgent || '—'}</span>],
             ]}
           />
         </section>
@@ -134,43 +139,43 @@ export function FeedbackPanel() {
 
   return (
     <Card
-      title="Avis des utilisateurs"
+      title={t('admin.feedback.title')}
       icon={<MessageSquareText className="size-4" />}
-      subtitle={counts ? `${counts.new} non lu${counts.new > 1 ? 's' : ''} · ${counts.total} au total` : 'Bugs, idées et remarques envoyés depuis l’application'}
+      subtitle={counts ? t('admin.feedback.counts', { unread: t('admin.feedback.unread', { count: counts.new }), total: counts.total }) : t('admin.feedback.subtitleDefault')}
     >
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <FilterChips<FeedbackStatus | 'all'>
-          ariaLabel="Filtrer par statut"
+          ariaLabel={t('admin.feedback.filterStatus')}
           value={status}
           onChange={setStatus}
           options={[
-            { value: 'new', label: 'Non lus', count: counts?.new },
-            { value: 'read', label: 'Lus', count: counts?.read },
-            { value: 'done', label: 'Traités', count: counts?.done },
-            { value: 'all', label: 'Tous', count: counts?.total },
+            { value: 'new', label: t('admin.feedback.filterNew'), count: counts?.new },
+            { value: 'read', label: t('admin.feedback.filterRead'), count: counts?.read },
+            { value: 'done', label: t('admin.feedback.filterDone'), count: counts?.done },
+            { value: 'all', label: t('admin.feedback.all'), count: counts?.total },
           ]}
         />
         <label className="flex items-center gap-2 text-xs text-ink-3 sm:ml-auto">
-          Type
+          {t('admin.feedback.filterCategory')}
           <select className="field min-h-9 w-auto py-1 text-sm" value={category} onChange={(e) => setCategory(e.target.value as FeedbackCategory | 'all')}>
-            <option value="all">Tous</option>
-            <option value="bug">Bugs</option>
-            <option value="idea">Idées</option>
-            <option value="other">Autres</option>
+            <option value="all">{t('admin.feedback.all')}</option>
+            <option value="bug">{t('admin.feedback.bugs')}</option>
+            <option value="idea">{t('admin.feedback.ideas')}</option>
+            <option value="other">{t('admin.feedback.others')}</option>
           </select>
         </label>
       </div>
 
       {list.isError ? (
-        <ErrorView error={list.error} onRetry={() => void list.refetch()} title="Avis indisponibles" />
+        <ErrorView error={list.error} onRetry={() => void list.refetch()} title={t('admin.feedback.unavailable')} />
       ) : !list.data ? (
         <div className="space-y-2">
           <Skeleton className="h-16" />
           <Skeleton className="h-16" />
         </div>
       ) : items.length === 0 ? (
-        <EmptyState icon={<MessageSquareText />} title={status === 'new' ? 'Aucun avis non lu' : 'Aucun avis'}>
-          Les utilisateurs envoient leurs avis depuis le menu du compte, la palette de recherche ou le bas des Réglages.
+        <EmptyState icon={<MessageSquareText />} title={status === 'new' ? t('admin.feedback.noUnread') : t('admin.feedback.none')}>
+          {t('admin.feedback.emptyHint')}
         </EmptyState>
       ) : (
         <ul className="divide-y divide-line border-y border-line">
@@ -182,12 +187,12 @@ export function FeedbackPanel() {
                   <span className="flex flex-wrap items-center gap-2">
                     <CategoryChip c={f.category} />
                     <span className={cn('text-sm', f.status === 'new' ? 'font-semibold text-ink' : 'font-medium text-ink-2')}>{f.userName || `#${f.userId}`}</span>
-                    {f.contactOk && <Mail className="size-3.5 text-ink-3" aria-label="Accepte d’être recontacté" />}
-                    {f.status === 'done' && <span className="text-xs text-ok">Traité</span>}
+                    {f.contactOk && <Mail className="size-3.5 text-ink-3" aria-label={t('admin.feedback.contactAria')} />}
+                    {f.status === 'done' && <span className="text-xs text-ok">{t('admin.feedback.done')}</span>}
                     <span className="num ml-auto text-xs text-ink-3">{fmtWhen(f.createdAt)}</span>
                   </span>
                   <span className="mt-1 line-clamp-2 block text-sm break-words text-ink-2">{f.message}</span>
-                  {f.status === 'new' && <span className="sr-only">Non lu.</span>}
+                  {f.status === 'new' && <span className="sr-only">{t('admin.feedback.unreadSr')}</span>}
                 </span>
               </button>
             </li>

@@ -29,11 +29,14 @@ type PlanRequest struct {
 	Events     []athlete.CalendarEvent
 	Phases     []athlete.PlanPhase
 	LoadRatio  *analysis.LoadRatio
+	// CoachNotes: active directives and the remarks of the last 14 days (§15.1).
+	CoachNotes []athlete.ShareNote
 }
 
 // Plan builds the plan-generation prompt from the day view of today.
 func Plan(v *view.DayView, prof athlete.Profile, req PlanRequest) string {
 	b := newBuilder()
+	writeCoachNotes(b, req.CoachNotes)
 	writePlanState(b, v, prof, req.LoadRatio)
 	b.section("PLAN DÉJÀ PRÉVU SUR LA PÉRIODE")
 	if len(req.Existing) == 0 {
@@ -140,11 +143,14 @@ type AdaptRequest struct {
 	Remaining []athlete.PlannedSession
 	Events    []athlete.CalendarEvent
 	LoadRatio *analysis.LoadRatio
+	// CoachNotes: active directives and the remarks of the last 14 days (§15.1).
+	CoachNotes []athlete.ShareNote
 }
 
 // Adapt builds the plan-adaptation prompt (LLM mode of POST /api/plan/adapt).
 func Adapt(v *view.DayView, prof athlete.Profile, req AdaptRequest) string {
 	b := newBuilder()
+	writeCoachNotes(b, req.CoachNotes)
 	writePlanState(b, v, prof, req.LoadRatio)
 	writeEvents(b, req.Events)
 	b.section("PLAN RESTANT À ADAPTER")

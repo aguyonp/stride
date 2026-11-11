@@ -11,7 +11,7 @@
 //            pkcancel (passkey ceremony cancelled) · stravaerr (Strava OAuth returns an error)
 //   v3       see ./v3.ts (nollm, llmerr, pushok, importerr, notiferr, ready-*, noeff)
 //   3.1      see ./v31.ts (standalone, stravascope, longgoal)
-//   4.0      see ./v4.ts (sparse) · 4.1 see ./v41.ts
+//   4.0      see ./v4.ts (sparse) · 4.1 see ./v41.ts · 4.2 see ./v42.ts (nos3, s3err, calm)
 // Example: /?mock=user,strava,cooldown
 
 import type {
@@ -48,6 +48,7 @@ import { enrichActivityView, enrichDayView, llmConfigured, registerV3 } from './
 import { registerV31 } from './v31'
 import { registerV4, tryAsyncMockV4 } from './v4'
 import { registerV41 } from './v41'
+import { ensureV42, registerV42 } from './v42'
 import { adminUserExtras, dropUserFeedback, isLastAdmin, registerAdmin, revokeMockSessions } from './admin'
 
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
@@ -645,11 +646,12 @@ route('PUT', /^\/api\/profile$/, ({ data, init }) => {
   const b = parse<AthleteProfile>(init)
   if (!b || !FOCUS.includes(b.focusArea) || !b.thresholds) return err(400, 'BAD_REQUEST', 'Profil invalide.')
   if (b.injuredSide !== null && !['left', 'right', 'both'].includes(b.injuredSide)) return err(400, 'BAD_REQUEST', 'Côté blessé invalide.')
+  if (b.language != null && b.language !== 'fr' && b.language !== 'en') return err(400, 'BAD_REQUEST', 'Langue invalide.')
   const bad = Object.values(b.thresholds).some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0)
   if (bad) return err(400, 'BAD_REQUEST', 'Seuils invalides : nombres positifs attendus.')
   if ((b.paceTargets ?? []).some((p) => !p.label?.trim() || p.minSecPerKm <= 0 || p.maxSecPerKm < p.minSecPerKm)) return err(400, 'BAD_REQUEST', 'Allures cibles invalides (min ≤ max).')
   const label = b.focusArea === 'other' ? b.focusLabel?.trim() || 'Autre' : presetFor(b.focusArea).label
-  data.profile = { ...b, focusLabel: label, paceTargets: b.paceTargets ?? [], timezone: b.timezone || 'Europe/Paris' }
+  data.profile = { ...b, focusLabel: label, paceTargets: b.paceTargets ?? [], timezone: b.timezone || 'Europe/Paris', language: b.language ?? null }
   return json(data.profile)
 })
 route('GET', /^\/api\/profile\/presets$/, () => json(PRESETS))
@@ -789,6 +791,7 @@ registerV3(route, (data, id) => {
 registerV31(route, llmConfigured)
 registerV4(route, pub)
 registerV41(route)
+registerV42(route, pub)
 registerAdmin(route, meter)
 
 /* ---------------------------------- Entry point ---------------------------------- */
@@ -826,6 +829,7 @@ export async function mockFetch(path: string, init?: RequestInit): Promise<Respo
       const me = currentUser()
       if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée : reconnecte-toi.')
       if (r.auth === 'admin' && me.role !== 'admin') return err(403, 'FORBIDDEN', 'Réservé aux administrateurs.')
+      ensureV42(userData(me.id), me.id)
       res = await (r.handler as Handler)({ url, method, params: m.slice(1), init, me, data: userData(me.id) })
     }
     save()

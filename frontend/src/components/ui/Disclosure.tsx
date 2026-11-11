@@ -2,6 +2,7 @@ import { ChevronDown } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 import { CardNesting } from './Card'
+import { t } from '../../i18n'
 
 interface DisclosureProps {
   title: ReactNode
@@ -48,7 +49,7 @@ export function Disclosure({ title, summary, icon, open: controlled, defaultOpen
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2 text-[0.95rem] font-semibold tracking-tight text-ink">
               {title}
-              {flag && <span className={cn('size-2 flex-none rounded-full', flag === 'danger' ? 'bg-danger' : 'bg-warn')} aria-label="Signal lié" role="img" />}
+              {flag && <span className={cn('size-2 flex-none rounded-full', flag === 'danger' ? 'bg-danger' : 'bg-warn')} aria-label={t('common.ui.linkedSignal')} role="img" />}
             </span>
             {summary && <span className="mt-0.5 block truncate text-xs font-normal text-ink-3">{summary}</span>}
           </span>

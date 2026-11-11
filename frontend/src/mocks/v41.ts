@@ -5,7 +5,7 @@ import { ALL_BODY_ZONES, BODY_ZONE_META } from '../components/bodymap/bodyMapMet
 import { addDays, diffDays, todayISO } from '../lib/format'
 import { emitStreamEvent } from '../state/events'
 import { nextId, PRESETS, type MockUser, type UserData } from './db'
-import { conditionLabelOf, conditionPreset, MOCK_CONDITION_CATALOG, normalizeCondition } from './healthConditions'
+import { conditionCatalog, conditionLabelOf, conditionPreset, normalizeCondition } from './healthConditions'
 import { visibleItems } from './domain'
 import { isEmptyQuery, matchesActivity, parseQuery } from './search'
 import { v4Of } from './v4'
@@ -95,7 +95,7 @@ function runHistoryJob(job: JobStatus) {
 export function registerV41(route: RouteFn) {
   route('GET', /^\/api\/health\/status$/, ({ data }) => json(healthOf(data)))
 
-  route('GET', /^\/api\/health\/conditions$/, () => json(MOCK_CONDITION_CATALOG))
+  route('GET', /^\/api\/health\/conditions$/, ({ init }) => json(conditionCatalog(new Headers(init?.headers).get('Accept-Language') === 'en' ? 'en' : 'fr')))
 
   route('PUT', /^\/api\/health\/status$/, ({ data, init }) => {
     const b = parseBody<HealthStatusInput>(init)

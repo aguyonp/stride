@@ -3,6 +3,7 @@ import type { StepType, TargetKind, WorkoutStep } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { isNum, paceInput, parsePace } from '../../lib/format'
 import { STEP_LABEL, STEP_TONE, TARGET_LABEL } from './steps'
+import { t } from '../../i18n'
 
 const TYPES: StepType[] = ['warmup', 'run', 'interval', 'recovery', 'rest', 'cooldown']
 const KINDS: TargetKind[] = ['none', 'pace', 'hr', 'cadence', 'power']
@@ -48,63 +49,63 @@ function StepRow({ step, onChange, onRemove, onMove, index, count, nested }: { s
   const tParse = kind === 'pace' ? parsePace : intParse
   const tShow = (v: number | undefined) => (!isNum(v) ? '' : kind === 'pace' ? paceInput(v) : String(v))
   const setTarget = (patch: Partial<NonNullable<WorkoutStep['target']>>) => onChange({ ...step, target: { kind, ...step.target, ...patch } })
-  const label = `Étape ${index + 1}`
+  const label = t('plan.stepsEditor.step', { n: index + 1 })
   return (
     <li className="rounded-xl border border-line bg-track/30 p-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <span className={cn('h-6 w-1 flex-none rounded-full', STEP_TONE[step.type])} aria-hidden="true" />
-        <select aria-label={`${label} : type`} className="field h-9 min-h-9 w-auto flex-1 px-2 text-sm sm:flex-none" value={step.type} onChange={(e) => onChange({ ...step, type: e.target.value as StepType })}>
-          {TYPES.map((t) => (
-            <option key={t} value={t}>
-              {STEP_LABEL[t]}
+        <select aria-label={t('plan.stepsEditor.type', { label })} className="field h-9 min-h-9 w-auto flex-1 px-2 text-sm sm:flex-none" value={step.type} onChange={(e) => onChange({ ...step, type: e.target.value as StepType })}>
+          {TYPES.map((tp) => (
+            <option key={tp} value={tp}>
+              {STEP_LABEL[tp]}
             </option>
           ))}
         </select>
         <select
-          aria-label={`${label} : mesure`}
+          aria-label={t('plan.stepsEditor.measure', { label })}
           className="field h-9 min-h-9 w-auto px-2 text-sm"
           value={byDistance ? 'distance' : 'duration'}
           onChange={(e) => onChange(e.target.value === 'distance' ? { ...step, durationS: undefined, distanceM: step.distanceM ?? 1000 } : { ...step, distanceM: undefined, durationS: step.durationS ?? 300 })}
         >
-          <option value="duration">Durée</option>
-          <option value="distance">Distance</option>
+          <option value="duration">{t('plan.stepsEditor.duration')}</option>
+          <option value="distance">{t('plan.stepsEditor.distance')}</option>
         </select>
         {byDistance ? (
-          <Commit label={`${label} : distance (m)`} value={String(step.distanceM ?? '')} parse={intParse} placeholder="m" className="w-20" onCommit={(v) => onChange({ ...step, distanceM: v })} />
+          <Commit label={t('plan.stepsEditor.distanceAria', { label })} value={String(step.distanceM ?? '')} parse={intParse} placeholder="m" className="w-20" onCommit={(v) => onChange({ ...step, distanceM: v })} />
         ) : (
-          <Commit label={`${label} : durée (m:ss)`} value={durationInput(step.durationS)} parse={parseDuration} placeholder="m:ss" className="w-20" onCommit={(v) => onChange({ ...step, durationS: v })} />
+          <Commit label={t('plan.stepsEditor.durationAria', { label })} value={durationInput(step.durationS)} parse={parseDuration} placeholder="m:ss" className="w-20" onCommit={(v) => onChange({ ...step, durationS: v })} />
         )}
         <span className="ml-auto flex gap-0.5">
-          <button type="button" className="icon-btn size-8" onClick={() => onMove(-1)} disabled={index === 0} aria-label={`Monter l’${label.toLowerCase()}`}>
+          <button type="button" className="icon-btn size-8" onClick={() => onMove(-1)} disabled={index === 0} aria-label={t('plan.stepsEditor.up', { label })}>
             <ArrowUp className="size-3.5" />
           </button>
-          <button type="button" className="icon-btn size-8" onClick={() => onMove(1)} disabled={index === count - 1} aria-label={`Descendre l’${label.toLowerCase()}`}>
+          <button type="button" className="icon-btn size-8" onClick={() => onMove(1)} disabled={index === count - 1} aria-label={t('plan.stepsEditor.down', { label })}>
             <ArrowDown className="size-3.5" />
           </button>
-          <button type="button" className="icon-btn size-8" onClick={onRemove} aria-label={`Supprimer l’${label.toLowerCase()}`}>
+          <button type="button" className="icon-btn size-8" onClick={onRemove} aria-label={t('plan.stepsEditor.remove', { label })}>
             <Trash2 className="size-3.5" />
           </button>
         </span>
       </div>
       <div className={cn('mt-2 flex flex-wrap items-center gap-2', !nested && 'pl-3')}>
-        <select aria-label={`${label} : cible`} className="field h-9 min-h-9 w-auto px-2 text-sm" value={kind} onChange={(e) => onChange({ ...step, target: e.target.value === 'none' ? undefined : { kind: e.target.value as TargetKind } })}>
+        <select aria-label={t('plan.stepsEditor.target', { label })} className="field h-9 min-h-9 w-auto px-2 text-sm" value={kind} onChange={(e) => onChange({ ...step, target: e.target.value === 'none' ? undefined : { kind: e.target.value as TargetKind } })}>
           {KINDS.map((k) => (
             <option key={k} value={k}>
-              {k === 'none' ? 'Sans cible' : TARGET_LABEL[k]}
+              {k === 'none' ? t('plan.stepsEditor.noTarget') : TARGET_LABEL[k]}
             </option>
           ))}
         </select>
         {kind !== 'none' && (
           <>
-            <Commit label={`${label} : cible min`} value={tShow(step.target?.min)} parse={tParse} placeholder={kind === 'pace' ? '4:10' : 'min'} className="w-20" onCommit={(v) => setTarget({ min: v })} />
+            <Commit label={t('plan.stepsEditor.targetMin', { label })} value={tShow(step.target?.min)} parse={tParse} placeholder={kind === 'pace' ? '4:10' : 'min'} className="w-20" onCommit={(v) => setTarget({ min: v })} />
             <span className="text-ink-3" aria-hidden="true">
               –
             </span>
-            <Commit label={`${label} : cible max`} value={tShow(step.target?.max)} parse={tParse} placeholder={kind === 'pace' ? '4:20' : 'max'} className="w-20" onCommit={(v) => setTarget({ max: v })} />
+            <Commit label={t('plan.stepsEditor.targetMax', { label })} value={tShow(step.target?.max)} parse={tParse} placeholder={kind === 'pace' ? '4:20' : 'max'} className="w-20" onCommit={(v) => setTarget({ max: v })} />
             <span className="text-xs text-ink-3">{kind === 'pace' ? '/km' : kind === 'hr' ? 'bpm' : kind === 'cadence' ? 'spm' : 'W'}</span>
           </>
         )}
-        <input aria-label={`${label} : note`} className="field h-9 min-h-9 min-w-32 flex-1 px-2 text-sm" placeholder="Note (facultatif)" defaultValue={step.note ?? ''} key={step.note ?? ''} onBlur={(e) => onChange({ ...step, note: e.target.value.trim() || undefined })} maxLength={120} />
+        <input aria-label={t('plan.stepsEditor.note', { label })} className="field h-9 min-h-9 min-w-32 flex-1 px-2 text-sm" placeholder={t('plan.stepsEditor.notePlaceholder')} defaultValue={step.note ?? ''} key={step.note ?? ''} onBlur={(e) => onChange({ ...step, note: e.target.value.trim() || undefined })} maxLength={120} />
       </div>
     </li>
   )
@@ -131,16 +132,16 @@ export function StepsEditor({ steps, onChange, nested }: { steps: WorkoutStep[];
               <li key={i} className="rounded-xl border border-violet/30 bg-violet/[0.05] p-2.5">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <Repeat className="size-4 text-violet" aria-hidden="true" />
-                  <Commit label={`Répétition ${i + 1} : nombre`} value={String(s.repeat ?? 2)} parse={intParse} className="w-16" onCommit={(v) => setAt(i, { ...s, repeat: v ?? 1 })} />
-                  <span className="text-sm text-ink-2">fois</span>
+                  <Commit label={t('plan.stepsEditor.repeatCount', { n: i + 1 })} value={String(s.repeat ?? 2)} parse={intParse} className="w-16" onCommit={(v) => setAt(i, { ...s, repeat: v ?? 1 })} />
+                  <span className="text-sm text-ink-2">{t('plan.stepsEditor.times')}</span>
                   <span className="ml-auto flex gap-0.5">
-                    <button type="button" className="icon-btn size-8" onClick={() => onChange(move(steps, i, -1))} disabled={i === 0} aria-label="Monter la répétition">
+                    <button type="button" className="icon-btn size-8" onClick={() => onChange(move(steps, i, -1))} disabled={i === 0} aria-label={t('plan.stepsEditor.repeatUp')}>
                       <ArrowUp className="size-3.5" />
                     </button>
-                    <button type="button" className="icon-btn size-8" onClick={() => onChange(move(steps, i, 1))} disabled={i === steps.length - 1} aria-label="Descendre la répétition">
+                    <button type="button" className="icon-btn size-8" onClick={() => onChange(move(steps, i, 1))} disabled={i === steps.length - 1} aria-label={t('plan.stepsEditor.repeatDown')}>
                       <ArrowDown className="size-3.5" />
                     </button>
-                    <button type="button" className="icon-btn size-8" onClick={() => removeAt(i)} aria-label="Supprimer la répétition">
+                    <button type="button" className="icon-btn size-8" onClick={() => removeAt(i)} aria-label={t('plan.stepsEditor.repeatRemove')}>
                       <Trash2 className="size-3.5" />
                     </button>
                   </span>
@@ -155,7 +156,7 @@ export function StepsEditor({ steps, onChange, nested }: { steps: WorkoutStep[];
       )}
       <div className="flex flex-wrap gap-2">
         <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={() => onChange([...steps, { type: steps.length === 0 && !nested ? 'warmup' : nested && steps.length ? 'recovery' : 'interval', durationS: nested ? 60 : 600 }])}>
-          <Plus className="size-3.5" aria-hidden="true" /> Étape
+          <Plus className="size-3.5" aria-hidden="true" /> {t('plan.stepsEditor.addStep')}
         </button>
         {!nested && (
           <button
@@ -175,7 +176,7 @@ export function StepsEditor({ steps, onChange, nested }: { steps: WorkoutStep[];
               ])
             }
           >
-            <Repeat className="size-3.5" aria-hidden="true" /> Répétition
+            <Repeat className="size-3.5" aria-hidden="true" /> {t('plan.stepsEditor.addRepeat')}
           </button>
         )}
       </div>

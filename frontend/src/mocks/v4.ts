@@ -23,6 +23,7 @@ import type {
   ShareLink,
   ShareLinkInput,
   SharePeriodWeeks,
+  SharePermissions,
   ShareSection,
   TrainingCycleOverview,
   TrainingPhase,
@@ -82,8 +83,28 @@ interface StoredPhase {
   note: string
 }
 
-interface StoredShare extends ShareLink {
+export interface StoredShare extends ShareLink {
   token: string
+}
+
+/** 4.2 hooks (see ./v42.ts): enrich the scoped public view (permissions, directive, remarks, calendar). */
+type PublicShareHook = (view: PublicShareView, owner: MockUser, data: UserData, share: StoredShare) => PublicShareView
+const publicShareHooks: PublicShareHook[] = []
+export function addPublicShareHook(fn: PublicShareHook) {
+  publicShareHooks.push(fn)
+}
+
+/** Owner and link behind a public token, or the 404/410 the backend answers. */
+export function findShareByToken(token: string): { owner: MockUser; data: UserData; share: StoredShare } | { status: 404 | 410; message: string } {
+  for (const u of db().users) {
+    const d = userData(u.id)
+    const found = v4Of(d, u.id).shares.find((s) => s.token === token)
+    if (!found) continue
+    if (found.revoked) return { status: 404, message: 'Ce lien de partage a été révoqué.' }
+    if (found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()) return { status: 410, message: 'Ce lien de partage a expiré.' }
+    return { owner: u, data: d, share: found }
+  }
+  return { status: 404, message: 'Lien de partage introuvable ou révoqué.' }
 }
 
 export interface V4Data {
@@ -301,6 +322,7 @@ export function v4Of(data: UserData, userId = 1): V4Data {
             lastAccessedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
             createdAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
             ...DEFAULT_SCOPE,
+            permissions: { comments: true, planning: true, activityDetails: true },
           },
           {
             id: nextId(),
@@ -315,6 +337,7 @@ export function v4Of(data: UserData, userId = 1): V4Data {
             lastAccessedAt: new Date(Date.now() - 12 * 86_400_000).toISOString(),
             createdAt: new Date(Date.now() - 45 * 86_400_000).toISOString(),
             ...DEFAULT_SCOPE,
+            permissions: NO_PERMISSIONS,
           },
         )
       }
@@ -733,6 +756,13 @@ function buildBodyMapOverview(
 const ALL_SECTIONS: ShareSection[] = ['activities', 'health', 'recovery', 'load', 'records', 'plan', 'shoes', 'notes']
 const DEFAULT_SCOPE = { periodWeeks: 12 as SharePeriodWeeks, sections: ALL_SECTIONS, anonymize: false }
 const PERIODS: SharePeriodWeeks[] = [4, 8, 12, 26, 52]
+const NO_PERMISSIONS: SharePermissions = { comments: false, planning: false, activityDetails: false }
+
+function permissionsOf(b: Partial<ShareLinkInput> | null, current: SharePermissions = NO_PERMISSIONS): SharePermissions {
+  const p = b?.permissions
+  if (!p || typeof p !== 'object') return current
+  return { comments: p.comments === true, planning: p.planning === true, activityDetails: p.activityDetails === true }
+}
 
 function scopeOf(b: Partial<ShareLinkInput> | null) {
   const sections = Array.isArray(b?.sections) ? ALL_SECTIONS.filter((x) => b.sections?.includes(x)) : ALL_SECTIONS
@@ -887,6 +917,7 @@ function buildPublicShareView(me: MockUser, data: UserData, share: StoredShare):
 
   return {
     generatedAt: isoNow(),
+    linkId: share.id,
     shareLabel: share.label,
     periodWeeks: share.periodWeeks,
     sections: share.sections,
@@ -1035,26 +1066,13 @@ export function registerV4(route: RouteFn, pub: PubFn) {
   )
 
   pub('GET', /^\/api\/public\/share\/([^/]+)$/, ({ params }) => {
-    const token = decodeURIComponent(params[0])
-    const state = db()
-    for (const u of state.users) {
-      const d = userData(u.id)
-      const st = v4Of(d, u.id)
-      const found = st.shares.find((s) => s.token === token)
-      if (!found) continue
-      if (found.revoked) {
-        return err(404, 'NOT_FOUND', 'Ce lien de partage a été révoqué.')
-      }
-      if (found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()) {
-        return err(410, 'GONE', 'Ce lien de partage a expiré.')
-      }
-      found.accessCount += 1
-      found.lastAccessedAt = isoNow()
-      return json(applyShareScope(buildPublicShareView(u, d, found), found), 200, {
-        'Cache-Control': 'private, no-store',
-      })
-    }
-    return err(404, 'NOT_FOUND', 'Lien de partage introuvable ou révoqué.')
+    const hit = findShareByToken(decodeURIComponent(params[0]))
+    if ('status' in hit) return err(hit.status, hit.status === 410 ? 'GONE' : 'NOT_FOUND', hit.message)
+    const { owner: u, data: d, share: found } = hit
+    found.accessCount += 1
+    found.lastAccessedAt = isoNow()
+    const view = publicShareHooks.reduce((v, fn) => fn(v, u, d, found), applyShareScope(buildPublicShareView(u, d, found), found))
+    return json(view, 200, { 'Cache-Control': 'private, no-store' })
   })
 
   /* --- Jobs --- */
@@ -1343,6 +1361,7 @@ export function registerV4(route: RouteFn, pub: PubFn) {
       lastAccessedAt: null,
       createdAt: isoNow(),
       ...scopeOf(b),
+      permissions: permissionsOf(b),
     }
     v4Of(data, me.id).shares.unshift(created)
     return json(toShareLink(created), 201)
@@ -1360,7 +1379,7 @@ export function registerV4(route: RouteFn, pub: PubFn) {
     if (b.expiresInDays !== undefined) {
       found.expiresAt = b.expiresInDays ? new Date(Date.now() + b.expiresInDays * 86_400_000).toISOString() : null
     }
-    Object.assign(found, scopeOf({ ...found, ...b }))
+    Object.assign(found, scopeOf({ ...found, ...b }), { permissions: permissionsOf(b, found.permissions ?? NO_PERMISSIONS) })
     return json(toShareLink(found))
   })
 

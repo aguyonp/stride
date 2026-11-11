@@ -25,6 +25,14 @@ open http://localhost:8080
 
 ## Highlights
 
+**4.2.0**
+- Physio / coach portal on share links: directives with restrictions, session remarks, prescribed sessions and events, per-session detail (each permission opt-in).
+- Coach notes injected first into every AI prompt, plan generation and adaptation (quoted, capped).
+- Smart Workout Morphing: today's or tomorrow's session adapted to pain, load, heat, wind and physio restrictions; refine with AI, apply, revert, `.FIT`.
+- Atomic SQLite backups (daily, before migrations, on demand) with SHA-256, local retention and S3-compatible upload.
+- SQLite split into one writer and a read-only pool.
+- French / English interface and AI prompts, following the browser language by default (switch in Settings, `Cmd+K`, login and share pages).
+
 **4.1.0**
 - Five menus (Tableau de bord, Planning, Santé & forme, Coach IA, Réglages) and a header search button (`Cmd+K`).
 - Health status as the single source of the injury focus; symptoms recorded once, in the body map.
@@ -72,7 +80,10 @@ One SemVer string, no `v`: `VERSION` file = git tag = image tag = `GET /version`
 | `STRIDE_REGISTRATION` | `invite` | `invite` or `open` |
 | `STRIDE_STRAVA_CLIENT_ID` / `_SECRET` / `_WEBHOOK_TOKEN` | — | Enable Strava OAuth & webhooks |
 | `STRIDE_HOST_BIND` / `STRIDE_HOST_PORT` | `127.0.0.1` / `8080` | Published address |
-| `STRIDE_ALLOW_PRIVATE_EGRESS` | `false` | Allow a local LLM / webhook (e.g. Ollama) |
+| `STRIDE_ALLOW_PRIVATE_EGRESS` | `false` | Allow a local LLM / webhook / S3 endpoint (e.g. Ollama, MinIO) |
+| `STRIDE_S3_ENDPOINT` / `_REGION` / `_BUCKET` / `_PREFIX` | — / `us-east-1` / — / — | Seed the backup S3 target once (then edited in Admin › Backups & S3) |
+| `STRIDE_S3_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` | — | S3 credentials (secret sealed at rest, never returned) |
+| `STRIDE_S3_PATH_STYLE` / `_AUTO_UPLOAD` / `_RETENTION_DAYS` | `false` / `false` / `30` | Path-style URLs (MinIO, Garage), upload the daily snapshot, remote retention (0: keep) |
 
 Full list: [docs/SPEC.md](docs/SPEC.md) §9.
 

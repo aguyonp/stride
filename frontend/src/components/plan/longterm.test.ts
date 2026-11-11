@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Goal, PlanPhase } from '../../api/types'
 import { countdown, datedGoals, horizonGoal, monthTicks, phaseAt, phaseLayout, phaseTone } from './longterm'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const phase = (id: number, name: string, startDate: string, endDate: string): PlanPhase => ({ id, name, startDate, endDate, focus: '', weeklyVolumeKm: null, note: '' })
 const goal = (id: number, targetDate: string | null, status: Goal['status'] = 'active'): Goal => ({ id, title: `G${id}`, kind: 'race', targetValue: null, targetUnit: null, targetDate, status, note: '' })

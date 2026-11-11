@@ -11,15 +11,13 @@ import { useToast } from '../../components/ui/Toast'
 import { fmtDateTime, fmtWhen } from '../../lib/format'
 import { ErrorView } from '../StateViews'
 import { FilterChips } from './adminUtils'
+import { lazyRecord, t } from '../../i18n'
 
-const STATE = {
-  active: { label: 'Actif', level: 'ok' },
-  expired: { label: 'Expiré', level: 'info' },
-  revoked: { label: 'Révoqué', level: 'danger' },
-} as const
+const STATE_LEVEL = { active: 'ok', expired: 'info', revoked: 'danger' } as const
+const STATE = lazyRecord(['active', 'expired', 'revoked'] as const, (k) => ({ label: t(`admin.shares.state.${k}`), level: STATE_LEVEL[k] }))
 
-const scope = (l: AdminShareLink) => `${l.periodWeeks} sem. · ${l.sections.length}/8 sections`
-const expiry = (l: AdminShareLink) => (l.revokedAt ? `révoqué ${fmtWhen(l.revokedAt)}` : l.expiresAt ? fmtDateTime(l.expiresAt) : 'jamais')
+const scope = (l: AdminShareLink) => t('admin.shares.scope', { weeks: l.periodWeeks, count: l.sections.length })
+const expiry = (l: AdminShareLink) => (l.revokedAt ? t('admin.shares.revokedAt', { when: fmtWhen(l.revokedAt) }) : l.expiresAt ? fmtDateTime(l.expiresAt) : t('admin.shares.never'))
 
 export function SharesPanel() {
   const [filter, setFilter] = useState<'active' | 'all'>('active')
@@ -39,48 +37,49 @@ export function SharesPanel() {
     l.state === 'active' && (
       <button type="button" className="btn btn-danger min-h-9 px-3 text-xs" onClick={() => setRevoke(l)} disabled={ctl.revokeShare.isPending && ctl.revokeShare.variables === l.id}>
         {ctl.revokeShare.isPending && ctl.revokeShare.variables === l.id ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Unlink className="size-3.5" aria-hidden="true" />}
-        Révoquer<span className="sr-only"> le lien {l.label}</span>
+        {t('admin.shares.revoke')}
+        <span className="sr-only">{t('admin.shares.revokeSr', { label: l.label })}</span>
       </button>
     )
   const anon = (l: AdminShareLink) =>
     l.anonymize && (
       <span className="chip h-5 border border-line bg-track/60 px-1.5 text-[10px] font-medium text-ink-2">
         <EyeOff className="size-3" aria-hidden="true" />
-        anonyme
+        {t('admin.shares.anonymous')}
       </span>
     )
 
   return (
-    <Card title="Liens de partage" icon={<Link2 className="size-4" />} subtitle="Vues publiques en lecture seule, tous comptes · jeton jamais affiché (préfixe seulement)">
+    <Card title={t('admin.shares.title')} icon={<Link2 className="size-4" />} subtitle={t('admin.shares.subtitle')}>
       <div className="mb-4">
         <FilterChips<'active' | 'all'>
-          ariaLabel="Filtrer les liens"
+          ariaLabel={t('admin.shares.filter')}
           value={filter}
           onChange={setFilter}
           options={[
-            { value: 'active', label: 'Actifs' },
-            { value: 'all', label: 'Tous (expirés et révoqués)' },
+            { value: 'active', label: t('admin.shares.active') },
+            { value: 'all', label: t('admin.shares.all') },
           ]}
         />
       </div>
       {shares.isError ? (
-        <ErrorView error={shares.error} onRetry={() => void shares.refetch()} title="Liens indisponibles" />
+        <ErrorView error={shares.error} onRetry={() => void shares.refetch()} title={t('admin.shares.unavailable')} />
       ) : !shares.data ? (
         <Skeleton className="h-28" />
       ) : items.length === 0 ? (
-        <EmptyState icon={<Link2 />} title={filter === 'active' ? 'Aucun lien actif' : 'Aucun lien de partage'}>
-          Les athlètes créent ces liens depuis Santé & forme pour leur kiné ou leur coach. Révoquer un lien le coupe immédiatement.
+        <EmptyState icon={<Link2 />} title={filter === 'active' ? t('admin.shares.noActive') : t('admin.shares.none')}>
+            {t('admin.shares.emptyHint')}
         </EmptyState>
       ) : (
         <>
           <div className="scroll-thin hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
-              <caption className="sr-only">Liens de partage de tous les comptes</caption>
+              <caption className="sr-only">{t('admin.shares.caption')}</caption>
               <thead>
                 <tr className="text-left text-xs text-ink-3">
-                  {['Lien', 'Propriétaire', 'Portée', 'Expiration', 'Vues', 'État', ''].map((h, i) => (
+                  {[...(['link', 'owner', 'scope', 'expiry', 'views', 'state'] as const).map((k) => t(`admin.shares.heads.${k}`)), ''].map((h, i) => (
                     <th key={i} scope="col" className="border-b border-line px-2 py-2 font-medium first:pl-1">
-                      {h || <span className="sr-only">Actions</span>}
+                      {h || <span className="sr-only">{t('admin.shares.actions')}</span>}
                     </th>
                   ))}
                 </tr>
@@ -121,7 +120,7 @@ export function SharesPanel() {
                   <Badge level={STATE[l.state].level}>{STATE[l.state].label}</Badge>
                 </div>
                 <p className="num mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-3">
-                  {scope(l)} · expire {expiry(l)} · {l.accessCount} vue{l.accessCount > 1 ? 's' : ''} {anon(l)}
+                  {t('admin.shares.mobileLine', { scope: scope(l), expiry: expiry(l), views: t('admin.shares.views', { count: l.accessCount }) })} {anon(l)}
                 </p>
                 {l.state === 'active' && <div className="mt-2">{revokeBtn(l)}</div>}
               </li>
@@ -133,23 +132,23 @@ export function SharesPanel() {
       <ConfirmDialog
         open={revoke !== null}
         onClose={() => setRevoke(null)}
-        title="Révoquer ce lien ?"
+        title={t('admin.shares.revokeTitle')}
         message={
           <p>
-            « {revoke?.label} » de {revoke?.userName} cessera de fonctionner immédiatement (vue publique et cache). Son propriétaire pourra en créer un nouveau.
+            {t('admin.shares.revokeBody', { label: revoke?.label, user: revoke?.userName })}
           </p>
         }
-        confirmLabel="Révoquer"
+        confirmLabel={t('admin.shares.revoke')}
         danger
         busy={ctl.revokeShare.isPending}
         onConfirm={() =>
           revoke &&
           ctl.revokeShare.mutate(revoke.id, {
             onSuccess: () => {
-              toast({ title: 'Lien révoqué', description: `${revoke.label} · ${revoke.userName}` })
+              toast({ title: t('admin.shares.revoked'), description: `${revoke.label} · ${revoke.userName}` })
               setRevoke(null)
             },
-            onError: (e) => toast({ tone: 'error', title: 'Révocation impossible', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('admin.shares.revokeFailed'), description: e.message }),
           })
         }
       />

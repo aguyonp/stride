@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useTrack } from '../../api/queriesV3'
 import type { ActivityTrack, Thresholds } from '../../api/types'
-import { fmtNumber } from '../../lib/format'
+import { fmtPct } from '../../lib/format'
 import { InlineError, Spinner } from '../ui/Misc'
 import { SegmentedControl } from '../ui/SegmentedControl'
+import { t, tx } from '../../i18n'
 
 type Mode = 'cadence' | 'slope'
 const W = 600
@@ -51,47 +52,47 @@ export function GpsTrack({ activityId, thresholds }: { activityId: number; thres
   const cadMin = thresholds?.cadenceMinSpm ?? 170
   const geo = useMemo(() => (track.data?.bounds && track.data.points.length > 1 ? projectTrack(track.data, mode, cadMin) : null), [track.data, mode, cadMin])
 
-  if (track.isPending) return <Spinner label="Chargement du tracé…" />
+  if (track.isPending) return <Spinner label={t('session.gps.loading')} />
   if (track.isError) return <InlineError>{track.error.message}</InlineError>
-  if (!geo) return <p className="text-sm text-ink-3">Pas de tracé GPS pour cette activité.</p>
+  if (!geo) return <p className="text-sm text-ink-3">{t('session.gps.empty')}</p>
 
-  const hotLabel = mode === 'cadence' ? `cadence < ${cadMin} spm` : 'pente < −2 %'
+  const hotLabel = mode === 'cadence' ? t('session.gps.hotCadence', { value: cadMin }) : t('session.gps.hotSlope')
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <SegmentedControl
-          ariaLabel="Colorer le tracé par"
+          ariaLabel={t('session.gps.colorBy')}
           size="sm"
           value={mode}
           onChange={setMode}
           options={[
-            { value: 'cadence', label: 'Cadence' },
-            { value: 'slope', label: 'Pente' },
+            { value: 'cadence', label: t('session.gps.cadence') },
+            { value: 'slope', label: t('session.gps.slope') },
           ]}
         />
         <p className="text-xs text-ink-3">
-          <span className="num font-semibold text-warn">{fmtNumber(geo.hotPct)} %</span> du parcours en {hotLabel}
+          {tx('session.gps.share', { pct: <span className="num font-semibold text-warn">{fmtPct(geo.hotPct, 0)}</span>, label: hotLabel })}
         </p>
       </div>
-      <svg viewBox={`0 0 ${W} ${geo.h}`} className="h-auto w-full rounded-2xl bg-track/40" role="img" aria-label={`Tracé GPS : ${geo.hotPct} % du parcours en ${hotLabel}`}>
+      <svg viewBox={`0 0 ${W} ${geo.h}`} className="h-auto w-full rounded-2xl bg-track/40" role="img" aria-label={t('session.gps.aria', { pct: fmtPct(geo.hotPct, 0), label: hotLabel })}>
         {geo.runs.map((r, i) => (
           <path key={i} d={r.d} fill="none" stroke={r.hot ? 'var(--warn)' : 'var(--accent)'} strokeOpacity={r.hot ? 1 : 0.75} strokeWidth={r.hot ? 4.5 : 3} strokeLinecap="round" strokeLinejoin="round" />
         ))}
         <rect x={geo.end[0] - 7} y={geo.end[1] - 7} width={14} height={14} rx={3} fill="var(--text-1)" stroke="var(--surface)" strokeWidth={2} />
         <circle cx={geo.start[0]} cy={geo.start[1]} r={4.5} fill="var(--ok)" stroke="var(--surface)" strokeWidth={1.5} />
       </svg>
-      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3" aria-label="Légende">
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3" aria-label={t('session.gps.legend')}>
         <li className="flex items-center gap-1.5">
-          <span className="h-1 w-4 rounded bg-accent" aria-hidden="true" /> Normal
+          <span className="h-1 w-4 rounded bg-accent" aria-hidden="true" /> {t('session.gps.normal')}
         </li>
         <li className="flex items-center gap-1.5">
           <span className="h-1.5 w-4 rounded bg-warn" aria-hidden="true" /> {hotLabel}
         </li>
         <li className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-ok" aria-hidden="true" /> Départ
+          <span className="size-2.5 rounded-full bg-ok" aria-hidden="true" /> {t('session.gps.start')}
         </li>
         <li className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm bg-ink" aria-hidden="true" /> Arrivée
+          <span className="size-2.5 rounded-sm bg-ink" aria-hidden="true" /> {t('session.gps.finish')}
         </li>
       </ul>
     </div>

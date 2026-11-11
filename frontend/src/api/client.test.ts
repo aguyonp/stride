@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from './client'
+import { setLang } from '../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 function stubFetch(status: number, body: unknown, contentType = 'application/json') {
   const fn = vi.fn(async (_url: string, _init?: RequestInit) => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'Content-Type': contentType } }))
@@ -29,6 +33,18 @@ describe('api client', () => {
   it('maps error bodies to ApiError with code', async () => {
     stubFetch(400, { error: 'Clé refusée', code: 'PROVIDER_UNAUTHORIZED' })
     await expect(api.connectGarmin('x')).rejects.toMatchObject({ status: 400, code: 'PROVIDER_UNAUTHORIZED', message: 'Clé refusée' })
+  })
+
+  it('sends Accept-Language and translates error codes in English (§15.2)', async () => {
+    setLang('en', { persist: false })
+    try {
+      const fn = stubFetch(400, { error: 'Clé refusée', code: 'PROVIDER_UNAUTHORIZED' })
+      const err = await api.connectGarmin('x').catch((e) => e)
+      expect((fn.mock.calls[0][1]?.headers as Record<string, string>)['Accept-Language']).toBe('en')
+      expect(err).toMatchObject({ code: 'PROVIDER_UNAUTHORIZED', message: 'The provider denied access: reconnect the integration.' })
+    } finally {
+      setLang('fr', { persist: false })
+    }
   })
 
   it('encodes include=none when every chip is off and returns markdown text', async () => {

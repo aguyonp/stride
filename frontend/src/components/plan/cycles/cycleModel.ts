@@ -1,5 +1,6 @@
 import type { CycleActuals, CyclePlanStatus, Goal, TrainingPhase, TrainingPlan, TrainingWeek } from '../../../api/types'
 import { addDays, diffDays, mondayOf } from '../../../lib/format'
+import { t } from '../../../i18n'
 
 export function completionPct(actual: number, planned: number, explicitPct: number | null): number | null {
   if (explicitPct !== null && Number.isFinite(explicitPct)) return Math.round(explicitPct)
@@ -52,11 +53,10 @@ export function timelineSpan(
 
 export function countdownLabel(today: string, endDate: string): string {
   const days = diffDays(today, endDate)
-  if (days === 0) return 'Jour J aujourd’hui'
-  if (days < 0) return 'Échéance passée'
+  if (days === 0) return t('plan.cycles.raceToday')
+  if (days < 0) return t('plan.cycles.past')
   const weeks = Math.ceil(days / 7)
-  const s = weeks > 1 ? 's' : ''
-  return `J−${days} · ${weeks} semaine${s} restante${s}`
+  return t('plan.cycles.remaining', { days, count: weeks })
 }
 
 export function ganttScale(start: string, end: string, today: string) {
@@ -104,7 +104,7 @@ export function planFormDefaults(plan: TrainingPlan | null, goals: Goal[], today
   }
   const raceGoal = goals.find((g) => g.status === 'active' && g.targetDate && g.targetDate > today) ?? null
   return {
-    name: raceGoal ? `Préparation ${raceGoal.title}` : 'Préparation course',
+    name: raceGoal ? t('plan.cycles.prep', { goal: raceGoal.title }) : t('plan.cycles.prepDefault'),
     sport: 'run' as TrainingPlan['sport'],
     goalId: raceGoal?.id ?? null,
     startDate: mondayOf(today),
@@ -122,21 +122,21 @@ export function validatePlanForm(f: {
   peakVolume: number | null
   peakLoad: number | null
 }): string | null {
-  if (!f.name.trim()) return 'Indique un nom pour ce macrocycle.'
-  if (!f.startDate || !f.endDate || f.endDate <= f.startDate) return 'La date de fin doit être postérieure au début.'
-  if (f.peakVolume !== null && (!Number.isFinite(f.peakVolume) || f.peakVolume <= 0)) return 'Volume pic invalide.'
-  if (f.peakLoad !== null && (!Number.isFinite(f.peakLoad) || f.peakLoad <= 0)) return 'Charge pic invalide.'
+  if (!f.name.trim()) return t('plan.cycles.nameRequired')
+  if (!f.startDate || !f.endDate || f.endDate <= f.startDate) return t('plan.cycles.endAfter')
+  if (f.peakVolume !== null && (!Number.isFinite(f.peakVolume) || f.peakVolume <= 0)) return t('plan.cycles.peakVolume')
+  if (f.peakLoad !== null && (!Number.isFinite(f.peakLoad) || f.peakLoad <= 0)) return t('plan.cycles.peakLoad')
   return null
 }
 
 export function validatePhaseForm(f: { name: string; startDate: string; endDate: string }): string | null {
-  if (!f.name.trim()) return 'Donne un nom à ce mésocycle.'
-  if (!f.startDate || !f.endDate || f.endDate < f.startDate) return 'La fin du mésocycle doit suivre le début.'
+  if (!f.name.trim()) return t('plan.cycles.phaseName')
+  if (!f.startDate || !f.endDate || f.endDate < f.startDate) return t('plan.cycles.phaseEnd')
   return null
 }
 
 export function validateWeekTargets(volumeKm: number | null, load: number | null): string | null {
-  if (volumeKm !== null && (!Number.isFinite(volumeKm) || volumeKm < 0)) return 'Volume cible invalide.'
-  if (load !== null && (!Number.isFinite(load) || load < 0)) return 'Charge cible invalide.'
+  if (volumeKm !== null && (!Number.isFinite(volumeKm) || volumeKm < 0)) return t('plan.cycles.volumeInvalid')
+  if (load !== null && (!Number.isFinite(load) || load < 0)) return t('plan.cycles.loadInvalid')
   return null
 }

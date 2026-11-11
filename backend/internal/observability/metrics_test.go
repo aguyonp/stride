@@ -77,3 +77,29 @@ func TestIsolatedRegistriesAndAllMetricsExposed(t *testing.T) {
 		}
 	}
 }
+
+func TestBackupMetrics(t *testing.T) {
+	m := observability.New()
+	at := time.Unix(1_800_000_000, 0)
+	m.ObserveBackup("local", "success", 4096, at)
+	m.ObserveBackup("s3", "error", 0, time.Time{})
+	rec := httptest.NewRecorder()
+	m.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`stride_backup_last_success_timestamp_seconds{target="local"} 1.8e+09`,
+		`stride_backup_last_size_bytes 4096`,
+		`stride_backup_total{status="success",target="local"} 1`,
+		`stride_backup_total{status="error",target="s3"} 1`,
+		`stride_backup_total{status="success",target="s3"} 0`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `stride_backup_last_success_timestamp_seconds{target="s3"}`) {
+		t.Error("failed upload recorded as a success time")
+	}
+	var nilMetrics *observability.Metrics
+	nilMetrics.ObserveBackup("local", "success", 1, at)
+}

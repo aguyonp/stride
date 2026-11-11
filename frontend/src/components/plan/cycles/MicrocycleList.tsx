@@ -3,6 +3,7 @@ import { cn } from '../../../lib/cn'
 import { fmtDateShort } from '../../../lib/format'
 import { isCurrentSpan } from './cycleModel'
 import { VolumeLoadGauges } from './Gauges'
+import { t } from '../../../i18n'
 
 export function MicrocycleList({
   weeks,
@@ -36,12 +37,12 @@ export function MicrocycleList({
                 </span>
                 {w.isAssimilation && (
                   <span className="chip h-5 border border-ok/30 bg-ok/12 px-2 text-[10px] text-ok">
-                    Semaine d’assimilation
+                    {t('plan.cycles.assimWeek')}
                   </span>
                 )}
               </div>
               <p className="mt-0.5 truncate text-xs text-ink-3">
-                {phase ? phase.name : 'Hors mésocycle'}
+                {phase ? phase.name : t('plan.cycles.outsideMeso')}
                 {w.note ? ` · ${w.note}` : ''}
               </p>
             </div>
@@ -59,14 +60,14 @@ export function MicrocycleList({
                 className="btn btn-ghost h-8 min-h-8 px-2.5 text-xs"
                 onClick={() => onTuneWeek(w)}
               >
-                Ajuster
+                {t('common.misc.adjust')}
               </button>
               <button
                 type="button"
                 className="btn btn-ghost h-8 min-h-8 px-2.5 text-xs"
                 onClick={() => onJumpToWeek(w.weekStart)}
               >
-                Semaine
+                {t('common.misc.week')}
               </button>
             </div>
           </div>

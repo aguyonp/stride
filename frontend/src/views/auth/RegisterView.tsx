@@ -9,9 +9,10 @@ import { Field } from '../../components/ui/Field'
 import { InlineError } from '../../components/ui/Misc'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AuthLayout } from './AuthLayout'
+import { t } from '../../i18n'
 
 export function RegisterView({ state }: { state: AuthState }) {
-  useDocumentTitle('Créer un compte')
+  useDocumentTitle(t('auth.register.title'))
   const qc = useQueryClient()
   const [, navigate] = useLocation()
   const search = useSearch()
@@ -23,8 +24,8 @@ export function RegisterView({ state }: { state: AuthState }) {
   const [touched, setTouched] = useState(false)
   const issue = passkeyIssue()
   const needsInvite = !state.firstUser && state.registrationMode === 'invite'
-  const nameError = touched && name.trim().length < 2 ? 'Indique au moins 2 caractères.' : null
-  const codeError = touched && needsInvite && !code.trim() ? 'Le code d’invitation est requis.' : null
+  const nameError = touched && name.trim().length < 2 ? t('auth.register.nameTooShort') : null
+  const codeError = touched && needsInvite && !code.trim() ? t('auth.register.codeRequired') : null
 
   const submit = async () => {
     setTouched(true)
@@ -46,15 +47,15 @@ export function RegisterView({ state }: { state: AuthState }) {
     <AuthLayout>
       <section className="glass animate-in p-5 sm:p-7" aria-labelledby="register-title">
         <Link href="/login" className="mb-3 inline-flex items-center gap-1.5 rounded-lg text-sm text-ink-3 hover:text-ink">
-          <ArrowLeft className="size-4" aria-hidden="true" /> Connexion
+          <ArrowLeft className="size-4" aria-hidden="true" /> {t('auth.register.back')}
         </Link>
         <h1 id="register-title" className="text-xl font-semibold tracking-tight">
-          {state.firstUser ? 'Créer le compte administrateur' : 'Créer ton compte'}
+          {state.firstUser ? t('auth.register.adminTitle') : t('auth.register.userTitle')}
         </h1>
         <p className="mt-1 text-sm text-ink-3">
           {state.firstUser
-            ? 'Premier compte de cette instance : il aura les droits d’administration (invitations, utilisateurs, suivi des API).'
-            : 'Ta passkey remplace le mot de passe : elle reste sur ton appareil ou ton gestionnaire (iCloud, Google, 1Password…), protégée par Face ID, empreinte ou code.'}
+            ? t('auth.register.adminIntro')
+            : t('auth.register.userIntro')}
         </p>
 
         {issue && (
@@ -72,18 +73,18 @@ export function RegisterView({ state }: { state: AuthState }) {
             void submit()
           }}
         >
-          <Field label="Nom affiché" hint="Visible par toi et l’administrateur." error={nameError}>
-            {(p) => <input {...p} className="field" value={name} onChange={(e) => setName(e.target.value)} autoComplete="nickname" maxLength={40} placeholder="Ex. Alex" />}
+          <Field label={t('auth.register.name')} hint={t('auth.register.nameHint')} error={nameError}>
+            {(p) => <input {...p} className="field" value={name} onChange={(e) => setName(e.target.value)} autoComplete="nickname" maxLength={40} placeholder={t('auth.register.namePlaceholder')} />}
           </Field>
           {(needsInvite || fromLink) && (
-            <Field label="Code d’invitation" hint={fromLink ? 'Pré-rempli depuis ton lien d’invitation.' : 'Reçu de l’administrateur (lien ou code).'} error={codeError}>
+            <Field label={t('auth.register.code')} hint={fromLink ? t('auth.register.codeFromLink') : t('auth.register.codeHint')} error={codeError}>
               {(p) => <input {...p} className="field font-mono" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" spellCheck={false} autoCapitalize="characters" />}
             </Field>
           )}
           {error && <InlineError>{error}</InlineError>}
           <button type="submit" className="btn btn-primary h-13 w-full text-base" disabled={busy || issue !== null}>
             {busy ? <Loader2 className="size-5 animate-spin" aria-hidden="true" /> : <Fingerprint className="size-5" aria-hidden="true" />}
-            {busy ? 'Création de la passkey…' : 'Créer ma passkey'}
+            {busy ? t('auth.register.creating') : t('auth.register.submit')}
           </button>
         </form>
       </section>

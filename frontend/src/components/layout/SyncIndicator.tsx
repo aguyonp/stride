@@ -4,16 +4,17 @@ import { IS_MOCK } from '../../api/client'
 import { useIntegrations, useStartSync, useSyncStatus } from '../../api/queries'
 import type { JobQueue, JobStatus, ProviderSync, SyncStatus } from '../../api/types'
 import { cn } from '../../lib/cn'
-import { fmtClock, fmtNumber, fmtWhen } from '../../lib/format'
+import { fmtClock, fmtNumber, fmtPct, fmtWhen } from '../../lib/format'
 import { useActiveJobs, useStreamConnected } from '../../state/events'
 import { Popover } from '../ui/Popover'
+import { t } from '../../i18n'
 
 type Tone = 'running' | 'cooldown' | 'error' | 'ok' | 'idle'
 
-const QUEUE_META: Record<JobQueue, { label: string; cls: string }> = {
-  critical: { label: 'Priorité critique', cls: 'border-accent/30 bg-accent/15 text-accent' },
-  default: { label: 'File standard', cls: 'border-info/30 bg-info/12 text-info' },
-  low: { label: 'Tâche de fond', cls: 'border-line bg-track text-ink-3' },
+const QUEUE_CLS: Record<JobQueue, string> = {
+  critical: 'border-accent/30 bg-accent/15 text-accent',
+  default: 'border-info/30 bg-info/12 text-info',
+  low: 'border-line bg-track text-ink-3',
 }
 
 function syncTone(s: SyncStatus | undefined, hasActiveJob: boolean, now = Date.now()): Tone {
@@ -36,19 +37,18 @@ function jobProgressPct(job: JobStatus): number | null {
 
 function jobHeadline(job: JobStatus): string {
   if (job.processed !== null && job.total !== null && job.total > 0) {
-    const unit = job.kind.startsWith('sync.') ? ' séances traitées' : ''
-    return `${job.label} : ${job.processed}/${job.total}${unit}`
+    return t(job.kind.startsWith('sync.') ? 'layout.sync.processed' : 'layout.sync.progress', { label: job.label, processed: job.processed, total: job.total })
   }
   return job.label
 }
 
 function label(s: SyncStatus | undefined, tone: Tone, primaryJob: JobStatus | null): string {
   if (primaryJob) return jobHeadline(primaryJob)
-  if (tone === 'running') return 'Synchro…'
-  if (tone === 'cooldown') return `Pause API · ${fmtClock(s?.cooldownUntil)}`
-  if (tone === 'error') return 'Synchro partielle'
-  if (tone === 'ok') return `Synchro ${fmtWhen(s?.lastSyncAt)}`
-  return 'Jamais synchronisé'
+  if (tone === 'running') return t('layout.sync.running')
+  if (tone === 'cooldown') return t('layout.sync.cooldown', { time: fmtClock(s?.cooldownUntil) })
+  if (tone === 'error') return t('layout.sync.partial')
+  if (tone === 'ok') return t('layout.sync.synced', { when: fmtWhen(s?.lastSyncAt) })
+  return t('layout.sync.never')
 }
 
 function ProviderLine({ name, p }: { name: string; p: ProviderSync | null }) {
@@ -56,19 +56,19 @@ function ProviderLine({ name, p }: { name: string; p: ProviderSync | null }) {
     return (
       <li className="flex items-center justify-between gap-3 py-1.5 text-sm">
         <span className="text-ink-2">{name}</span>
-        <span className="text-ink-3">non connecté</span>
+        <span className="text-ink-3">{t('layout.sync.notConnected')}</span>
       </li>
     )
   return (
     <li className="py-1.5 text-sm">
       <div className="flex items-center justify-between gap-3">
         <span className="font-medium text-ink">{name}</span>
-        <span className="num text-ink-3">{p.lastSyncAt ? fmtWhen(p.lastSyncAt) : 'jamais'}</span>
+        <span className="num text-ink-3">{p.lastSyncAt ? fmtWhen(p.lastSyncAt) : t('layout.sync.neverShort')}</span>
       </div>
       <p className="text-xs text-ink-3">
         {p.newActivities > 0
-          ? `${fmtNumber(p.newActivities)} nouvelle${p.newActivities > 1 ? 's' : ''} activité${p.newActivities > 1 ? 's' : ''}`
-          : 'Aucune nouvelle activité'}
+          ? t('layout.sync.newActivities', { count: fmtNumber(p.newActivities) })
+          : t('layout.sync.noNewActivity')}
       </p>
       {p.error && <p className="mt-0.5 text-xs text-warn">{p.error}</p>}
     </li>
@@ -77,7 +77,7 @@ function ProviderLine({ name, p }: { name: string; p: ProviderSync | null }) {
 
 function ActiveJobRow({ job }: { job: JobStatus }) {
   const pct = jobProgressPct(job)
-  const q = QUEUE_META[job.queue]
+  const q = { label: t(`layout.sync.queue.${job.queue}`), cls: QUEUE_CLS[job.queue] }
   return (
     <li className="py-2 text-xs">
       <div className="flex items-start justify-between gap-2">
@@ -86,7 +86,7 @@ function ActiveJobRow({ job }: { job: JobStatus }) {
       </div>
       {job.state === 'retrying' && (
         <p className="num mt-0.5 text-[11px] text-warn">
-          Nouvelle tentative ({job.attempts}/{job.maxAttempts})
+          {t('layout.sync.retrying', { attempts: job.attempts, max: job.maxAttempts })}
         </p>
       )}
       {pct !== null && (
@@ -134,13 +134,13 @@ export function SyncIndicator() {
             'inline-flex h-10 min-w-10 flex-none items-center justify-center gap-2 rounded-full border border-line bg-track/70 px-2.5 transition-colors hover:bg-track xl:px-3',
             tone === 'cooldown' || tone === 'error' ? 'border-warn/35' : tone === 'running' ? 'border-accent/35' : '',
           )}
-          aria-label={`État de la synchronisation : ${text}`}
+          aria-label={t('layout.sync.status', { text })}
         >
           <Icon className={cn('size-[1.125rem]', color, tone === 'running' && 'animate-spin')} aria-hidden="true" />
           <span className="num hidden max-w-[13rem] truncate text-xs font-semibold text-ink-2 2xl:inline">{text}</span>
           {primaryPct !== null && (
             <span className="num hidden rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent sm:inline">
-              {primaryPct} %
+              {fmtPct(primaryPct, 0)}
             </span>
           )}
         </button>
@@ -150,20 +150,20 @@ export function SyncIndicator() {
       {() => (
         <div>
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-ink">Synchronisation & file</p>
+            <p className="text-sm font-semibold text-ink">{t('layout.sync.title')}</p>
             <span className={cn('inline-flex items-center gap-1 text-[11px]', streamLive || IS_MOCK ? 'text-ok' : 'text-ink-3')}>
               <Radio className="size-3" aria-hidden="true" />
-              {IS_MOCK ? 'Flux simulé' : streamLive ? 'Temps réel actif' : 'Connexion…'}
+              {IS_MOCK ? t('layout.sync.simulated') : streamLive ? t('layout.sync.live') : t('layout.sync.connecting')}
             </span>
           </div>
           <p className={cn('num mt-0.5 text-xs', color)} aria-live="polite">
             {text}
           </p>
           {tone === 'cooldown' && (
-            <p className="mt-1 text-xs text-ink-3">Le fournisseur limite les requêtes (429). Stride reprendra automatiquement après la pause.</p>
+            <p className="mt-1 text-xs text-ink-3">{t('layout.sync.cooldownHint')}</p>
           )}
           {activeJobs.length > 0 && (
-            <ul className="mt-2 divide-y divide-line border-t border-line" aria-label="Tâches en cours">
+            <ul className="mt-2 divide-y divide-line border-t border-line" aria-label={t('layout.sync.activeJobs')}>
               {activeJobs.map((j) => (
                 <ActiveJobRow key={j.id} job={j} />
               ))}
@@ -177,13 +177,13 @@ export function SyncIndicator() {
           )}
           {missing.length > 0 && (
             <p className="mt-2 text-xs text-warn">
-              Strava : autorisations incomplètes, activités et kudos non lus.{' '}
+              {t('layout.sync.stravaScopes')}{' '}
               <Link href="/settings#integrations" className="font-semibold underline underline-offset-2">
-                Reconnecter
+                {t('layout.sync.reconnect')}
               </Link>
             </p>
           )}
-          {s?.lastLiveAt && <p className="num mt-2 text-xs text-ink-3">Dernier appel live : {fmtWhen(s.lastLiveAt)}</p>}
+          {s?.lastLiveAt && <p className="num mt-2 text-xs text-ink-3">{t('layout.sync.lastLive', { when: fmtWhen(s.lastLiveAt) })}</p>}
           {connected && (
             <button
               type="button"
@@ -193,7 +193,7 @@ export function SyncIndicator() {
               onClick={() => start.mutate()}
             >
               <RefreshCw className={cn('size-4', start.isPending && 'animate-spin')} aria-hidden="true" />
-              Synchroniser maintenant
+              {t('layout.sync.syncNow')}
             </button>
           )}
         </div>

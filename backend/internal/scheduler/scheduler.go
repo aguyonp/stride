@@ -28,6 +28,9 @@ type Options struct {
 	LastSync func(ctx context.Context, userID int64) (time.Time, error)
 	// Purge runs at startup then every PurgeEvery (expired sessions, invitations, old api events).
 	Purge func(ctx context.Context) error
+	// Backup runs daily at BackupHour (atomic snapshot, optional S3 upload).
+	Backup     func(ctx context.Context) error
+	BackupHour int
 
 	Log   *slog.Logger
 	Now   func() time.Time
@@ -211,13 +214,32 @@ func (s *Scheduler) runPurge(ctx context.Context) {
 	}
 }
 
+func (s *Scheduler) runBackup(ctx context.Context) {
+	if s.o.Backup == nil {
+		return
+	}
+	for {
+		next := NextRun(s.o.Now(), s.o.BackupHour, s.o.Location)
+		if err := s.waitUntil(ctx, next); err != nil {
+			return
+		}
+		if err := s.o.Backup(ctx); err != nil && ctx.Err() == nil {
+			s.o.Log.Error("💾 Sauvegarde quotidienne en échec", "err", err.Error())
+		}
+	}
+}
+
 // Run blocks until ctx is cancelled.
 func (s *Scheduler) Run(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		s.runPurge(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		s.runBackup(ctx)
 	}()
 	s.runDaily(ctx)
 	wg.Wait()

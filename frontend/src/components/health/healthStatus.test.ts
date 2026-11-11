@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { HealthStatusInput } from '../../api/types'
 import { addZone, changeZone, draftFrom, healthSummary, primaryZone, setMode, toHealthInput, validateHealthDraft } from './healthStatus'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const tracking: HealthStatusInput = {
   mode: 'tracking',

@@ -19,6 +19,10 @@ import {
   validatePlanForm,
   validateWeekTargets,
 } from './cycleModel'
+import { setLang } from '../../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const actuals: CycleActuals = {
   plannedVolumeKm: 40,

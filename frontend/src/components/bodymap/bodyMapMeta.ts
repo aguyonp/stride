@@ -1,71 +1,25 @@
 import type { BodyCorrelationFactor, BodySide, BodyZone, BodyZoneSummary } from '../../api/types'
 import { fmtNumber, isNum } from '../../lib/format'
+import { lazyRecord, t } from '../../i18n'
 
-export const BODY_ZONE_META: Record<
-  BodyZone,
-  { label: string; short: string; view: 'Antérieure' | 'Postérieure' | 'Plantaire'; hint: string }
-> = {
-  knee_pfps: {
-    label: 'Rotule / Genou (SFP)',
-    short: 'Rotule / Genou',
-    view: 'Antérieure',
-    hint: 'Syndrome fémoro-patellaire, descentes, escaliers, flexion prolongée.',
-  },
-  shin_splints: {
-    label: 'Périoste tibial (Périostite)',
-    short: 'Périoste tibial',
-    view: 'Antérieure',
-    hint: 'Bord postéro-médial du tibia, chocs répétés et hausses brusques de volume.',
-  },
-  iliotibial_band: {
-    label: 'Bandelette ilio-tibiale (TFL)',
-    short: 'Bandelette TFL',
-    view: 'Antérieure',
-    hint: 'Face externe du genou et de la cuisse, dévers et allongement de foulée.',
-  },
-  achilles: {
-    label: 'Tendon d’Achille',
-    short: 'Tendon d’Achille',
-    view: 'Postérieure',
-    hint: 'Raideur matinale à froid J+1, travail de pied, drop faible ou D+.',
-  },
-  plantar_fascia: {
-    label: 'Aponévrose plantaire',
-    short: 'Aponévrose',
-    view: 'Plantaire',
-    hint: 'Insertion calcanéenne et voûte plantaire, premiers pas au lever.',
-  },
-  hamstrings_calves: {
-    label: 'Ischio-jambiers / Mollets',
-    short: 'Ischios / Mollets',
-    view: 'Postérieure',
-    hint: 'Chaîne postérieure, vitesse haute, fatigue neuromusculaire.',
-  },
-  ankle: {
-    label: 'Cheville',
-    short: 'Cheville',
-    view: 'Antérieure',
-    hint: 'Malléoles et ligaments : entorses, appuis instables, terrains techniques.',
-  },
-  forefoot: {
-    label: 'Avant-pied / Métatarses',
-    short: 'Avant-pied',
-    view: 'Plantaire',
-    hint: 'Têtes et diaphyses métatarsiennes, attaque avant-pied, hausse de volume.',
-  },
-  hip: {
-    label: 'Hanche / Bassin',
-    short: 'Hanche',
-    view: 'Antérieure',
-    hint: 'Face latérale (moyen fessier), pli de l’aine et pubis.',
-  },
-  lower_back: {
-    label: 'Bas du dos (lombaires)',
-    short: 'Lombaires',
-    view: 'Postérieure',
-    hint: 'Région lombaire et sacro-iliaque, gainage, fatigue posturale.',
-  },
+const ZONE_VIEW: Record<BodyZone, 'Antérieure' | 'Postérieure' | 'Plantaire'> = {
+  knee_pfps: 'Antérieure',
+  shin_splints: 'Antérieure',
+  iliotibial_band: 'Antérieure',
+  achilles: 'Postérieure',
+  plantar_fascia: 'Plantaire',
+  hamstrings_calves: 'Postérieure',
+  ankle: 'Antérieure',
+  forefoot: 'Plantaire',
+  hip: 'Antérieure',
+  lower_back: 'Postérieure',
 }
+
+/** Zone labels in the active language; `view` is a stable internal key (anatomy panel). */
+export const BODY_ZONE_META: Record<BodyZone, { label: string; short: string; view: 'Antérieure' | 'Postérieure' | 'Plantaire'; hint: string }> = lazyRecord(
+  Object.keys(ZONE_VIEW) as BodyZone[],
+  (z) => ({ label: t(`health.zones.${z}.label`), short: t(`health.zones.${z}.short`), view: ZONE_VIEW[z], hint: t(`health.zones.${z}.hint`) }),
+)
 
 export const ALL_BODY_ZONES: BodyZone[] = [
   'knee_pfps',
@@ -80,25 +34,29 @@ export const ALL_BODY_ZONES: BodyZone[] = [
   'lower_back',
 ]
 
-export const BODY_SIDE_LABEL: Record<BodySide, string> = {
-  left: 'Gauche',
-  right: 'Droite',
-  both: 'Bilatéral',
-}
+export const BODY_SIDE_LABEL: Record<BodySide, string> = lazyRecord(['left', 'right', 'both'] as const, (k) => t(`health.bodymap.side.${k}`))
 
-export const TREND_META: Record<BodyZoneSummary['trend'], { label: string; cls: string }> = {
-  improving: { label: 'En amélioration', cls: 'border-ok/30 bg-ok/12 text-ok' },
-  stable: { label: 'Stable', cls: 'border-line-strong bg-track text-ink-2' },
-  worsening: { label: 'En hausse', cls: 'border-danger/30 bg-danger/12 text-danger' },
-  none: { label: 'Aucun signal', cls: 'border-line bg-track/60 text-ink-3' },
+const TREND_CLS: Record<BodyZoneSummary['trend'], string> = {
+  improving: 'border-ok/30 bg-ok/12 text-ok',
+  stable: 'border-line-strong bg-track text-ink-2',
+  worsening: 'border-danger/30 bg-danger/12 text-danger',
+  none: 'border-line bg-track/60 text-ink-3',
 }
+export const TREND_META: Record<BodyZoneSummary['trend'], { label: string; cls: string }> = lazyRecord(['improving', 'stable', 'worsening', 'none'] as const, (k) => ({
+  label: t(`health.bodymap.trend.${k}`),
+  cls: TREND_CLS[k],
+}))
 
-const CONFIDENCE_META: Record<NonNullable<BodyCorrelationFactor['confidence']>, { label: string; cls: string }> = {
-  high: { label: 'Fiabilité élevée', cls: 'border-ok/30 bg-ok/12 text-ok' },
-  moderate: { label: 'Fiabilité modérée', cls: 'border-info/30 bg-info/12 text-info' },
-  low: { label: 'Fiabilité faible', cls: 'border-warn/30 bg-warn/12 text-warn' },
-  insufficient: { label: 'Données insuffisantes', cls: 'border-line bg-track text-ink-3' },
+const CONFIDENCE_CLS: Record<NonNullable<BodyCorrelationFactor['confidence']>, string> = {
+  high: 'border-ok/30 bg-ok/12 text-ok',
+  moderate: 'border-info/30 bg-info/12 text-info',
+  low: 'border-warn/30 bg-warn/12 text-warn',
+  insufficient: 'border-line bg-track text-ink-3',
 }
+const CONFIDENCE_META: Record<NonNullable<BodyCorrelationFactor['confidence']>, { label: string; cls: string }> = lazyRecord(['high', 'moderate', 'low', 'insufficient'] as const, (k) => ({
+  label: t(`health.bodymap.confidence.${k}`),
+  cls: CONFIDENCE_CLS[k],
+}))
 
 /** True when the backend could not compute a usable comparison for this factor. */
 export function isCorrelationInsufficient(c: BodyCorrelationFactor): boolean {
@@ -117,14 +75,14 @@ export function fmtMeasure(v: number | null, unit: string): string | null {
 
 export function correlationSample(c: BodyCorrelationFactor): string | null {
   if (!isNum(c.symptomaticRuns) || !isNum(c.baselineRuns)) return null
-  return `${c.symptomaticRuns} avec gêne · ${c.baselineRuns} réf.`
+  return t('health.bodymap.sample', { symptomatic: c.symptomaticRuns, baseline: c.baselineRuns })
 }
 
 export function shoeHighlightDetail(h: NonNullable<BodyCorrelationFactor['shoeHighlight']>): string {
   const parts: string[] = []
-  if (isNum(h.dropMm)) parts.push(`Drop ${fmtNumber(h.dropMm)} mm`)
+  if (isNum(h.dropMm)) parts.push(t('health.bodymap.drop', { value: fmtNumber(h.dropMm) }))
   if (isNum(h.distanceKm)) parts.push(`${fmtNumber(h.distanceKm, 0)} km`)
-  if (isNum(h.painEpisodes)) parts.push(`${h.painEpisodes} épisode${h.painEpisodes > 1 ? 's' : ''}`)
+  if (isNum(h.painEpisodes)) parts.push(t('health.bodymap.episodes', { count: h.painEpisodes }))
   return parts.join(' · ')
 }
 

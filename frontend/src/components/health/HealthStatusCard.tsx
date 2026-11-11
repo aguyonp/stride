@@ -9,6 +9,7 @@ import { Skeleton } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
 import { HealthStatusForm } from './HealthStatusForm'
 import { draftFrom, HEALTH_MODE_LABEL, toHealthInput, validateHealthDraft, zoneText } from './healthStatus'
+import { t } from '../../i18n'
 
 /** Single place where the health status is shown and changed (golden source for presets, prompts and the Ressenti form). */
 export function HealthStatusCard({ today }: { today: string }) {
@@ -27,7 +28,7 @@ export function HealthStatusCard({ today }: { today: string }) {
     save.mutate(toHealthInput(draft), {
       onSuccess: () => {
         setDraft(null)
-        toast({ title: 'État de santé enregistré', tone: 'success' })
+        toast({ title: t('health.status.saved'), tone: 'success' })
       },
       onError: (e) => setError(e.message),
     })
@@ -35,12 +36,12 @@ export function HealthStatusCard({ today }: { today: string }) {
 
   return (
     <Card
-      title="État de santé"
+      title={t('health.status.title')}
       icon={<HeartPulse className="size-4" />}
       action={
         s && !draft ? (
           <button type="button" className="btn btn-ghost h-9 min-h-9 px-3 text-xs" onClick={() => setDraft(draftFrom(s))}>
-            <Pencil className="size-3.5" aria-hidden="true" /> Modifier
+            <Pencil className="size-3.5" aria-hidden="true" /> {t('health.status.edit')}
           </button>
         ) : undefined
       }
@@ -55,11 +56,11 @@ export function HealthStatusCard({ today }: { today: string }) {
           {error && <InlineError>{error}</InlineError>}
           <div className="flex justify-end gap-2">
             <button type="button" className="btn btn-ghost" onClick={() => (setDraft(null), setError(null))}>
-              Annuler
+              {t('common.actions.cancel')}
             </button>
             <button type="button" className="btn btn-primary" onClick={submit} disabled={save.isPending}>
               {save.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-              Enregistrer
+              {t('common.actions.save')}
             </button>
           </div>
         </div>

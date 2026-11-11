@@ -49,6 +49,8 @@ type Profile struct {
 	Timezone    string       `json:"timezone"`
 	Thresholds  Thresholds   `json:"thresholds"`
 	PaceTargets []PaceTarget `json:"paceTargets"`
+	// Language is the UI/report/prompt language (§15.2): "fr", "en" or nil (follow the browser).
+	Language *string `json:"language"`
 }
 
 type PainLabels struct {
@@ -182,6 +184,16 @@ func (p *Profile) Normalize() error {
 			p.InjuredSide = nil
 		default:
 			errs = append(errs, errors.New("injuredSide doit valoir left, right, both ou null"))
+		}
+	}
+	if p.Language != nil {
+		switch l := strings.ToLower(strings.TrimSpace(*p.Language)); l {
+		case "fr", "en":
+			p.Language = &l
+		case "":
+			p.Language = nil
+		default:
+			errs = append(errs, errors.New("language doit valoir fr, en ou null"))
 		}
 	}
 	p.Timezone = strings.TrimSpace(p.Timezone)

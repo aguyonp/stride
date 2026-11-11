@@ -7,6 +7,10 @@ import {
   isCorrelationInsufficient,
   shoeHighlightDetail,
 } from './bodyMapMeta'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const factor = (over: Partial<BodyCorrelationFactor> = {}): BodyCorrelationFactor => ({
   zone: 'knee_pfps',

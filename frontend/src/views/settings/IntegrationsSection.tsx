@@ -5,7 +5,7 @@ import { useIntegrationMutations, useIntegrations } from '../../api/queries'
 import type { Integrations } from '../../api/types'
 import { GarminGuide, GarminKeyForm, garminErrorMessage } from '../../components/profile/GarminKeyForm'
 import { ProviderBadge } from '../../components/profile/ProviderBadge'
-import { StravaConnectButton, STRAVA_UNAVAILABLE } from '../../components/profile/StravaConnect'
+import { StravaConnectButton, stravaUnavailable } from '../../components/profile/StravaConnect'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { KeyValue } from '../../components/ui/Misc'
 import { Skeleton } from '../../components/ui/Skeleton'
@@ -13,6 +13,7 @@ import { useToast } from '../../components/ui/Toast'
 import { fmtDateTime, fmtWhen } from '../../lib/format'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
+import { lazyRecord, t } from '../../i18n'
 
 function ProviderCard({ icon, title, badge, children }: { icon: ReactNode; title: string; badge: ReactNode; children: ReactNode }) {
   return (
@@ -33,7 +34,7 @@ function ProviderCard({ icon, title, badge, children }: { icon: ReactNode; title
 
 function LastError({ message }: { message: string | null }) {
   if (!message) return null
-  return <p className="mt-3 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-ink-2">Dernière erreur : {message}</p>
+  return <p className="mt-3 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-ink-2">{t('settings.integrations.lastError', { message })}</p>
 }
 
 export function IntegrationsSection() {
@@ -41,12 +42,12 @@ export function IntegrationsSection() {
   return (
     <Section
       id="integrations"
-      title="Intégrations"
+      title={t('settings.integrations.title')}
       icon={<Plug />}
-      description="Garmin Connect (clé Personal API), Strava (OAuth) et météo. Connecte l’un, l’autre, les deux… ou aucun : Stride fonctionne aussi en saisie manuelle."
+      description={t('settings.integrations.description')}
     >
       {integ.isError ? (
-        <ErrorView error={integ.error} onRetry={() => void integ.refetch()} title="Intégrations indisponibles" />
+        <ErrorView error={integ.error} onRetry={() => void integ.refetch()} title={t('settings.integrations.unavailable')} />
       ) : !integ.data ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Skeleton className="h-48" />
@@ -61,11 +62,11 @@ export function IntegrationsSection() {
           {(integ.data.garmin.connected || integ.data.strava.connected) && <HistoryImport />}
           <p className="flex items-center gap-2 text-sm text-ink-3">
             <KeyRound className="size-4 flex-none" aria-hidden="true" />
-            Connexions propres à ton compte : ta clé Garmin, tes jetons Strava, ta clé IA et tes chaussures ne sont visibles que par toi (chiffrés côté serveur).
+            {t('settings.integrations.privacy')}
           </p>
           <p className="flex items-center gap-2 text-sm text-ink-3">
             <CloudSun className="size-4 flex-none" aria-hidden="true" />
-            Météo des séances : {integ.data.weather.enabled ? `${integ.data.weather.provider || 'Open-Meteo'} (activée, sans clé)` : 'désactivée sur ce serveur'}
+            {integ.data.weather.enabled ? t('settings.integrations.weatherOn', { provider: integ.data.weather.provider || 'Open-Meteo' }) : t('settings.integrations.weatherOff')}
           </p>
         </div>
       )}
@@ -82,10 +83,10 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
   const test = () =>
     m.testGarmin.mutate(undefined, {
       onSuccess: (v) => {
-        if (v && 'ok' in v && v.ok === false) toast({ tone: 'error', title: 'Test Garmin échoué', description: v.message })
-        else toast({ title: 'Connexion Garmin OK' })
+        if (v && 'ok' in v && v.ok === false) toast({ tone: 'error', title: t('settings.integrations.garminTestFailed'), description: v.message })
+        else toast({ title: t('settings.integrations.garminOk') })
       },
-      onError: (e) => toast({ tone: 'error', title: 'Test Garmin échoué', description: garminErrorMessage(e) }),
+      onError: (e) => toast({ tone: 'error', title: t('settings.integrations.garminTestFailed'), description: garminErrorMessage(e) }),
     })
 
   return (
@@ -94,34 +95,34 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
         <>
           <KeyValue
             items={[
-              ['Clé', <span className="font-mono">{g.keyHint ?? '—'}</span>],
-              ['Jeton valide jusqu’au', fmtDateTime(g.tokenExpiresAt)],
-              ['Dernière synchro', g.lastSyncAt ? fmtWhen(g.lastSyncAt) : 'jamais'],
+              [t('settings.integrations.key'), <span className="font-mono">{g.keyHint ?? '—'}</span>],
+              [t('settings.integrations.tokenUntil'), fmtDateTime(g.tokenExpiresAt)],
+              [t('settings.integrations.lastSync'), g.lastSyncAt ? fmtWhen(g.lastSyncAt) : t('settings.integrations.never')],
             ]}
           />
           <LastError message={g.lastError} />
-          <p className="mt-3 text-xs text-ink-3">L’API personnelle Garmin n’expose ni records, ni météo, ni chaussures, ni likes, ni envoi de séances : Stride les calcule, les prend chez Strava ou Open-Meteo, ou passe par le fichier .FIT.</p>
+          <p className="mt-3 text-xs text-ink-3">{t('settings.integrations.garminLimits')}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className="btn btn-ghost" onClick={test} disabled={m.testGarmin.isPending}>
               {m.testGarmin.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
-              Tester
+              {t('settings.integrations.test')}
             </button>
             <button type="button" className="btn btn-ghost" aria-expanded={replace} onClick={() => setReplace((v) => !v)}>
-              Remplacer la clé
+              {t('settings.integrations.replaceKey')}
             </button>
             <button type="button" className="btn btn-danger" onClick={() => setConfirm(true)}>
               <Unplug className="size-4" aria-hidden="true" />
-              Déconnecter
+              {t('settings.integrations.disconnect')}
             </button>
           </div>
           {replace && (
             <div className="mt-4 border-t border-line pt-4">
               <GarminKeyForm
-                submitLabel="Remplacer la clé"
+                submitLabel={t('settings.integrations.replaceKey')}
                 autoFocus
                 onConnected={() => {
                   setReplace(false)
-                  toast({ title: 'Nouvelle clé Garmin enregistrée' })
+                  toast({ title: t('settings.integrations.newKeySaved') })
                 }}
               />
             </div>
@@ -131,24 +132,24 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
         <div className="space-y-4">
           <LastError message={g.lastError} />
           <GarminGuide />
-          <GarminKeyForm onConnected={() => toast({ title: 'Garmin connecté', description: 'La synchronisation démarre.' })} />
+          <GarminKeyForm onConnected={() => toast({ title: t('settings.integrations.garminConnected'), description: t('settings.integrations.syncStarting') })} />
         </div>
       )}
       <ConfirmDialog
         open={confirm}
         onClose={() => setConfirm(false)}
-        title="Déconnecter Garmin ?"
-        message={<p>La clé chiffrée et les jetons Garmin seront supprimés. Les activités déjà enregistrées restent disponibles.</p>}
-        confirmLabel="Déconnecter"
+        title={t('settings.integrations.garminDisconnectTitle')}
+        message={<p>{t('settings.integrations.garminDisconnectBody')}</p>}
+        confirmLabel={t('settings.integrations.disconnect')}
         danger
         busy={m.disconnectGarmin.isPending}
         onConfirm={() =>
           m.disconnectGarmin.mutate(undefined, {
             onSuccess: () => {
               setConfirm(false)
-              toast({ title: 'Garmin déconnecté' })
+              toast({ title: t('settings.integrations.garminDisconnected') })
             },
-            onError: (e) => toast({ tone: 'error', title: 'Déconnexion impossible', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('settings.integrations.disconnectFailed'), description: e.message }),
           })
         }
       />
@@ -156,7 +157,7 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
   )
 }
 
-const SCOPE_LABEL: Record<string, string> = { read: 'profil public', 'activity:read_all': 'activités (y compris privées)', 'profile:read_all': 'profil complet et chaussures' }
+const SCOPE_LABEL: Record<string, string> = lazyRecord(['read', 'activity:read_all', 'profile:read_all'] as const, (k) => t(`settings.integrations.scopes.${k}`))
 
 function StravaCard({ s }: { s: Integrations['strava'] }) {
   const { toast } = useToast()
@@ -164,61 +165,61 @@ function StravaCard({ s }: { s: Integrations['strava'] }) {
   const [confirm, setConfirm] = useState(false)
   const missing = s.missingScopes ?? []
   return (
-    <ProviderCard icon={<Bike />} title="Strava" badge={s.available ? <ProviderBadge status={s.status} connected={s.connected} /> : <span className="chip border border-line bg-track text-ink-3">Indisponible</span>}>
+    <ProviderCard icon={<Bike />} title="Strava" badge={s.available ? <ProviderBadge status={s.status} connected={s.connected} /> : <span className="chip border border-line bg-track text-ink-3">{t('settings.integrations.unavailableChip')}</span>}>
       {!s.available ? (
-        <p className="text-sm text-ink-3">{STRAVA_UNAVAILABLE}</p>
+        <p className="text-sm text-ink-3">{stravaUnavailable()}</p>
       ) : s.connected ? (
         <>
           <KeyValue
             items={[
-              ['Athlète', s.athleteName ?? '—'],
-              ['Dernière synchro', s.lastSyncAt ? fmtWhen(s.lastSyncAt) : 'jamais'],
-              ...(s.scopes?.length ? ([['Autorisations', s.scopes.map((x) => SCOPE_LABEL[x] ?? x).join(', ')]] as [string, string][]) : []),
+              [t('settings.integrations.athlete'), s.athleteName ?? '—'],
+              [t('settings.integrations.lastSync'), s.lastSyncAt ? fmtWhen(s.lastSyncAt) : t('settings.integrations.never')],
+              ...(s.scopes?.length ? ([[t('settings.integrations.permissions'), s.scopes.map((x) => SCOPE_LABEL[x] ?? x).join(', ')]] as [string, string][]) : []),
             ]}
           />
           <LastError message={s.lastError} />
           {missing.length > 0 && (
             <div role="status" className="mt-3 rounded-xl border border-warn/30 bg-warn/[0.08] p-3 text-sm text-ink-2">
               <p className="flex items-center gap-1.5 font-semibold text-ink">
-                <ShieldAlert className="size-4 text-warn" aria-hidden="true" /> Autorisations Strava incomplètes
+                <ShieldAlert className="size-4 text-warn" aria-hidden="true" /> {t('settings.integrations.stravaScopesTitle')}
               </p>
               <p className="mt-1 text-xs">
-                Il manque : {missing.map((x) => SCOPE_LABEL[x] ?? x).join(', ')}. Sans elles, Stride ne lit ni tes activités, ni les kudos, ni tes chaussures Strava. Reconnecte-toi et coche toutes les cases demandées.
+                {t('settings.integrations.stravaScopesBody', { scopes: missing.map((x) => SCOPE_LABEL[x] ?? x).join(', ') })}
               </p>
               <div className="mt-2.5">
-                <StravaConnectButton strava={s} returnPath="/settings" label="Reconnecter Strava" />
+                <StravaConnectButton strava={s} returnPath="/settings" label={t('settings.integrations.reconnectStrava')} />
               </div>
             </div>
           )}
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className="btn btn-danger" onClick={() => setConfirm(true)}>
               <Unplug className="size-4" aria-hidden="true" />
-              Déconnecter
+              {t('settings.integrations.disconnect')}
             </button>
           </div>
         </>
       ) : (
         <div className="space-y-3">
           <LastError message={s.lastError} />
-          <p className="text-sm text-ink-2">Titre, description, RPE, Relative Effort et chaussures Strava enrichissent tes séances (fusion automatique avec Garmin).</p>
+          <p className="text-sm text-ink-2">{t('settings.integrations.stravaPitch')}</p>
           <StravaConnectButton strava={s} returnPath="/settings" />
         </div>
       )}
       <ConfirmDialog
         open={confirm}
         onClose={() => setConfirm(false)}
-        title="Déconnecter Strava ?"
-        message={<p>Stride révoque son accès Strava et supprime les jetons. Les séances déjà fusionnées restent enregistrées.</p>}
-        confirmLabel="Déconnecter"
+        title={t('settings.integrations.stravaDisconnectTitle')}
+        message={<p>{t('settings.integrations.stravaDisconnectBody')}</p>}
+        confirmLabel={t('settings.integrations.disconnect')}
         danger
         busy={m.disconnectStrava.isPending}
         onConfirm={() =>
           m.disconnectStrava.mutate(undefined, {
             onSuccess: () => {
               setConfirm(false)
-              toast({ title: 'Strava déconnecté' })
+              toast({ title: t('settings.integrations.stravaDisconnected') })
             },
-            onError: (e) => toast({ tone: 'error', title: 'Déconnexion impossible', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('settings.integrations.disconnectFailed'), description: e.message }),
           })
         }
       />

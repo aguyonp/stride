@@ -1,12 +1,15 @@
 import type { AdminIntegration, AdminUser, AlertLevel, Invitation, JobGroup, JobState } from '../../api/types'
 import { cn } from '../../lib/cn'
-import { fmtNumber } from '../../lib/format'
+import { fmtNumber, fmtPct } from '../../lib/format'
+import { lazyRecord, t } from '../../i18n'
 
-const PROVIDER_NAME: Record<string, string> = { garmin: 'Garmin', strava: 'Strava', 'open-meteo': 'Open-Meteo', llm: 'IA (LLM)', webhook: 'Webhooks' }
+const PROVIDER_NAME: Record<string, string> = lazyRecord(['garmin', 'strava', 'open-meteo', 'llm', 'webhook'] as const, (k) =>
+  k === 'llm' ? t('admin.common.llm') : { garmin: 'Garmin', strava: 'Strava', 'open-meteo': 'Open-Meteo', webhook: 'Webhooks' }[k],
+)
 export const providerName = (p: string) => PROVIDER_NAME[p] ?? p
 
 export function userName(users: AdminUser[] | undefined, id: number): string {
-  if (id === 0) return 'Système'
+  if (id === 0) return t('admin.common.system')
   return users?.find((u) => u.id === id)?.displayName ?? `#${id}`
 }
 
@@ -19,12 +22,16 @@ export function invitationState(inv: Invitation, now = Date.now()): InvitationSt
   return 'active'
 }
 
-export const INVITATION_STATE: Record<InvitationState, { label: string; cls: string }> = {
-  active: { label: 'Active', cls: 'border-ok/30 bg-ok/10 text-ok' },
-  expired: { label: 'Expirée', cls: 'border-line bg-track text-ink-3' },
-  revoked: { label: 'Révoquée', cls: 'border-danger/30 bg-danger/10 text-danger' },
-  exhausted: { label: 'Épuisée', cls: 'border-line bg-track text-ink-2' },
+const INVITATION_CLS: Record<InvitationState, string> = {
+  active: 'border-ok/30 bg-ok/10 text-ok',
+  expired: 'border-line bg-track text-ink-3',
+  revoked: 'border-danger/30 bg-danger/10 text-danger',
+  exhausted: 'border-line bg-track text-ink-2',
 }
+export const INVITATION_STATE: Record<InvitationState, { label: string; cls: string }> = lazyRecord(['active', 'expired', 'revoked', 'exhausted'] as const, (k) => ({
+  label: t(`admin.common.invitation.${k}`),
+  cls: INVITATION_CLS[k],
+}))
 
 /** Compact switch for table cells (accessible name required). */
 export function MiniSwitch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
@@ -57,17 +64,17 @@ export function UsageBar({ label, used, limit }: { label: string; used: number; 
           {used} / {limit}
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-track" role="img" aria-label={`${label} : ${used} sur ${limit} (${Math.round(pct)} %)`}>
+      <div className="h-2 overflow-hidden rounded-full bg-track" role="img" aria-label={t('admin.common.quotaAria', { label, used, limit, pct: fmtPct(Math.round(pct), 0) })}>
         <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: color }} />
       </div>
     </div>
   )
 }
 
-/** Binary sizes in French units: « 12,4 Mo ». */
+/** Binary sizes in the active language's units: « 12,4 Mo » / "12.4 MB". */
 export function fmtBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0 o'
-  const units = ['o', 'Ko', 'Mo', 'Go', 'To']
+  const units = t('admin.common.bytes').split(' ')
+  if (!Number.isFinite(n) || n <= 0) return `0 ${units[0]}`
   const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
   const v = n / 1024 ** i
   return `${fmtNumber(v, i === 0 || v >= 100 ? 0 : 1, { trim: true })} ${units[i]}`
@@ -79,23 +86,23 @@ export function fmtUptime(seconds: number): string {
   const d = Math.floor(s / 86_400)
   const h = Math.floor((s % 86_400) / 3600)
   const m = Math.floor((s % 3600) / 60)
-  if (d > 0) return `${d} j ${h} h`
-  if (h > 0) return `${h} h ${String(m).padStart(2, '0')} min`
-  if (m > 0) return `${m} min`
-  return `${s} s`
+  if (d > 0) return t('admin.common.uptimeDays', { d, h })
+  if (h > 0) return t('admin.common.uptimeHours', { h, m: String(m).padStart(2, '0') })
+  if (m > 0) return t('admin.common.uptimeMinutes', { m })
+  return t('admin.common.uptimeSeconds', { s })
 }
 
-export const JOB_GROUP_LABEL: Record<JobGroup, string> = { sync: 'Synchro & imports', llm: 'Coach IA', webhook: 'Notifications' }
+export const JOB_GROUP_LABEL: Record<JobGroup, string> = lazyRecord(['sync', 'llm', 'webhook'] as const, (k) => t(`admin.common.jobGroup.${k}`))
 
 export const JOB_STATE: Record<JobState, { label: string; level: AlertLevel }> = {
-  queued: { label: 'En attente', level: 'info' },
-  running: { label: 'En cours', level: 'info' },
-  retrying: { label: 'Nouvel essai', level: 'warn' },
-  completed: { label: 'Terminée', level: 'ok' },
-  failed: { label: 'Échec', level: 'danger' },
+  queued: { level: 'info', get label() { return t('admin.common.jobState.queued') } },
+  running: { level: 'info', get label() { return t('admin.common.jobState.running') } },
+  retrying: { level: 'warn', get label() { return t('admin.common.jobState.retrying') } },
+  completed: { level: 'ok', get label() { return t('admin.common.jobState.completed') } },
+  failed: { level: 'danger', get label() { return t('admin.common.jobState.failed') } },
 }
 
-export const INTEGRATION_LABEL: Record<AdminIntegration, string> = { garmin: 'Garmin', strava: 'Strava', llm: 'IA' }
+export const INTEGRATION_LABEL: Record<AdminIntegration, string> = lazyRecord(['garmin', 'strava', 'llm'] as const, (k) => (k === 'llm' ? t('admin.common.ai') : k === 'garmin' ? 'Garmin' : 'Strava'))
 
 /** Active administrators other than `id` (guards: never leave the instance without an admin). */
 export function isLastActiveAdmin(users: AdminUser[], u: AdminUser): boolean {

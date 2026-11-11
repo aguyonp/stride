@@ -1,4 +1,5 @@
 import { MoreHorizontal, Pencil, Trash2, Watch } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { ActivitySummary, PlannedSession } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { fmtDuration, fmtKm } from '../../lib/format'
@@ -8,7 +9,10 @@ import { MenuItem, Popover } from '../ui/Popover'
 import { MatchBadge } from './MatchBadge'
 import { matchDeltas, targetParts } from './planFormat'
 import { GarminStatus } from './GarminStatus'
+import { MorphedTag } from './morph/MorphActions'
+import { PrescribedByTag } from '../share/ShareMarkers'
 import { stepsSummary } from './steps'
+import { t } from '../../i18n'
 
 interface PlannedSessionCardProps {
   session: PlannedSession
@@ -19,10 +23,12 @@ interface PlannedSessionCardProps {
   onDelete?: () => void
   onOpen?: () => void
   className?: string
+  /** Extra action row (e.g. « Adapter la séance »). */
+  extra?: ReactNode
 }
 
 /** Planned session: sport, title, targets, match status and deltas. Actions appear only when handlers are given. */
-export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, onDelete, onOpen, className }: PlannedSessionCardProps) {
+export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, onDelete, onOpen, className, extra }: PlannedSessionCardProps) {
   const targets = targetParts(s)
   const deltas = s.match ? matchDeltas(s.match) : []
   const isRest = s.sport === 'rest'
@@ -37,7 +43,7 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
           <Popover
             className="-mr-1 flex-none"
             trigger={(p) => (
-              <button {...p} type="button" className="grid size-8 place-items-center rounded-full text-ink-3 hover:bg-track hover:text-ink" aria-label={`Actions pour « ${s.title} »`}>
+              <button {...p} type="button" className="grid size-8 place-items-center rounded-full text-ink-3 hover:bg-track hover:text-ink" aria-label={t('plan.card.actions', { title: s.title })}>
                 <MoreHorizontal className="size-4" aria-hidden="true" />
               </button>
             )}
@@ -47,17 +53,17 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
               <>
                 {onOpen && (
                   <MenuItem icon={<Watch />} onSelect={() => (close(), onOpen())}>
-                    Détails & montre
+                    {t('plan.card.details')}
                   </MenuItem>
                 )}
                 {onEdit && (
                   <MenuItem icon={<Pencil />} onSelect={() => (close(), onEdit())}>
-                    Modifier
+                    {t('plan.card.edit')}
                   </MenuItem>
                 )}
                 {onDelete && (
                   <MenuItem icon={<Trash2 />} danger onSelect={() => (close(), onDelete())}>
-                    Supprimer
+                    {t('common.actions.delete')}
                   </MenuItem>
                 )}
               </>
@@ -68,12 +74,18 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
       <h3 className="mt-1.5 text-sm leading-snug font-semibold break-words hyphens-auto text-ink">
         {onOpen ? (
           <button type="button" onClick={onOpen} className="text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent">
-            {s.title || 'Séance'}
+            {s.title || t('plan.card.session')}
           </button>
         ) : (
-          s.title || 'Séance'
+          s.title || t('plan.card.session')
         )}
       </h3>
+      {(s.morph || s.prescribedBy) && (
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <MorphedTag s={s} />
+          <PrescribedByTag by={s.prescribedBy} />
+        </div>
+      )}
       {s.steps?.length > 0 && (
         <p className="num mt-1 line-clamp-2 text-[11px] text-ink-2" title={stepsSummary(s.steps)}>
           {stepsSummary(s.steps)}
@@ -84,7 +96,7 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
       </div>
 
       {targets.length > 0 && (
-        <ul className="mt-2 flex flex-wrap gap-1" aria-label="Cibles">
+        <ul className="mt-2 flex flex-wrap gap-1" aria-label={t('plan.card.targets')}>
           {targets.map((t) => (
             <li key={t} className="num rounded-lg bg-track px-1.5 py-0.5 text-[11px] font-semibold text-ink-2">
               {t}
@@ -105,8 +117,7 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
           <MatchBadge status={s.match.status} />
           {doneActivity && (
             <p className={cn('num mt-1.5 text-xs text-ink-2', !compact && 'truncate')} title={doneActivity.name}>
-              Réalisé : {doneActivity.distanceM ? `${fmtKm(doneActivity.distanceM, 1)} · ` : ''}
-              {fmtDuration(doneActivity.durationS)}
+              {t('plan.card.done', { value: `${doneActivity.distanceM ? `${fmtKm(doneActivity.distanceM, 1)} · ` : ''}${fmtDuration(doneActivity.durationS)}` })}
             </p>
           )}
           {deltas.length > 0 && (
@@ -124,6 +135,7 @@ export function PlannedSessionCard({ session: s, doneActivity, compact, onEdit, 
           )}
         </div>
       )}
+      {extra && <div className="mt-2 flex flex-wrap gap-1.5">{extra}</div>}
     </article>
   )
 }

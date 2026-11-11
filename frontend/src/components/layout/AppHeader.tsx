@@ -9,6 +9,7 @@ import { StrideMark } from '../ui/icons'
 import { isActive, NAV } from './nav'
 import { SyncIndicator } from './SyncIndicator'
 import { UserMenu } from './UserMenu'
+import { t } from '../../i18n'
 
 /**
  * Full-bleed sticky bar. Brand and actions keep their natural width and the nav is centred in the
@@ -20,16 +21,16 @@ export function AppHeader({ me }: { me: Me | null }) {
   return (
     <header className="app-header">
       <div className="app-header-grid mx-auto h-14 max-w-[1440px] px-4 sm:px-6 lg:h-16 lg:px-8">
-        <Link href="/" className="flex min-w-0 items-center gap-2.5 justify-self-start rounded-xl" aria-label="Stride, tableau de bord">
+        <Link href="/" className="flex min-w-0 items-center gap-2.5 justify-self-start rounded-xl" aria-label={t('layout.nav.home')}>
           <span className="grid size-9 flex-none place-items-center rounded-xl bg-accent/15 text-accent ring-1 ring-accent/20 ring-inset">
             <StrideMark className="w-6" />
           </span>
           <span className="min-w-0 truncate text-[1.1rem] leading-none font-semibold tracking-tight">Stride</span>
-          {IS_MOCK && <span className="chip hidden h-5 flex-none border border-warn/30 bg-warn/12 px-2 text-[10px] text-warn sm:inline-flex">démo</span>}
+          {IS_MOCK && <span className="chip hidden h-5 flex-none border border-warn/30 bg-warn/12 px-2 text-[10px] text-warn sm:inline-flex">{t('layout.nav.demo')}</span>}
         </Link>
 
         {me && (
-          <nav aria-label="Navigation principale" className="hidden justify-self-center lg:block">
+          <nav aria-label={t('layout.nav.main')} className="hidden justify-self-center lg:block">
             <ul className="flex items-center gap-1 rounded-2xl border border-line bg-track/50 p-1">
               {NAV.map((n) => {
                 const active = isActive(n.href, path)
@@ -57,12 +58,12 @@ export function AppHeader({ me }: { me: Me | null }) {
 
         <div className="col-start-2 flex min-w-0 items-center justify-end gap-1.5 justify-self-end sm:gap-2 lg:col-start-3">
           {me && (
-            <button type="button" className="icon-btn" onClick={ui.openCommand} aria-label="Rechercher (Ctrl+K)" title="Rechercher · Ctrl+K">
+            <button type="button" className="icon-btn" onClick={ui.openCommand} aria-label={t('layout.nav.search')} title={t('layout.nav.searchTitle')}>
               <Search className="size-[1.125rem]" />
             </button>
           )}
           {me && <SyncIndicator />}
-          <button type="button" className="icon-btn" onClick={toggle} aria-label={theme === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'}>
+          <button type="button" className="icon-btn" onClick={toggle} aria-label={theme === 'dark' ? t('layout.nav.lightTheme') : t('layout.nav.darkTheme')}>
             {theme === 'dark' ? <Sun className="size-[1.125rem]" /> : <Moon className="size-[1.125rem]" />}
           </button>
           {me && <UserMenu me={me} />}

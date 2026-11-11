@@ -9,6 +9,7 @@ import { Field } from '../ui/Field'
 import { InlineError } from '../ui/Misc'
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { useToast } from '../ui/Toast'
+import { lazyRecord, t } from '../../i18n'
 
 interface GoalDialogProps {
   open: boolean
@@ -18,14 +19,8 @@ interface GoalDialogProps {
 }
 
 const KINDS = Object.keys(GOAL_KIND_LABEL) as GoalKind[]
-const DEFAULT_UNIT: Partial<Record<GoalKind, string>> = { cadence: 'spm', weekly_volume: 'km/sem', race: 'km' }
-const PLACEHOLDER: Record<GoalKind, string> = {
-  macro: 'Courir 45 min en continu sans gêne mi-novembre',
-  race: 'Semi-marathon de printemps en 1h35',
-  cadence: 'Cadence moyenne ≥ 172 spm en footing',
-  weekly_volume: 'Remonter à 35 km par semaine',
-  other: 'Renforcement 2 fois par semaine',
-}
+const DEFAULT_UNIT: Partial<Record<GoalKind, string>> = lazyRecord(['cadence', 'weekly_volume', 'race'] as const, (k) => (k === 'cadence' ? 'spm' : k === 'race' ? 'km' : t('plan.goalDialog.perWeekKm')))
+const PLACEHOLDER: Record<GoalKind, string> = lazyRecord(['macro', 'race', 'cadence', 'weekly_volume', 'other'] as const, (k) => t(`plan.goalDialog.placeholders.${k}`))
 
 export function GoalDialog({ open, onClose, goal }: GoalDialogProps) {
   const formId = useId()
@@ -65,8 +60,8 @@ export function GoalDialog({ open, onClose, goal }: GoalDialogProps) {
 
   const parsedValue = value.trim() === '' ? null : Number(value.replace(',', '.'))
   const errors = {
-    title: !title.trim() ? 'Décris l’objectif en une phrase.' : null,
-    value: parsedValue !== null && !Number.isFinite(parsedValue) ? 'Valeur numérique attendue.' : null,
+    title: !title.trim() ? t('plan.goalDialog.titleRequired') : null,
+    value: parsedValue !== null && !Number.isFinite(parsedValue) ? t('plan.goalDialog.valueInvalid') : null,
   }
   const pending = create.isPending || update.isPending
   const mutationError = create.error ?? update.error
@@ -85,7 +80,7 @@ export function GoalDialog({ open, onClose, goal }: GoalDialogProps) {
       note: note.trim(),
     }
     const done = () => {
-      toast({ title: goal ? 'Objectif mis à jour' : 'Objectif ajouté', description: body.title })
+      toast({ title: goal ? t('plan.goalDialog.updated') : t('plan.goalDialog.added'), description: body.title })
       onClose()
     }
     if (goal) update.mutate({ id: goal.id, ...body }, { onSuccess: done })
@@ -96,27 +91,27 @@ export function GoalDialog({ open, onClose, goal }: GoalDialogProps) {
     <Dialog
       open={open}
       onClose={onClose}
-      title={goal ? 'Modifier l’objectif' : 'Nouvel objectif'}
-      description="Les objectifs actifs sont repris dans le contexte du prompt IA."
+      title={goal ? t('plan.goalDialog.editTitle') : t('plan.goalDialog.newTitle')}
+      description={t('plan.goalDialog.description')}
       size="lg"
       initialFocus={goal ? undefined : 'input[name="goal-title"]'}
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="submit" form={formId} className="btn btn-primary" disabled={pending}>
             {pending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-            {goal ? 'Enregistrer' : 'Ajouter'}
+            {goal ? t('common.actions.save') : t('common.actions.add')}
           </button>
         </div>
       }
     >
       <form id={formId} onSubmit={onSubmit} noValidate className="grid gap-4 sm:grid-cols-2">
-        <Field label="Objectif" className="sm:col-span-2" error={submitted ? errors.title : null}>
+        <Field label={t('plan.goalDialog.goal')} className="sm:col-span-2" error={submitted ? errors.title : null}>
           {(p) => <input {...p} name="goal-title" className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={PLACEHOLDER[kind]} maxLength={160} autoComplete="off" />}
         </Field>
-        <Field label="Type">
+        <Field label={t('plan.goalDialog.type')}>
           {(p) => (
             <select
               {...p}
@@ -136,18 +131,18 @@ export function GoalDialog({ open, onClose, goal }: GoalDialogProps) {
             </select>
           )}
         </Field>
-        <Field label="Échéance" hint="Facultatif">
+        <Field label={t('plan.goalDialog.deadline')} hint={t('plan.goalDialog.optional')}>
           {(p) => <input {...p} type="date" className="field" value={date} onChange={(e) => setDate(e.target.value)} />}
         </Field>
-        <Field label="Valeur cible" error={errors.value} hint="Facultatif">
+        <Field label={t('plan.goalDialog.value')} error={errors.value} hint={t('plan.goalDialog.optional')}>
           {(p) => <input {...p} className="field num" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} placeholder={kind === 'cadence' ? '172' : kind === 'weekly_volume' ? '35' : '21,1'} />}
         </Field>
-        <Field label="Unité">
+        <Field label={t('plan.goalDialog.unit')}>
           {(p) => (
             <>
               <input {...p} className="field" list={`${formId}-units`} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder={DEFAULT_UNIT[kind] ?? 'km'} maxLength={20} />
               <datalist id={`${formId}-units`}>
-                {['km', 'km/sem', 'spm', 'min', 'h', 'séances/sem'].map((u) => (
+                {['km', t('plan.goalDialog.perWeekKm'), 'spm', 'min', 'h', t('plan.goalDialog.perWeekSessions')].map((u) => (
                   <option key={u} value={u} />
                 ))}
               </datalist>
@@ -155,19 +150,19 @@ export function GoalDialog({ open, onClose, goal }: GoalDialogProps) {
           )}
         </Field>
         <div className="sm:col-span-2">
-          <p className="mb-1.5 text-sm font-medium text-ink-2">Statut</p>
+          <p className="mb-1.5 text-sm font-medium text-ink-2">{t('plan.goalDialog.status')}</p>
           <SegmentedControl<Goal['status']>
-            ariaLabel="Statut de l’objectif"
+            ariaLabel={t('plan.goalDialog.statusAria')}
             value={status}
             onChange={setStatus}
             options={[
-              { value: 'active', label: 'Actif' },
-              { value: 'done', label: 'Atteint' },
-              { value: 'archived', label: 'Archivé' },
+              { value: 'active', label: t('plan.goalDialog.active') },
+              { value: 'done', label: t('plan.goalDialog.done') },
+              { value: 'archived', label: t('plan.goalDialog.archived') },
             ]}
           />
         </div>
-        <Field label="Note" className="sm:col-span-2" hint="Contexte utile pour le coach IA (facultatif)">
+        <Field label={t('plan.goalDialog.note')} className="sm:col-span-2" hint={t('plan.goalDialog.noteHint')}>
           {(p) => <textarea {...p} className="field min-h-20 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />}
         </Field>
         {mutationError && <InlineError className="sm:col-span-2">{mutationError.message}</InlineError>}

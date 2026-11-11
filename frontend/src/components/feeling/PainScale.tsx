@@ -2,6 +2,7 @@ import { Minus, Plus } from 'lucide-react'
 import { useId } from 'react'
 import { cn } from '../../lib/cn'
 import { fmtNumber } from '../../lib/format'
+import { t } from '../../i18n'
 
 const tone = (v: number | null) => (v === null ? 'text-ink-3' : v >= 5 ? 'text-danger' : v >= 3 ? 'text-warn' : 'text-ok')
 
@@ -24,7 +25,7 @@ export function PainScale({ label, value, onChange, hint }: { label: string; val
         </p>
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <button type="button" className="icon-btn size-11 rounded-2xl" onClick={() => set((value ?? 0.5) - 0.5)} aria-label={`${label} : diminuer de 0,5`} disabled={value === null || value <= 0}>
+        <button type="button" className="icon-btn size-11 rounded-2xl" onClick={() => set((value ?? 0.5) - 0.5)} aria-label={t('session.feeling.decrease', { label })} disabled={value === null || value <= 0}>
           <Minus className="size-5" />
         </button>
         <input
@@ -36,10 +37,10 @@ export function PainScale({ label, value, onChange, hint }: { label: string; val
           value={value ?? 0}
           data-empty={value === null}
           onChange={(e) => set(Number(e.target.value))}
-          aria-valuetext={value === null ? 'non renseigné' : `${fmtNumber(value, 1, { trim: true })} sur 10`}
+          aria-valuetext={value === null ? t('session.feeling.notSet') : t('session.feeling.outOf10', { value: fmtNumber(value, 1, { trim: true }) })}
           className="pain-range min-w-0 flex-1"
         />
-        <button type="button" className="icon-btn size-11 rounded-2xl" onClick={() => set((value ?? -0.5) + 0.5)} aria-label={`${label} : augmenter de 0,5`} disabled={value !== null && value >= 10}>
+        <button type="button" className="icon-btn size-11 rounded-2xl" onClick={() => set((value ?? -0.5) + 0.5)} aria-label={t('session.feeling.increase', { label })} disabled={value !== null && value >= 10}>
           <Plus className="size-5" />
         </button>
       </div>
@@ -47,10 +48,10 @@ export function PainScale({ label, value, onChange, hint }: { label: string; val
         <span>0 aucune</span>
         {value !== null ? (
           <button type="button" className="rounded-md px-1.5 py-0.5 font-medium text-ink-2 underline-offset-2 hover:underline" onClick={() => onChange(null)}>
-            Effacer
+            {t('common.misc.clear')}
           </button>
         ) : (
-          <span>non renseigné</span>
+          <span>{t('session.feeling.notSet')}</span>
         )}
         <span>10 max</span>
       </div>

@@ -13,6 +13,7 @@ import (
 // Day renders the day / health prompt (§6.3).
 func Day(v *view.DayView, prof athlete.Profile, inc Include) string {
 	b := newBuilder()
+	writeCoachNotes(b, v.CoachNotes)
 	writeReadinessPriority(b, v.Readiness)
 	if inc.Has(ChipPain) {
 		writeBodyStress(b, v.BodyStress, v.BodyCorrelations)

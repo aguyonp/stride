@@ -22,4 +22,5 @@ export const STORAGE_KEYS = {
   include: 'stride.include',
   multiInclude: 'stride.multiInclude',
   promptSubject: 'stride.promptSubject',
+  lang: 'stride.lang',
 } as const

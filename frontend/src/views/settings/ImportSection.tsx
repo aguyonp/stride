@@ -8,6 +8,7 @@ import type { ImportResult } from '../../api/types'
 import { InlineError } from '../../components/ui/Misc'
 import { isJobStatus, upsertJobInStore, useEventStore } from '../../state/events'
 import { Section } from './Section'
+import { t } from '../../i18n'
 
 const MAX = 25 * 1024 * 1024
 
@@ -34,7 +35,7 @@ export function ImportSection() {
   })
 
   const jobRunning = Boolean(job && (job.state === 'queued' || job.state === 'running' || job.state === 'retrying'))
-  const jobFailed = job?.state === 'failed' ? (job.error ?? 'Échec de l’import.') : null
+  const jobFailed = job?.state === 'failed' ? (job.error ?? t('settings.import.failed')) : null
   const jobResult: ImportResult | null =
     job?.state === 'completed' && job.result && typeof job.result.activityId === 'number'
       ? { activityId: job.result.activityId, merged: Boolean(job.result.merged) }
@@ -45,9 +46,9 @@ export function ImportSection() {
   return (
     <Section
       id="import"
-      title="Import de secours"
+      title={t('settings.import.title')}
       icon={<FileUp />}
-      description="Quand une synchro échoue : importe le fichier exporté de ta montre ou d’une autre app. Les doublons sont fusionnés automatiquement."
+      description={t('settings.import.description')}
     >
       <div className="flex flex-wrap items-center gap-3">
         <input
@@ -69,19 +70,19 @@ export function ImportSection() {
         />
         <button type="button" className="btn btn-ghost" onClick={() => input.current?.click()} disabled={busy}>
           {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Upload className="size-4" aria-hidden="true" />}
-          Choisir un fichier
+          {t('settings.import.pick')}
         </button>
-        <span className="text-xs text-ink-3">.fit, .gpx ou .tcx · 25 Mo max</span>
+        <span className="text-xs text-ink-3">{t('settings.import.formats')}</span>
       </div>
       <div aria-live="polite" className="mt-3">
-        {tooBig && <InlineError>Fichier trop volumineux (25 Mo max).</InlineError>}
+        {tooBig && <InlineError>{t('settings.import.tooBig')}</InlineError>}
         {(imp.isError || jobFailed) && <InlineError>{jobFailed ?? imp.error?.message}</InlineError>}
-        {jobRunning && job && <p className="num text-sm text-ink-2">{job.label}… traitement en priorité critique.</p>}
+        {jobRunning && job && <p className="num text-sm text-ink-2">{t('settings.import.running', { label: job.label })}</p>}
         {res && (
           <p className="text-sm text-ink-2">
-            {res.merged ? 'Fusionné avec une séance existante.' : 'Séance importée.'}{' '}
+            {res.merged ? t('settings.import.merged') : t('settings.import.imported')}{' '}
             <Link href={`/?s=${res.activityId}`} className="font-semibold text-accent underline underline-offset-2">
-              Voir la séance
+              {t('settings.import.view')}
             </Link>
           </p>
         )}

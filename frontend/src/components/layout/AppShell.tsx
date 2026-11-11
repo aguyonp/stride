@@ -15,6 +15,7 @@ import { BottomNav } from './BottomNav'
 import { CommandPalette } from './CommandPalette'
 import { EventStreamController } from './EventStreamController'
 import { SyncController } from './SyncController'
+import { t } from '../../i18n'
 
 const AnalysisDrawer = lazy(() => import('../ai/AnalysisDrawer').then((m) => ({ default: m.AnalysisDrawer })))
 
@@ -52,7 +53,7 @@ function GlobalOverlays({ me }: { me: Me }) {
           <AnalysisDrawer
             open={dayAiOpen}
             onClose={ui.closeDayAnalysis}
-            subject={{ kind: 'day', date: today, label: 'Bilan du jour' }}
+            subject={{ kind: 'day', date: today, label: t('layout.nav.dayReview') }}
             include={effectiveInclude(ALL_INCLUDE, 'day')}
             runToken={dayAiRun}
           />
@@ -67,7 +68,7 @@ export function AppShell({ me, minimal, children }: { me: Me | null; minimal?: b
   return (
     <div className="app-root">
       <a href="#main" className="sr-only z-[70] rounded-xl bg-surface px-4 py-2 focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
-        Aller au contenu
+        {t('layout.nav.skip')}
       </a>
       <Ambient />
       <AppHeader me={full ? me : null} />

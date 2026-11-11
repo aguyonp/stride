@@ -9,17 +9,11 @@ import { KeyValue } from '../../components/ui/Misc'
 import { useToast } from '../../components/ui/Toast'
 import { fmtNumber } from '../../lib/format'
 import { fmtBytes } from './adminUtils'
+import { lazyRecord, t } from '../../i18n'
 
-const PURGE_LABEL: Record<keyof PurgeResult['removed'], string> = {
-  sessions: 'Sessions expirées',
-  invitations: 'Invitations closes',
-  apiEvents: 'Événements API',
-  logs: 'Lignes de journal',
-  jobs: 'Tâches terminées',
-  shareLinks: 'Liens morts',
-}
+const PURGE_LABEL: Record<keyof PurgeResult['removed'], string> = lazyRecord(['sessions', 'invitations', 'apiEvents', 'logs', 'jobs', 'shareLinks'] as const, (k) => t(`admin.maintenance.purge.${k}`))
 
-const yesNo = (b: boolean) => (b ? 'oui' : 'non')
+const yesNo = (b: boolean) => (b ? t('admin.maintenance.yes') : t('admin.maintenance.no'))
 
 export function MaintenancePanel({ overview }: { overview?: AdminOverview }) {
   const m = useAdminMutations()
@@ -38,35 +32,35 @@ export function MaintenancePanel({ overview }: { overview?: AdminOverview }) {
       onSuccess: (r) => {
         setPurged(r)
         const total = Object.values(r.removed).reduce((a, b) => a + b, 0)
-        toast({ title: 'Purge terminée', description: `${fmtNumber(total)} ligne${total > 1 ? 's' : ''} supprimée${total > 1 ? 's' : ''}.` })
+        toast({ title: t('admin.maintenance.purged'), description: t('admin.maintenance.purgedRows', { count: fmtNumber(total) }) })
       },
-      onError: (e) => toast({ tone: 'error', title: 'Purge impossible', description: e.message }),
+      onError: (e) => toast({ tone: 'error', title: t('admin.maintenance.purgeFailed'), description: e.message }),
     })
   const optimize = () =>
     ctl.optimize.mutate(vacuum, {
       onSuccess: (r) => {
         setOptimized(r)
         const gain = r.before.sizeBytes + r.before.walBytes - (r.after.sizeBytes + r.after.walBytes)
-        toast({ title: 'Base optimisée', description: gain > 0 ? `${fmtBytes(gain)} libérés en ${fmtNumber(r.durationMs)} ms.` : `Terminé en ${fmtNumber(r.durationMs)} ms.` })
+        toast({ title: t('admin.maintenance.optimized'), description: gain > 0 ? t('admin.maintenance.freed', { size: fmtBytes(gain), ms: fmtNumber(r.durationMs) }) : t('admin.maintenance.doneIn', { ms: fmtNumber(r.durationMs) }) })
       },
-      onError: (e) => toast({ tone: 'error', title: 'Optimisation impossible', description: e.message }),
+      onError: (e) => toast({ tone: 'error', title: t('admin.maintenance.optimizeFailed'), description: e.message }),
     })
   const check = () =>
     ctl.check.mutate(undefined, {
       onSuccess: (r) => setChecked(r),
-      onError: (e) => toast({ tone: 'error', title: 'Contrôle impossible', description: e.message }),
+      onError: (e) => toast({ tone: 'error', title: t('admin.maintenance.checkFailed'), description: e.message }),
     })
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <Card title="Base SQLite" icon={<Database className="size-4" />} subtitle="Optimisation et contrôle d’intégrité (équivalent de « stride doctor »)" className="lg:col-span-2">
+      <Card title={t('admin.maintenance.db')} icon={<Database className="size-4" />} subtitle={t('admin.maintenance.dbHint')} className="lg:col-span-2">
         {db && (
           <dl className="mb-4 grid grid-cols-3 gap-2 sm:max-w-lg">
             {(
               [
-                ['Données', db.sizeBytes],
-                ['Journal WAL', db.walBytes],
-                ['Récupérable', db.freeBytes],
+                [t('admin.maintenance.data'), db.sizeBytes],
+                [t('admin.maintenance.wal'), db.walBytes],
+                [t('admin.maintenance.reclaimable'), db.freeBytes],
               ] as const
             ).map(([k, v]) => (
               <div key={k} className="glass-inset min-w-0 px-3 py-2">
@@ -79,34 +73,34 @@ export function MaintenancePanel({ overview }: { overview?: AdminOverview }) {
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" className="btn btn-primary" onClick={optimize} disabled={ctl.optimize.isPending}>
             {ctl.optimize.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
-            Optimiser la base
+            {t('admin.maintenance.optimize')}
           </button>
           <label className="flex items-center gap-2 text-sm text-ink-2">
             <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={vacuum} onChange={(e) => setVacuum(e.target.checked)} />
-            Compacter aussi (VACUUM)
+            {t('admin.maintenance.vacuum')}
           </label>
           <button type="button" className="btn btn-ghost sm:ml-auto" onClick={check} disabled={ctl.check.isPending}>
             {ctl.check.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ShieldCheck className="size-4" aria-hidden="true" />}
-            Contrôler l’intégrité
+            {t('admin.maintenance.check')}
           </button>
         </div>
         <p className="mt-2 text-xs text-ink-3">
-          L’optimisation vide le journal WAL et met à jour les statistiques du planificateur. VACUUM réécrit tout le fichier : les écritures attendent pendant l’opération et il faut temporairement autant d’espace disque libre que la base.
+          {t('admin.maintenance.optimizeHint')}
         </p>
         {checked && (
           <div className="mt-4 border-t border-line pt-3" role="status">
             {checked.ok ? (
               <p className="flex flex-wrap items-center gap-2 text-sm text-ink-2">
-                <Badge level="ok">Intègre</Badge>
-                integrity_check et foreign_key_check sans anomalie · {fmtNumber(checked.durationMs)} ms
+                <Badge level="ok">{t('admin.maintenance.healthy')}</Badge>
+                {t('admin.maintenance.noAnomaly', { ms: fmtNumber(checked.durationMs) })}
               </p>
             ) : (
               <>
                 <p className="mb-2 flex flex-wrap items-center gap-2 text-sm text-ink-2">
                   <Badge level="danger">
-                    {checked.total} problème{checked.total > 1 ? 's' : ''}
+                    {t('admin.maintenance.problems', { count: checked.total })}
                   </Badge>
-                  Sauvegarde le volume /data avant toute réparation.
+                  {t('admin.maintenance.backupFirst')}
                 </p>
                 <ul className="scroll-thin max-h-48 space-y-1 overflow-y-auto font-mono text-xs break-all text-ink-2">
                   {checked.problems.map((p, i) => (
@@ -119,11 +113,11 @@ export function MaintenancePanel({ overview }: { overview?: AdminOverview }) {
         )}
       </Card>
 
-      <Card title="Données expirées" icon={<Trash2 className="size-4" />} subtitle="Lancée automatiquement chaque heure">
-        <p className="text-sm text-ink-2">Supprime les sessions expirées, les invitations closes, les événements API et journaux hors rétention, les tâches terminées et les liens de partage morts depuis 14 jours.</p>
+      <Card title={t('admin.maintenance.expired')} icon={<Trash2 className="size-4" />} subtitle={t('admin.maintenance.expiredHint')}>
+        <p className="text-sm text-ink-2">{t('admin.maintenance.expiredBody')}</p>
         <button type="button" className="btn btn-ghost mt-4" onClick={purge} disabled={ctl.purge.isPending}>
           {ctl.purge.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
-          Purger maintenant
+          {t('admin.maintenance.purgeNow')}
         </button>
         {purged && (
           <KeyValue
@@ -133,56 +127,56 @@ export function MaintenancePanel({ overview }: { overview?: AdminOverview }) {
         )}
       </Card>
 
-      <Card title="Cache" icon={<Eraser className="size-4" />} subtitle={`${cfg?.cacheBackend === 'valkey' ? 'Valkey' : 'Mémoire'} · clés stride:cache:*`}>
+      <Card title={t('admin.maintenance.cache')} icon={<Eraser className="size-4" />} subtitle={t('admin.maintenance.cacheKeys', { backend: cfg?.cacheBackend === 'valkey' ? 'Valkey' : t('admin.maintenance.memory') })}>
         <p className="text-sm text-ink-2">
-          Supprime les réponses fournisseurs en cache, le bien-être du jour et les analyses calculées. Les sessions sont stockées en base : personne n’est déconnecté. Les données sont rechargées à la demande (attention aux quotas Garmin / Strava).
+          {t('admin.maintenance.cacheBody')}
         </p>
         <button type="button" className="btn btn-danger mt-4" onClick={() => setConfirmFlush(true)} disabled={m.flushCache.isPending}>
           {m.flushCache.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Eraser className="size-4" aria-hidden="true" />}
-          Vider le cache
+          {t('admin.maintenance.flush')}
         </button>
       </Card>
 
-      <Card title="Configuration du serveur" icon={<Settings2 className="size-4" />} subtitle="Lecture seule · variables STRIDE_* (clés, jetons et adresses internes jamais affichés)" className="lg:col-span-2">
+      <Card title={t('admin.maintenance.config')} icon={<Settings2 className="size-4" />} subtitle={t('admin.maintenance.configHint')} className="lg:col-span-2">
         {cfg ? (
           <KeyValue
             className="sm:max-w-2xl"
             items={[
               ['URL publique', <span className="font-mono text-xs break-all">{cfg.publicUrl || '—'}</span>],
-              ['Domaine WebAuthn (RP ID)', <span className="font-mono text-xs">{cfg.rpId || '—'}</span>],
-              ['Inscriptions', overview?.registrationMode === 'open' ? 'ouvertes' : 'sur invitation'],
-              ['Cookies sécurisés (HTTPS)', yesNo(cfg.secureCookies)],
-              ['Durée de session', `${fmtNumber(cfg.sessionTtlHours / 24, 1, { trim: true })} j`],
-              ['Fuseau horaire', cfg.timezone],
-              ['Synchro matinale', `${String(cfg.syncHour).padStart(2, '0')}:00`],
-              ['Cache', cfg.cacheBackend === 'valkey' ? 'Valkey' : 'Mémoire (instance unique)'],
-              ['Métriques Prometheus', cfg.metricsEnabled ? 'activées (écoute privée)' : 'désactivées'],
-              ['Strava', cfg.stravaEnabled ? 'configuré' : 'non configuré'],
-              ['Météo', cfg.weatherProvider || 'désactivée'],
-              ['Sortie vers réseaux privés', yesNo(cfg.allowPrivateEgress)],
-              ['Journaux', `${cfg.logLevel} · ${cfg.logFormat}`],
+              [t('admin.maintenance.rpId'), <span className="font-mono text-xs">{cfg.rpId || '—'}</span>],
+              [t('admin.maintenance.registration'), overview?.registrationMode === 'open' ? t('admin.maintenance.open') : t('admin.maintenance.invite')],
+              [t('admin.maintenance.secureCookies'), yesNo(cfg.secureCookies)],
+              [t('admin.maintenance.sessionTtl'), t('admin.maintenance.days', { n: fmtNumber(cfg.sessionTtlHours / 24, 1, { trim: true }) })],
+              [t('admin.maintenance.timezone'), cfg.timezone],
+              [t('admin.maintenance.morningSync'), `${String(cfg.syncHour).padStart(2, '0')}:00`],
+              [t('admin.maintenance.cache'), cfg.cacheBackend === 'valkey' ? 'Valkey' : t('admin.maintenance.memorySingle')],
+              [t('admin.maintenance.metrics'), cfg.metricsEnabled ? t('admin.maintenance.metricsOn') : t('admin.maintenance.metricsOff')],
+              ['Strava', cfg.stravaEnabled ? t('admin.maintenance.configured') : t('admin.maintenance.notConfigured')],
+              [t('admin.maintenance.weather'), cfg.weatherProvider || t('admin.maintenance.disabled')],
+              [t('admin.maintenance.privateEgress'), yesNo(cfg.allowPrivateEgress)],
+              [t('admin.maintenance.logs'), `${cfg.logLevel} · ${cfg.logFormat}`],
             ]}
           />
         ) : (
-          <p className="text-sm text-ink-3">Chargement de la configuration…</p>
+          <p className="text-sm text-ink-3">{t('admin.maintenance.loadingConfig')}</p>
         )}
       </Card>
 
       <ConfirmDialog
         open={confirmFlush}
         onClose={() => setConfirmFlush(false)}
-        title="Vider le cache ?"
-        message={<p>Les prochaines vues recalculeront les analyses et pourront appeler Garmin / Strava. Aucune session n’est affectée.</p>}
-        confirmLabel="Vider le cache"
+        title={t('admin.maintenance.flushTitle')}
+        message={<p>{t('admin.maintenance.flushBody')}</p>}
+        confirmLabel={t('admin.maintenance.flush')}
         danger
         busy={m.flushCache.isPending}
         onConfirm={() =>
           m.flushCache.mutate(undefined, {
             onSuccess: (r) => {
               setConfirmFlush(false)
-              toast({ title: 'Cache vidé', description: `${fmtNumber(r.removed)} clé${r.removed > 1 ? 's' : ''} supprimée${r.removed > 1 ? 's' : ''}.` })
+              toast({ title: t('admin.maintenance.flushed'), description: t('admin.maintenance.flushedKeys', { count: fmtNumber(r.removed) }) })
             },
-            onError: (e) => toast({ tone: 'error', title: 'Échec du vidage', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('admin.maintenance.flushFailed'), description: e.message }),
           })
         }
       />

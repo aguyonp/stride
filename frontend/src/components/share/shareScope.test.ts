@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { ShareLink } from '../../api/types'
-import { ALL_SHARE_SECTIONS, DEFAULT_SHARE_INPUT, formFromLink, linkStatus, scopeSummary, toShareInput, validateShareForm } from './shareScope'
+import { ALL_SHARE_SECTIONS, DEFAULT_SHARE_INPUT, formFromLink, linkStatus, NO_PERMISSIONS, permissionsSummary, scopeSummary, toShareInput, validateShareForm } from './shareScope'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const link = (over: Partial<ShareLink> = {}): ShareLink => ({
   id: 1,
@@ -16,6 +20,7 @@ const link = (over: Partial<ShareLink> = {}): ShareLink => ({
   periodWeeks: 12,
   sections: ALL_SHARE_SECTIONS,
   anonymize: false,
+  permissions: NO_PERMISSIONS,
   ...over,
 })
 
@@ -23,9 +28,19 @@ describe('share scope', () => {
   it('creates with full defaults and edits without touching the expiry unless asked', () => {
     expect(toShareInput(formFromLink(null))).toEqual(DEFAULT_SHARE_INPUT)
     const edit = formFromLink(link({ periodWeeks: 4, sections: ['shoes', 'health'], anonymize: true }))
-    expect(toShareInput(edit)).toEqual({ label: 'Kiné du sport', periodWeeks: 4, sections: ['health', 'shoes'], anonymize: true })
+    expect(toShareInput(edit)).toEqual({ label: 'Kiné du sport', periodWeeks: 4, sections: ['health', 'shoes'], anonymize: true, permissions: NO_PERMISSIONS })
     expect(toShareInput({ ...edit, expiresInDays: null })).toMatchObject({ expiresInDays: null })
     expect(toShareInput({ ...edit, expiresInDays: 7 })).toMatchObject({ expiresInDays: 7 })
+  })
+
+  it('keeps the three portal permissions off by default and round-trips them on edit', () => {
+    expect(DEFAULT_SHARE_INPUT.permissions).toEqual({ comments: false, planning: false, activityDetails: false })
+    const perms = { comments: true, planning: false, activityDetails: true }
+    expect(toShareInput(formFromLink(link({ permissions: perms }))).permissions).toEqual(perms)
+    // 4.1 links (no permissions in the payload) stay read only
+    expect(formFromLink(link({ permissions: undefined as never })).permissions).toEqual(NO_PERMISSIONS)
+    expect(permissionsSummary(NO_PERMISSIONS)).toBeNull()
+    expect(permissionsSummary(perms)).toBe('consignes et remarques, détail des séances')
   })
 
   it('validates the label and requires at least one section', () => {

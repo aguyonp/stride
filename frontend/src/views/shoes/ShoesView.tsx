@@ -1,14 +1,15 @@
 import { PageHeader } from '../../components/ui/Misc'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { ShoesSection } from '../settings/ShoesSection'
+import { t } from '../../i18n'
 
 export default function ShoesView() {
-  useDocumentTitle('Chaussures')
+  useDocumentTitle(t('shoes.view.title'))
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Chaussures"
-        subtitle="Rotation active, drop, type de semelle et kilométrage cumulé par paire."
+        title={t('shoes.view.title')}
+        subtitle={t('shoes.view.subtitle')}
       />
       <ShoesSection />
     </div>

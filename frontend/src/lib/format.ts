@@ -1,6 +1,15 @@
-// French formatting helpers. null/undefined/NaN → "N/D" (never 0).
+// Formatting helpers following the active UI language (§15.2: fr-FR or en-GB conventions).
+// null/undefined/NaN → ND ("N/D" / "N/A", never 0).
 
-export const ND = 'N/D'
+import { t } from '../i18n/t'
+import { getLang, LOCALE, subscribeLang, type Lang } from '../i18n/lang'
+
+const NOT_AVAILABLE: Record<Lang, string> = { fr: 'N/D', en: 'N/A' }
+/** Missing-value marker in the active language (live binding, updated on language switch). */
+export let ND = NOT_AVAILABLE[getLang()]
+subscribeLang((l) => {
+  ND = NOT_AVAILABLE[l]
+})
 const NBSP = '\u00a0'
 const MINUS = '−'
 
@@ -12,16 +21,17 @@ export function isNum(v: Num): v is number {
 
 const nfCache = new Map<string, Intl.NumberFormat>()
 function nf(min: number, max: number): Intl.NumberFormat {
-  const key = `${min}-${max}`
+  const lang = getLang()
+  const key = `${lang}-${min}-${max}`
   let f = nfCache.get(key)
   if (!f) {
-    f = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: min, maximumFractionDigits: max })
+    f = new Intl.NumberFormat(LOCALE[lang], { minimumFractionDigits: min, maximumFractionDigits: max })
     nfCache.set(key, f)
   }
   return f
 }
 
-/** `fmtNumber(8432) = "8 432"`, decimal comma. */
+/** `fmtNumber(8432) = "8 432"` (fr, decimal comma) / `"8,432"` (en). */
 export function fmtNumber(v: Num, decimals = 0, opts: { trim?: boolean } = {}): string {
   if (!isNum(v)) return ND
   const out = nf(opts.trim ? 0 : decimals, decimals).format(v)
@@ -60,7 +70,7 @@ export function fmtHM(seconds: Num): string {
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
   if (h === 0) return `${m}${NBSP}min`
-  return `${h}h${String(m).padStart(2, '0')}`
+  return getLang() === 'en' ? `${h}h${NBSP}${String(m).padStart(2, '0')}m` : `${h}h${String(m).padStart(2, '0')}`
 }
 
 /** `fmtPaceValue(343) = "5:43"`. */
@@ -112,10 +122,16 @@ export function durationInput(seconds: number | null | undefined): string {
   return isNum(seconds) && seconds > 0 ? fmtDuration(seconds) : ''
 }
 
-/** `fmtPct(49.2) = "49,2 %"`. */
+/** `fmtPct(49.2) = "49,2 %"` (fr) / `"49.2%"` (en). */
 export function fmtPct(v: Num, decimals = 1): string {
   if (!isNum(v)) return ND
-  return `${fmtNumber(v, decimals)}${NBSP}%`
+  return `${fmtNumber(v, decimals)}${getLang() === 'en' ? '' : NBSP}%`
+}
+
+/** `fmtSignedPct(-3.2) = "−3,2 %"` (fr) / `"−3.2%"` (en). */
+export function fmtSignedPct(v: Num, decimals = 1): string {
+  if (!isNum(v)) return ND
+  return `${fmtSigned(v, decimals)}${getLang() === 'en' ? '' : NBSP}%`
 }
 
 /** `fmtSigned(4) = "+4"`, `fmtSigned(-3.2, 1) = "−3,2"`. */
@@ -176,20 +192,41 @@ export function diffDays(aIso: string, bIso: string): number {
   return Math.round((Date.UTC(b.y, b.mo - 1, b.d) - Date.UTC(a.y, a.mo - 1, a.d)) / 86_400_000)
 }
 
-const dtf = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('fr-FR', o)
-const F_WEEKDAY = dtf({ weekday: 'long' })
-const F_DAY_MONTH = dtf({ day: 'numeric', month: 'short' })
-const F_DAY_MONTH_YEAR = dtf({ day: 'numeric', month: 'short', year: 'numeric' })
-const F_LONG = dtf({ weekday: 'long', day: 'numeric', month: 'long' })
-const F_LONG_YEAR = dtf({ weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-const F_MONTH_YEAR = dtf({ month: 'long', year: 'numeric' })
-const F_SHORT_WD = dtf({ weekday: 'short' })
+const DATE_OPTS = {
+  weekday: { weekday: 'long' },
+  dayMonth: { day: 'numeric', month: 'short' },
+  dayMonthYear: { day: 'numeric', month: 'short', year: 'numeric' },
+  long: { weekday: 'long', day: 'numeric', month: 'long' },
+  longYear: { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' },
+  monthYear: { month: 'long', year: 'numeric' },
+  shortWeekday: { weekday: 'short' },
+} satisfies Record<string, Intl.DateTimeFormatOptions>
+type DateStyle = keyof typeof DATE_OPTS
+const dtfCache = new Map<string, Intl.DateTimeFormat>()
+/** Cached Intl.DateTimeFormat for the active language. */
+function dtf(style: DateStyle): Intl.DateTimeFormat {
+  const lang = getLang()
+  const key = `${lang}-${style}`
+  let f = dtfCache.get(key)
+  if (!f) {
+    f = new Intl.DateTimeFormat(LOCALE[lang], DATE_OPTS[style])
+    dtfCache.set(key, f)
+  }
+  return f
+}
+const F_WEEKDAY = { format: (d: Date) => dtf('weekday').format(d) }
+const F_DAY_MONTH = { format: (d: Date) => dtf('dayMonth').format(d) }
+const F_DAY_MONTH_YEAR = { format: (d: Date) => dtf('dayMonthYear').format(d) }
+const F_LONG = { format: (d: Date) => dtf('long').format(d) }
+const F_LONG_YEAR = { format: (d: Date) => dtf('longYear').format(d) }
+const F_MONTH_YEAR = { format: (d: Date) => dtf('monthYear').format(d) }
+const F_SHORT_WD = { format: (d: Date) => dtf('shortWeekday').format(d) }
 
 function hhmm(p: LocalParts): string {
   return `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}`
 }
 
-/** « aujourd'hui 18:30 », « hier 18:30 », « lundi 18:30 », « 28 oct. 18:30 », « 28 oct. 2025 ». */
+/** « aujourd'hui 18:30 », « hier 18:30 », « lundi 18:30 », « 28 oct. 18:30 », « 28 oct. 2025 » (en: today/yesterday/Monday/28 Oct). */
 export function fmtRelative(startLocal: string, now: Date = new Date()): string {
   const p = parseLocal(startLocal)
   if (!p) return ND
@@ -197,8 +234,8 @@ export function fmtRelative(startLocal: string, now: Date = new Date()): string 
   const time = hhmm(p)
   const hasTime = /[T ]\d{2}:\d{2}/.test(startLocal)
   const suffix = hasTime ? ` ${time}` : ''
-  if (days === 0) return `aujourd'hui${suffix}`
-  if (days === 1) return `hier${suffix}`
+  if (days === 0) return `${t('common.time.today')}${suffix}`
+  if (days === 1) return `${t('common.time.yesterday')}${suffix}`
   if (days > 1 && days < 7) return `${F_WEEKDAY.format(partsToDate(p))}${suffix}`
   if (p.y === now.getFullYear()) return `${F_DAY_MONTH.format(partsToDate(p))}${suffix}`
   return F_DAY_MONTH_YEAR.format(partsToDate(p))
@@ -246,7 +283,7 @@ export function fmtDateTime(rfc3339: string | null | undefined): string {
   if (!rfc3339) return ND
   const d = new Date(rfc3339)
   if (Number.isNaN(d.getTime())) return ND
-  return `${F_DAY_MONTH.format(d)} à ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return t('common.time.dateAt', { date: F_DAY_MONTH.format(d), time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` })
 }
 
 
@@ -270,10 +307,10 @@ export function fmtWhen(rfc3339: string | null | undefined, now: Date = new Date
   const d = new Date(rfc3339)
   if (Number.isNaN(d.getTime())) return ND
   const days = diffDays(toISODate(d), toISODate(now))
-  const t = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-  if (days === 0) return t
-  if (days === 1) return `hier ${t}`
-  return `${F_DAY_MONTH.format(d)} ${t}`
+  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  if (days === 0) return hm
+  if (days === 1) return `${t('common.time.yesterday')} ${hm}`
+  return `${F_DAY_MONTH.format(d)} ${hm}`
 }
 
 /** Monday (ISO) of the week containing `iso`. */
@@ -299,4 +336,21 @@ export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (!parts.length) return '?'
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
+}
+
+/** Weekday names, Monday first, in the active language (`narrow`: « L M M J V S D » / "M T W T F S S"). */
+export function weekdayNames(style: 'narrow' | 'short' | 'long' = 'long'): string[] {
+  const f = new Intl.DateTimeFormat(LOCALE[getLang()], { weekday: style })
+  return Array.from({ length: 7 }, (_, i) => f.format(new Date(2024, 0, 1 + i)))
+}
+
+/** Capitalised month names (January first) in the active language. */
+export function monthNames(): string[] {
+  const f = new Intl.DateTimeFormat(LOCALE[getLang()], { month: 'long' })
+  return Array.from({ length: 12 }, (_, i) => capitalize(f.format(new Date(2024, i, 1))))
+}
+
+/** Abbreviated month name (1-12) in the active language: « nov. » / "Nov". */
+export function monthShort(month1: number): string {
+  return new Intl.DateTimeFormat(LOCALE[getLang()], { month: 'short' }).format(new Date(2024, month1 - 1, 1))
 }

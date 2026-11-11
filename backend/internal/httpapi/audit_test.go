@@ -78,3 +78,40 @@ func TestLoggingRedactsShareTokens(t *testing.T) {
 		t.Fatalf("share token logged: %s", out)
 	}
 }
+
+// Portal writes are audited without a session: the actor is share:<prefix>, the target keeps the
+// sub-path and never the token.
+func TestAuditPortalWritesRedactToken(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "a.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	l := applog.New(st.DB, nil)
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /api/public/share/{token}/directive", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("DELETE /api/public/share/{token}/plan/{id}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) })
+	h := withAudit(l, mux)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PUT", "/api/public/share/st4_SECRETtokenValue/directive", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("DELETE", "/api/public/share/st4_SECRETtokenValue/plan/9", nil))
+	l.Close()
+	acts, _ := l.Query(ctx, applog.Filter{Category: applog.CategoryAction})
+	if len(acts.Items) != 2 {
+		t.Fatalf("actions: %+v", acts.Items)
+	}
+	del, put := acts.Items[0], acts.Items[1]
+	if put.Action != "share.public_directive_put" || put.Message != "share:st4_SECR" || put.UserID != nil ||
+		put.Target != "/api/public/share/st4_SECR…/directive" {
+		t.Fatalf("put: %+v", put)
+	}
+	if del.Action != "share.public_plan_delete" || del.Level != applog.LevelError || del.Target != "/api/public/share/st4_SECR…/plan/9" {
+		t.Fatalf("delete: %+v", del)
+	}
+	all, _ := l.Query(ctx, applog.Filter{})
+	for _, it := range all.Items {
+		if strings.Contains(it.Target, "SECRET") || strings.Contains(it.Message, "SECRET") {
+			t.Fatalf("token stored: %+v", it)
+		}
+	}
+}

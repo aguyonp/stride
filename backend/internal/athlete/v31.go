@@ -119,12 +119,14 @@ type CalendarEvent struct {
 	EndDate   string `json:"endDate"`
 	Severity  int    `json:"severity"`
 	Note      string `json:"note"`
+	// PrescribedBy names the share link that created the event (physio/coach portal).
+	PrescribedBy *Prescriber `json:"prescribedBy"`
 }
 
 var (
 	EventKinds    = []string{"fatigue", "pain", "illness", "unavailable", "forced_rest"}
 	EventFields   = []string{"kind", "startDate", "endDate", "severity", "note"}
-	EventReadOnly = []string{"id"}
+	EventReadOnly = []string{"id", "prescribedBy"}
 )
 
 var eventLabels = map[string]string{"fatigue": "Fatigue", "pain": "Douleur", "illness": "Maladie", "unavailable": "Indisponible", "forced_rest": "Repos forcé"}
@@ -163,11 +165,14 @@ func (e *CalendarEvent) Normalize() error {
 	return errors.Join(errs...)
 }
 
-const eventCols = `id, kind, start_date, end_date, severity, note`
+const eventCols = `id, kind, start_date, end_date, severity, note, share_link_id, prescribed_label, prescribed_author`
 
 func scanEvent(sc interface{ Scan(...any) error }) (CalendarEvent, error) {
 	var e CalendarEvent
-	err := sc.Scan(&e.ID, &e.Kind, &e.StartDate, &e.EndDate, &e.Severity, &e.Note)
+	var link sql.NullInt64
+	var label, author sql.NullString
+	err := sc.Scan(&e.ID, &e.Kind, &e.StartDate, &e.EndDate, &e.Severity, &e.Note, &link, &label, &author)
+	e.PrescribedBy = prescriber(link, label, author)
 	return e, err
 }
 
@@ -206,8 +211,10 @@ func (r Repo) Event(ctx context.Context, uid, id int64) (CalendarEvent, error) {
 
 func (r Repo) CreateEvent(ctx context.Context, uid int64, e *CalendarEvent) error {
 	now := r.ts()
-	res, err := r.DB.ExecContext(ctx, `INSERT INTO calendar_events (user_id, kind, start_date, end_date, severity, note, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, uid, e.Kind, e.StartDate, e.EndDate, e.Severity, e.Note, now, now)
+	link, label, author := prescriberArgs(e.PrescribedBy)
+	res, err := r.DB.ExecContext(ctx, `INSERT INTO calendar_events (user_id, kind, start_date, end_date, severity, note, share_link_id,
+		prescribed_label, prescribed_author, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, uid, e.Kind, e.StartDate, e.EndDate, e.Severity, e.Note, link, label, author, now, now)
 	if err != nil {
 		return err
 	}

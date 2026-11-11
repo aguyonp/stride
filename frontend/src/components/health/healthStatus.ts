@@ -1,10 +1,8 @@
 import type { BodySide, BodyZone, HealthStatusInput, HealthZone } from '../../api/types'
 import { ALL_BODY_ZONES, BODY_SIDE_LABEL, BODY_ZONE_META } from '../bodymap/bodyMapMeta'
+import { lazyRecord, t } from '../../i18n'
 
-export const HEALTH_MODE_LABEL: Record<HealthStatusInput['mode'], string> = {
-  performance: 'Bonne santé · mode performance',
-  tracking: 'Souci suivi',
-}
+export const HEALTH_MODE_LABEL: Record<HealthStatusInput['mode'], string> = lazyRecord(['performance', 'tracking'] as const, (k) => t(`health.status.mode.${k}`))
 
 export const zoneText = (z: Pick<HealthZone, 'zone' | 'side'>) => `${BODY_ZONE_META[z.zone].short} (${BODY_SIDE_LABEL[z.side].toLowerCase()})`
 
@@ -60,13 +58,13 @@ export function toHealthInput(d: HealthStatusInput): HealthStatusInput {
 
 export function validateHealthDraft(d: HealthStatusInput): string | null {
   if (d.mode === 'performance') return null
-  if (d.zones.length === 0) return 'Ajoute au moins une zone suivie.'
-  if (new Set(d.zones.map((z) => z.zone)).size !== d.zones.length) return 'Chaque zone ne peut apparaître qu’une fois.'
+  if (d.zones.length === 0) return t('health.status.zoneRequired')
+  if (new Set(d.zones.map((z) => z.zone)).size !== d.zones.length) return t('health.status.zoneUnique')
   for (const z of d.zones) {
     if (z.condition !== CONDITION_OTHER) continue
     const label = (z.customLabel ?? '').trim()
-    if (!label) return `Précise la pathologie suivie (${BODY_ZONE_META[z.zone].short}).`
-    if (label.length > CUSTOM_LABEL_MAX) return `Pathologie : ${CUSTOM_LABEL_MAX} caractères maximum.`
+    if (!label) return t('health.status.conditionRequired', { zone: BODY_ZONE_META[z.zone].short })
+    if (label.length > CUSTOM_LABEL_MAX) return t('health.status.conditionMax', { max: CUSTOM_LABEL_MAX })
   }
   return null
 }

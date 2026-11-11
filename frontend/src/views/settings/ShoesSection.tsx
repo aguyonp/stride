@@ -13,10 +13,11 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import { cn } from '../../lib/cn'
-import { fmtNumber, fmtWhen } from '../../lib/format'
+import { fmtNumber, fmtWhen, ND } from '../../lib/format'
 import { SHOE_TYPE_LABEL } from '../../lib/labels'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
+import { getLang, lazyRecord, t } from '../../i18n'
 
 const norm = (x: string) =>
   x
@@ -37,12 +38,12 @@ function MergeDialog({ source, shoes, onClose }: { source: Shoe | null; shoes: S
     <Dialog
       open={source !== null}
       onClose={onClose}
-      title="Fusionner une paire"
-      description={source ? `« ${source.name} » sera supprimée ; ses ressentis et son kilométrage passent sur la paire choisie.` : undefined}
+      title={t('shoes.section.mergeTitle')}
+      description={source ? t('shoes.section.mergeHint', { name: source.name }) : undefined}
       footer={
         <div className="flex justify-end gap-2 pb-3">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button
             type="button"
@@ -55,7 +56,7 @@ function MergeDialog({ source, shoes, onClose }: { source: Shoe | null; shoes: S
                 { id: source.id, intoId: target },
                 {
                   onSuccess: () => {
-                    toast({ title: 'Paires fusionnées', tone: 'success' })
+                    toast({ title: t('shoes.section.merged'), tone: 'success' })
                     onClose()
                   },
                 },
@@ -63,18 +64,18 @@ function MergeDialog({ source, shoes, onClose }: { source: Shoe | null; shoes: S
             }
           >
             {merge.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <GitMerge className="size-4" aria-hidden="true" />}
-            Fusionner
+            {t('shoes.section.merge')}
           </button>
         </div>
       }
     >
       <label htmlFor="merge-into" className="mb-1.5 block text-sm font-medium text-ink-2">
-        Fusionner dans
+        {t('shoes.section.mergeInto')}
       </label>
       <select id="merge-into" className="field" value={target ?? ''} onChange={(e) => setInto(Number(e.target.value))}>
         {others.map((x) => (
           <option key={x.id} value={x.id}>
-            {x.name} · {fmtNumber(x.distanceKm)} km{x.id === dup?.id ? ' (doublon probable)' : ''}
+            {x.name} · {fmtNumber(x.distanceKm)} km{x.id === dup?.id ? t('shoes.section.likelyDupSuffix') : ''}
           </option>
         ))}
       </select>
@@ -86,26 +87,26 @@ function MergeDialog({ source, shoes, onClose }: { source: Shoe | null; shoes: S
 const EMPTY: ShoeInput = { name: '', brand: '', model: '', dropMm: null, type: 'soft', retired: false, note: '' }
 
 /** Active pairs: the Strava default first, then the most worn. */
-const byUse = (a: Shoe, b: Shoe) => Number(b.stravaPrimary) - Number(a.stravaPrimary) || b.distanceKm - a.distanceKm || a.name.localeCompare(b.name, 'fr')
+const byUse = (a: Shoe, b: Shoe) => Number(b.stravaPrimary) - Number(a.stravaPrimary) || b.distanceKm - a.distanceKm || a.name.localeCompare(b.name, getLang())
 
 const brandModel = (s: Shoe) => [s.brand, s.model].filter(Boolean).join(' ')
 
 /** Where the total comes from, never presenting Stride's partial sum as the pair's mileage. */
 function mileageLabel(s: Shoe): { total: string; detail: string | null } {
   if (s.distanceSource === 'strava') {
-    const analyzed = s.analyzedKm > 0 && s.analyzedKm < s.distanceKm ? `dont ${fmtNumber(s.analyzedKm, 1)} km analysés par Stride` : null
-    return { total: s.stravaState === 'deleted' ? 'dernier total Strava' : 'total Strava', detail: analyzed }
+    const analyzed = s.analyzedKm > 0 && s.analyzedKm < s.distanceKm ? t('shoes.section.analyzedPart', { km: fmtNumber(s.analyzedKm, 1) }) : null
+    return { total: s.stravaState === 'deleted' ? t('shoes.section.lastStravaTotal') : t('shoes.section.stravaTotal'), detail: analyzed }
   }
-  if (s.stravaGearId) return { total: 'analysés par Stride', detail: 'Total Strava pas encore synchronisé' }
-  return { total: 'total Stride', detail: 'Somme des activités liées à cette paire' }
+  if (s.stravaGearId) return { total: t('shoes.section.analyzed'), detail: t('shoes.section.stravaPending') }
+  return { total: t('shoes.section.strideTotal'), detail: t('shoes.section.strideTotalHint') }
 }
 
-const RETIRED_LABEL = { retired: 'Retirée sur Strava', deleted: 'Supprimée de Strava' } as const
+const RETIRED_LABEL = lazyRecord(['retired', 'deleted'] as const, (k) => t(k === 'retired' ? 'shoes.section.retiredStrava' : 'shoes.section.deletedStrava'))
 
 function ShoeCard({ s, dup, canMerge, onMerge, onEdit, onDelete }: { s: Shoe; dup: boolean; canMerge: boolean; onMerge: () => void; onEdit: () => void; onDelete: () => void }) {
   const bm = brandModel(s)
   const m = mileageLabel(s)
-  const retiredLabel = s.retired ? (s.stravaState === 'retired' || s.stravaState === 'deleted' ? RETIRED_LABEL[s.stravaState] : 'Retirée') : null
+  const retiredLabel = s.retired ? (s.stravaState === 'retired' || s.stravaState === 'deleted' ? RETIRED_LABEL[s.stravaState] : t('shoes.section.retired')) : null
   return (
     <li className="glass-inset flex min-w-0 items-start gap-3 p-3">
       <div className="min-w-0 flex-1">
@@ -117,24 +118,24 @@ function ShoeCard({ s, dup, canMerge, onMerge, onEdit, onDelete }: { s: Shoe; du
         </p>
         {m.detail && <p className="text-xs text-ink-3">{m.detail}</p>}
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {s.stravaPrimary && !s.retired && <span className="chip border border-accent/35 bg-accent/10 text-ink">Paire principale</span>}
+          {s.stravaPrimary && !s.retired && <span className="chip border border-accent/35 bg-accent/10 text-ink">{t('shoes.section.primary')}</span>}
           {retiredLabel && <span className="chip border border-line bg-track text-ink-2">{retiredLabel}</span>}
           <span className="chip border border-line bg-track text-ink-2">{SHOE_TYPE_LABEL[s.type]}</span>
-          <span className="chip num border border-line bg-track text-ink-2">Drop {s.dropMm === null ? 'N/D' : `${fmtNumber(s.dropMm)} mm`}</span>
+          <span className="chip num border border-line bg-track text-ink-2">{t('shoes.section.drop', { value: s.dropMm === null ? ND : `${fmtNumber(s.dropMm)} mm` })}</span>
           {s.stravaGearId && <span className="chip border border-[#cc3d00]/40 bg-[#cc3d00]/10 text-ink-2">Strava</span>}
-          {dup && <span className="chip border border-warn/35 bg-warn/10 text-warn">Doublon probable</span>}
+          {dup && <span className="chip border border-warn/35 bg-warn/10 text-warn">{t('shoes.section.likelyDup')}</span>}
         </div>
       </div>
       <div className="flex flex-none gap-1">
         {canMerge && (
-          <button type="button" className={cn('icon-btn size-9', dup && 'text-warn')} onClick={onMerge} aria-label={`Fusionner ${s.name} dans une autre paire`}>
+          <button type="button" className={cn('icon-btn size-9', dup && 'text-warn')} onClick={onMerge} aria-label={t('shoes.section.mergeLabel', { name: s.name })}>
             <GitMerge className="size-4" />
           </button>
         )}
-        <button type="button" className="icon-btn size-9" onClick={onEdit} aria-label={`Modifier ${s.name}`}>
+        <button type="button" className="icon-btn size-9" onClick={onEdit} aria-label={t('shoes.section.editLabel', { name: s.name })}>
           <Pencil className="size-4" />
         </button>
-        <button type="button" className="icon-btn size-9" onClick={onDelete} aria-label={`Supprimer ${s.name}`}>
+        <button type="button" className="icon-btn size-9" onClick={onDelete} aria-label={t('shoes.section.deleteLabel', { name: s.name })}>
           <Trash2 className="size-4" />
         </button>
       </div>
@@ -158,7 +159,7 @@ export function ShoesSection() {
   const gearScopeMissing = strava && (stravaInfo?.missingScopes ?? []).includes('profile:read_all')
   const list = shoes.data ?? []
   const active = list.filter((x) => !x.retired).sort(byUse)
-  const retired = list.filter((x) => x.retired).sort((a, b) => b.distanceKm - a.distanceKm || a.name.localeCompare(b.name, 'fr'))
+  const retired = list.filter((x) => x.retired).sort((a, b) => b.distanceKm - a.distanceKm || a.name.localeCompare(b.name, getLang()))
   const linked = list.some((x) => x.stravaGearId)
   const lastSync = list.reduce<string | null>((acc, x) => (x.stravaSyncedAt && (!acc || x.stravaSyncedAt > acc) ? x.stravaSyncedAt : acc), null)
   const keyCount = new Map<string, number>()
@@ -173,27 +174,30 @@ export function ShoesSection() {
       onSuccess: (r) => {
         const off = r.filter((x) => x.retired).length
         const on = r.length - off
-        toast({ title: 'Chaussures Strava à jour', description: `${on} paire${on > 1 ? 's' : ''} active${on > 1 ? 's' : ''}, ${off} retirée${off > 1 ? 's' : ''}.` })
+        toast({
+          title: t('shoes.section.stravaUpdated'),
+          description: t('shoes.section.stravaCounts', { active: t('shoes.section.activePairs', { count: on }), retired: t('shoes.section.retiredPairs', { count: off }) }),
+        })
       },
-      onError: (e) => toast({ tone: 'error', title: 'Synchro Strava des chaussures impossible', description: e.message }),
+      onError: (e) => toast({ tone: 'error', title: t('shoes.section.stravaFailed'), description: e.message }),
     })
 
   return (
     <Section
       id="chaussures"
-      title="Chaussures"
+      title={t('shoes.section.title')}
       icon={<Footprints />}
-      description="Kilométrage réel : le total Strava de chaque paire liée, sinon la somme des activités que Stride a analysées. Drop, type et kilométrage alimentent les rapports."
+      description={t('shoes.section.description')}
       actions={
         <>
           {strava && !gearScopeMissing && (
             <button type="button" className="btn btn-ghost" onClick={importStrava} disabled={m.importStrava.isPending}>
               {m.importStrava.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : linked ? <RefreshCw className="size-4" aria-hidden="true" /> : <Download className="size-4" aria-hidden="true" />}
-              {linked ? 'Actualiser depuis Strava' : 'Importer depuis Strava'}
+              {linked ? t('shoes.section.refreshStrava') : t('shoes.section.importStrava')}
             </button>
           )}
           <button type="button" className="btn btn-primary" onClick={() => setEdit('new')}>
-            <Plus className="size-4" aria-hidden="true" /> Ajouter
+            <Plus className="size-4" aria-hidden="true" /> {t('shoes.section.add')}
           </button>
         </>
       }
@@ -201,48 +205,48 @@ export function ShoesSection() {
       {gearScopeMissing && (
         <div role="status" className="mb-4 rounded-xl border border-warn/30 bg-warn/[0.08] p-3 text-sm text-ink-2">
           <p className="flex items-center gap-1.5 font-semibold text-ink">
-            <ShieldAlert className="size-4 flex-none text-warn" aria-hidden="true" /> Kilométrage Strava indisponible
+            <ShieldAlert className="size-4 flex-none text-warn" aria-hidden="true" /> {t('shoes.section.scopeTitle')}
           </p>
           <p className="mt-1 text-xs">
-            Strava ne partage pas ton équipement avec Stride : sans total Strava, une paire n’affiche que les kilomètres de ses activités analysées ici. Reconnecte Strava en autorisant l’accès au profil complet et aux chaussures.
+            {t('shoes.section.scopeBody')}
           </p>
           <div className="mt-2.5">
-            <StravaConnectButton strava={stravaInfo} returnPath={path} label="Reconnecter Strava" />
+            <StravaConnectButton strava={stravaInfo} returnPath={path} label={t('shoes.section.reconnect')} />
           </div>
         </div>
       )}
       {shoes.isError ? (
-        <ErrorView error={shoes.error} onRetry={() => void shoes.refetch()} title="Chaussures indisponibles" />
+        <ErrorView error={shoes.error} onRetry={() => void shoes.refetch()} title={t('shoes.section.unavailable')} />
       ) : !shoes.data ? (
         <div className="grid gap-2 sm:grid-cols-2">
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
         </div>
       ) : list.length === 0 ? (
-        <EmptyState icon={<Footprints />} title="Aucune chaussure">
-          Ajoute tes paires pour suivre leur kilométrage et les lier à tes ressentis{strava ? ', ou importe-les depuis Strava' : ''}.
+        <EmptyState icon={<Footprints />} title={t('shoes.section.empty')}>
+          {strava ? t('shoes.section.emptyHintStrava') : t('shoes.section.emptyHint')}
         </EmptyState>
       ) : (
         <>
           {active.length > 0 ? (
-            <ul className="grid gap-2 sm:grid-cols-2" aria-label="Paires actives">
+            <ul className="grid gap-2 sm:grid-cols-2" aria-label={t('shoes.section.activeList')}>
               {active.map(card)}
             </ul>
           ) : (
-            <p className="text-sm text-ink-3">Aucune paire active : toutes tes paires sont retirées.</p>
+            <p className="text-sm text-ink-3">{t('shoes.section.noActive')}</p>
           )}
           {retired.length > 0 && (
             <div className="mt-4">
               <button type="button" className="btn btn-ghost -ml-2 px-2" aria-expanded={showRetired} aria-controls={retiredId} onClick={() => setShowRetired((v) => !v)}>
                 <ChevronDown className={cn('size-4 transition-transform duration-200', showRetired && 'rotate-180')} aria-hidden="true" />
-                Retirées ({retired.length})
+                {t('shoes.section.retiredToggle', { count: retired.length })}
               </button>
-              <ul id={retiredId} hidden={!showRetired} className="mt-2 grid gap-2 sm:grid-cols-2" aria-label="Paires retirées">
+              <ul id={retiredId} hidden={!showRetired} className="mt-2 grid gap-2 sm:grid-cols-2" aria-label={t('shoes.section.retiredList')}>
                 {showRetired && retired.map(card)}
               </ul>
             </div>
           )}
-          {lastSync && <p className="mt-3 text-xs text-ink-3">Dernière synchro des totaux Strava : {fmtWhen(lastSync)}</p>}
+          {lastSync && <p className="mt-3 text-xs text-ink-3">{t('shoes.section.lastSync', { when: fmtWhen(lastSync) })}</p>}
         </>
       )}
 
@@ -251,16 +255,16 @@ export function ShoesSection() {
       <ConfirmDialog
         open={del !== null}
         onClose={() => setDel(null)}
-        title="Supprimer cette paire ?"
+        title={t('shoes.section.deleteTitle')}
         message={
           <>
-            <p>« {del?.name} » sera retirée de la liste. Les ressentis déjà saisis gardent le nom de la chaussure dans l’historique si le serveur le conserve.</p>
+            <p>{t('shoes.section.deleteBody', { name: del?.name })}</p>
             {del?.stravaGearId && del.stravaState === 'active' && (
-              <p>Elle reviendra à la prochaine synchro tant qu’elle est active sur Strava : pour la ranger, retire-la plutôt sur Strava, Stride la classera dans les paires retirées.</p>
+              <p>{t('shoes.section.deleteStravaHint')}</p>
             )}
           </>
         }
-        confirmLabel="Supprimer"
+        confirmLabel={t('common.actions.delete')}
         danger
         busy={m.remove.isPending}
         onConfirm={() =>
@@ -268,9 +272,9 @@ export function ShoesSection() {
           m.remove.mutate(del.id, {
             onSuccess: () => {
               setDel(null)
-              toast({ title: 'Chaussure supprimée' })
+              toast({ title: t('shoes.section.deleted') })
             },
-            onError: (e) => toast({ tone: 'error', title: 'Suppression impossible', description: e.message }),
+            onError: (e) => toast({ tone: 'error', title: t('shoes.section.deleteFailed'), description: e.message }),
           })
         }
       />
@@ -289,14 +293,14 @@ function ShoeDialog({ shoe, onClose }: { shoe: Shoe | 'new' | null; onClose: () 
   const busy = m.create.isPending || m.update.isPending
 
   const submit = () => {
-    if (!v.name.trim()) return setError('Donne un nom à cette paire.')
+    if (!v.name.trim()) return setError(t('shoes.section.nameRequired'))
     const d = drop.trim() === '' ? null : Number(drop.replace(',', '.'))
-    if (d !== null && (!Number.isFinite(d) || d < 0 || d > 20)) return setError('Drop entre 0 et 20 mm.')
+    if (d !== null && (!Number.isFinite(d) || d < 0 || d > 20)) return setError(t('shoes.section.dropRange'))
     setError(null)
     const body: ShoeInput = { ...v, name: v.name.trim(), brand: v.brand.trim(), model: v.model.trim(), note: v.note.trim(), dropMm: d }
     const done = {
       onSuccess: () => {
-        toast({ title: shoe === 'new' ? 'Chaussure ajoutée' : 'Chaussure mise à jour' })
+        toast({ title: shoe === 'new' ? t('shoes.section.added') : t('shoes.section.updated') })
         onClose()
       },
       onError: (e: Error) => setError(e.message),
@@ -309,16 +313,16 @@ function ShoeDialog({ shoe, onClose }: { shoe: Shoe | 'new' | null; onClose: () 
     <Dialog
       open={shoe !== null}
       onClose={onClose}
-      title={shoe === 'new' ? 'Nouvelle paire' : 'Modifier la paire'}
+      title={shoe === 'new' ? t('shoes.section.newTitle') : t('shoes.section.editTitle')}
       initialFocus={`#${CSS.escape(`${ids}-name`)}`}
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Annuler
+            {t('common.actions.cancel')}
           </button>
           <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-            Enregistrer
+            {t('common.actions.save')}
           </button>
         </div>
       }
@@ -332,20 +336,20 @@ function ShoeDialog({ shoe, onClose }: { shoe: Shoe | 'new' | null; onClose: () 
       >
         <div>
           <label htmlFor={`${ids}-name`} className="mb-1.5 block text-sm font-medium text-ink-2">
-            Nom
+            {t('shoes.section.name')}
           </label>
-          <input id={`${ids}-name`} className="field" value={v.name} maxLength={60} placeholder="Ex. Paire du quotidien" onChange={(e) => setV({ ...v, name: e.target.value })} />
+          <input id={`${ids}-name`} className="field" value={v.name} maxLength={60} placeholder={t('shoes.section.namePlaceholder')} onChange={(e) => setV({ ...v, name: e.target.value })} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor={`${ids}-brand`} className="mb-1.5 block text-sm font-medium text-ink-2">
-              Marque
+              {t('shoes.section.brand')}
             </label>
             <input id={`${ids}-brand`} className="field" value={v.brand} maxLength={40} onChange={(e) => setV({ ...v, brand: e.target.value })} />
           </div>
           <div>
             <label htmlFor={`${ids}-model`} className="mb-1.5 block text-sm font-medium text-ink-2">
-              Modèle
+              {t('shoes.section.model')}
             </label>
             <input id={`${ids}-model`} className="field" value={v.model} maxLength={60} onChange={(e) => setV({ ...v, model: e.target.value })} />
           </div>
@@ -353,27 +357,27 @@ function ShoeDialog({ shoe, onClose }: { shoe: Shoe | 'new' | null; onClose: () 
         <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
           <div>
             <label htmlFor={`${ids}-drop`} className="mb-1.5 block text-sm font-medium text-ink-2">
-              Drop (mm)
+              {t('shoes.section.dropMm')}
             </label>
             <input id={`${ids}-drop`} className="field num" type="number" inputMode="decimal" min={0} max={20} step={0.5} value={drop} onChange={(e) => setDrop(e.target.value)} />
           </div>
           <div className="min-w-0">
-            <p className="mb-1.5 text-sm font-medium text-ink-2">Type</p>
+            <p className="mb-1.5 text-sm font-medium text-ink-2">{t('shoes.section.type')}</p>
             <SegmentedControl<ShoeType>
-              ariaLabel="Type de chaussure"
+              ariaLabel={t('shoes.section.typeLabel')}
               value={v.type}
               onChange={(type) => setV({ ...v, type })}
-              options={(Object.keys(SHOE_TYPE_LABEL) as ShoeType[]).map((t) => ({ value: t, label: SHOE_TYPE_LABEL[t] }))}
+              options={(Object.keys(SHOE_TYPE_LABEL) as ShoeType[]).map((k) => ({ value: k, label: SHOE_TYPE_LABEL[k] }))}
             />
           </div>
         </div>
         <div>
           <label htmlFor={`${ids}-note`} className="mb-1.5 block text-sm font-medium text-ink-2">
-            Note
+            {t('shoes.section.note')}
           </label>
           <textarea id={`${ids}-note`} className="field min-h-20 resize-y" value={v.note} maxLength={300} onChange={(e) => setV({ ...v, note: e.target.value })} />
         </div>
-        <Checkbox checked={v.retired} onChange={(retired) => setV({ ...v, retired })} label="Paire retirée" description="Elle n’est plus proposée dans le formulaire de ressenti." />
+        <Checkbox checked={v.retired} onChange={(retired) => setV({ ...v, retired })} label={t('shoes.section.retiredPair')} description={t('shoes.section.retiredPairHint')} />
         {error && <InlineError>{error}</InlineError>}
       </form>
     </Dialog>

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { PlannedSession, PlannedSessionInput } from '../../api/types'
 import { adaptDiff, changeCounts } from './adaptDiff'
+import { setLang } from '../../i18n/lang'
+
+// These tests assert the French UI copy.
+setLang('fr', { persist: false })
 
 const base = { sport: 'run' as const, targetDistanceM: null, targetPaceMinSecPerKm: null, targetPaceMaxSecPerKm: null, targetCadenceSpm: null, instructions: '', steps: [] }
 const planned = (id: number, date: string, title: string, durationS = 2700): PlannedSession => ({

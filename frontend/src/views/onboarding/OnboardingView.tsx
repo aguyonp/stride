@@ -14,29 +14,31 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { cn } from '../../lib/cn'
 import { todayISO } from '../../lib/format'
+import { t, tx } from '../../i18n'
 
 type Step = 0 | 1 | 2 | 3
 
-const STEPS: { title: string; short: string; icon: LucideIcon }[] = [
-  { title: 'Ton état de santé', short: 'Santé', icon: UserRound },
-  { title: 'Garmin Connect', short: 'Garmin', icon: Watch },
-  { title: 'Strava', short: 'Strava', icon: Plug },
-  { title: 'C’est prêt', short: 'Terminé', icon: PartyPopper },
+const STEP_DEFS: { key: 'health' | 'garmin' | 'strava' | 'done'; icon: LucideIcon }[] = [
+  { key: 'health', icon: UserRound },
+  { key: 'garmin', icon: Watch },
+  { key: 'strava', icon: Plug },
+  { key: 'done', icon: PartyPopper },
 ]
+const steps = () => STEP_DEFS.map((s) => ({ ...s, title: t(`onboarding.view.steps.${s.key}.title`), short: t(`onboarding.view.steps.${s.key}.short`) }))
 
 function Progress({ step }: { step: Step }) {
   return (
-    <ol className="grid grid-cols-4 gap-1.5" aria-label="Progression">
-      {STEPS.map((s, i) => {
+    <ol className="grid grid-cols-4 gap-1.5" aria-label={t('onboarding.view.progress')}>
+      {steps().map((s, i) => {
         const done = i < step
         const current = i === step
         return (
-          <li key={s.short} className="min-w-0" aria-current={current ? 'step' : undefined}>
+          <li key={s.key} className="min-w-0" aria-current={current ? 'step' : undefined}>
             <div className={cn('h-1.5 rounded-full transition-colors', done || current ? 'bg-accent' : 'bg-track')} />
             <p className={cn('mt-1.5 flex items-center gap-1 truncate text-[11px] font-semibold', current ? 'text-ink' : done ? 'text-ink-2' : 'text-ink-3')}>
               {done && <Check className="size-3 flex-none text-accent" aria-hidden="true" />}
               <span className="truncate">{s.short}</span>
-              <span className="sr-only">{done ? ' (fait)' : current ? ' (étape en cours)' : ''}</span>
+              <span className="sr-only">{done ? t('onboarding.view.stepDone') : current ? t('onboarding.view.stepCurrent') : ''}</span>
             </p>
           </li>
         )
@@ -45,12 +47,12 @@ function Progress({ step }: { step: Step }) {
   )
 }
 
-function Footer({ onSkip, onNext, nextLabel = 'Suivant', busy, nextDisabled }: { onSkip?: () => void; onNext: () => void; nextLabel?: string; busy?: boolean; nextDisabled?: boolean }) {
+function Footer({ onSkip, onNext, nextLabel = t('onboarding.view.next'), busy, nextDisabled }: { onSkip?: () => void; onNext: () => void; nextLabel?: string; busy?: boolean; nextDisabled?: boolean }) {
   return (
     <div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
       {onSkip ? (
         <button type="button" className="btn btn-ghost" onClick={onSkip} disabled={busy}>
-          Passer
+          {t('onboarding.view.skip')}
         </button>
       ) : (
         <span />
@@ -74,7 +76,7 @@ function Done({ children }: { children: ReactNode }) {
 }
 
 export default function OnboardingView({ me }: { me: Me }) {
-  useDocumentTitle('Bienvenue')
+  useDocumentTitle(t('onboarding.view.title'))
   const [, navigate] = useLocation()
   const [strava] = useState(readStravaResult)
   const [step, setStep] = useState<Step>(strava ? 2 : 0)
@@ -127,17 +129,17 @@ export default function OnboardingView({ me }: { me: Me }) {
 
   const g = integ.data?.garmin
   const s = integ.data?.strava
-  const meta = STEPS[step]
+  const meta = steps()[step]
 
   return (
     <div className="mx-auto max-w-2xl py-2 sm:py-6">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold tracking-tight text-ink">Bonjour {me.displayName}</h1>
+          <h1 className="truncate text-xl font-semibold tracking-tight text-ink">{t('onboarding.view.hello', { name: me.displayName })}</h1>
         </div>
         {step < 3 && (
           <button type="button" className="flex-none text-sm font-medium text-ink-3 underline-offset-4 hover:text-ink hover:underline" onClick={finish} disabled={updateMe.isPending}>
-            Tout passer
+            {t('onboarding.view.skipAll')}
           </button>
         )}
       </div>
@@ -150,7 +152,7 @@ export default function OnboardingView({ me }: { me: Me }) {
           </span>
           <div className="min-w-0">
             <p className="text-xs font-medium text-ink-3">
-              Étape {step + 1} sur {STEPS.length}
+              {t('onboarding.view.stepOf', { n: step + 1, total: STEP_DEFS.length })}
             </p>
             <h2 id="onboarding-step-title" tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none sm:text-2xl">
               {meta.title}
@@ -160,7 +162,7 @@ export default function OnboardingView({ me }: { me: Me }) {
 
         {step === 0 && (
           <div className="mt-5">
-            <p className="mb-4 text-sm text-ink-2">Stride adapte ses alertes et les prompts IA à ton état. Modifiable ensuite dans Santé & forme.</p>
+            <p className="mb-4 text-sm text-ink-2">{t('onboarding.view.healthIntro')}</p>
             {health.isPending && !health.isError ? (
               <div className="space-y-2">
                 <Skeleton className="h-16" />
@@ -177,18 +179,18 @@ export default function OnboardingView({ me }: { me: Me }) {
 
         {step === 1 && (
           <div className="mt-5">
-            <p className="mb-4 text-sm text-ink-2">Avec ta clé Personal API, Stride récupère tes activités, la biomécanique (FIT), le sommeil, la VFC et la Body Battery.</p>
+            <p className="mb-4 text-sm text-ink-2">{t('onboarding.view.garminIntro')}</p>
             {!integ.data ? (
               <Skeleton className="h-40" />
             ) : g?.connected ? (
               <div className="space-y-4">
                 <Done>
-                  Garmin est connecté (clé <span className="font-mono">{g.keyHint ?? '••••'}</span>). La synchronisation démarre automatiquement.
+                  {tx('onboarding.view.garminConnected', { key: <span className="font-mono">{g.keyHint ?? '••••'}</span> })}
                 </Done>
                 <details className="rounded-xl border border-line px-3 py-2">
-                  <summary className="text-sm font-medium text-ink-2">Remplacer la clé</summary>
+                  <summary className="text-sm font-medium text-ink-2">{t('onboarding.view.replaceKey')}</summary>
                   <div className="mt-3">
-                    <GarminKeyForm submitLabel="Remplacer la clé" />
+                    <GarminKeyForm submitLabel={t('onboarding.view.replaceKey')} />
                   </div>
                 </details>
               </div>
@@ -204,14 +206,14 @@ export default function OnboardingView({ me }: { me: Me }) {
 
         {step === 2 && (
           <div className="mt-5">
-            <p className="mb-4 text-sm text-ink-2">Facultatif : Strava ajoute le titre, la description, le RPE, le Relative Effort et tes chaussures. Les séances sont fusionnées avec Garmin quand les deux existent.</p>
-            {strava?.status === 'connected' && <Done>Strava est connecté. Tes séances seront enrichies automatiquement.</Done>}
-            {strava?.status === 'error' && <InlineError>Connexion Strava échouée{strava.reason ? ` : ${strava.reason}` : ''}. Tu peux réessayer ou passer cette étape.</InlineError>}
+            <p className="mb-4 text-sm text-ink-2">{t('onboarding.view.stravaIntro')}</p>
+            {strava?.status === 'connected' && <Done>{t('onboarding.view.stravaJustConnected')}</Done>}
+            {strava?.status === 'error' && <InlineError>{strava.reason ? t('onboarding.view.stravaFailedReason', { reason: strava.reason }) : t('onboarding.view.stravaFailed')}</InlineError>}
             <div className="mt-3">
               {!integ.data ? (
                 <Skeleton className="h-12 max-w-xs" />
               ) : s?.connected ? (
-                strava?.status !== 'connected' && <Done>Strava est connecté{s.athleteName ? ` (${s.athleteName})` : ''}.</Done>
+                strava?.status !== 'connected' && <Done>{t('onboarding.view.stravaConnected', { name: s.athleteName ? ` (${s.athleteName})` : '' })}</Done>
               ) : (
                 <StravaConnectButton strava={s} returnPath="/onboarding" />
               )}
@@ -222,26 +224,30 @@ export default function OnboardingView({ me }: { me: Me }) {
 
         {step === 3 && (
           <div className="mt-5">
-            <p className="mb-4 text-sm text-ink-2">Ton espace est prêt. Voici ce qui est configuré :</p>
+            <p className="mb-4 text-sm text-ink-2">{t('onboarding.view.readyIntro')}</p>
             <ul className="space-y-2">
-              <SummaryRow ok label="Santé" value={health.data ? healthSummary(health.data) : 'Bonne santé · mode performance'} />
-              <SummaryRow ok={!!g?.connected} label="Garmin Connect" value={g?.connected ? `Connecté · ${g.keyHint ?? ''}` : 'Non connecté'} />
-              <SummaryRow ok={!!s?.connected} label="Strava" value={s?.connected ? `Connecté${s.athleteName ? ` · ${s.athleteName}` : ''}` : s?.available === false ? 'Indisponible sur ce serveur' : 'Non connecté'} />
+              <SummaryRow ok label={t('onboarding.view.health')} value={health.data ? healthSummary(health.data) : t('onboarding.view.healthDefault')} />
+              <SummaryRow ok={!!g?.connected} label="Garmin Connect" value={g?.connected ? t('onboarding.view.connectedKey', { key: g.keyHint ?? '' }) : t('onboarding.view.notConnected')} />
+              <SummaryRow
+                ok={!!s?.connected}
+                label="Strava"
+                value={s?.connected ? t('onboarding.view.connected', { name: s.athleteName ? ` · ${s.athleteName}` : '' }) : s?.available === false ? t('onboarding.view.unavailable') : t('onboarding.view.notConnected')}
+              />
             </ul>
             {!g?.connected && !s?.connected && (
               <p className="mt-4 flex items-start gap-2 rounded-xl border border-info/30 bg-info/10 px-3 py-2.5 text-sm text-ink-2">
                 <Info className="mt-0.5 size-4 flex-none text-info" aria-hidden="true" />
-                Aucune source connectée : le tableau de bord restera vide tant que Garmin ou Strava ne sont pas reliés. Tu peux le faire à tout moment dans Réglages → Intégrations.
+                {t('onboarding.view.noSource')}
               </p>
             )}
             {finishError && <InlineError className="mt-3">{finishError}</InlineError>}
             <div className="mt-6 flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
               <button type="button" className="btn btn-ghost" onClick={() => setStep(0)}>
-                Revoir les étapes
+                {t('onboarding.view.review')}
               </button>
               <button type="button" className="btn btn-primary min-h-12 text-[0.95rem]" onClick={finish} disabled={updateMe.isPending}>
                 {updateMe.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <StrideMark className="w-5" />}
-                Ouvrir le tableau de bord
+                {t('onboarding.view.open')}
               </button>
             </div>
           </div>
@@ -249,7 +255,7 @@ export default function OnboardingView({ me }: { me: Me }) {
       </section>
       {step > 0 && step < 3 && (
         <button type="button" className="mt-3 text-sm font-medium text-ink-3 hover:text-ink" onClick={() => setStep((s) => Math.max(0, s - 1) as Step)}>
-          ← Étape précédente
+          {t('onboarding.view.previous')}
         </button>
       )}
     </div>

@@ -2,7 +2,7 @@ import { Footprints } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { BodyCorrelationFactor } from '../../api/types'
 import { cn } from '../../lib/cn'
-import { fmtSigned, isNum } from '../../lib/format'
+import { fmtSignedPct, isNum } from '../../lib/format'
 import { Insufficient } from '../ui/Value'
 import {
   correlationConfidence,
@@ -10,7 +10,9 @@ import {
   fmtMeasure,
   isCorrelationInsufficient,
   shoeHighlightDetail,
+  BODY_ZONE_META,
 } from './bodyMapMeta'
+import { t, tDyn } from '../../i18n'
 
 function Metric({ label, value, className }: { label: string; value: string | null; className?: string }) {
   return (
@@ -33,14 +35,14 @@ function CorrelationItem({ c }: { c: BodyCorrelationFactor }) {
     </p>
   ) : (
     <dl className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl border border-line bg-track/30 px-3 py-2 text-xs sm:grid-cols-4">
-      <Metric label="Moyenne avec gêne" value={fmtMeasure(c.symptomaticMean, c.unit)} className="font-semibold text-ink" />
-      <Metric label="Référence sans gêne" value={fmtMeasure(c.baselineMean, c.unit)} className="font-medium text-ink-2" />
+      <Metric label={t('health.map.avgWith')} value={fmtMeasure(c.symptomaticMean, c.unit)} className="font-semibold text-ink" />
+      <Metric label={t('health.map.baseline')} value={fmtMeasure(c.baselineMean, c.unit)} className="font-medium text-ink-2" />
       <Metric
-        label="Écart relatif"
-        value={isNum(c.deltaPct) ? `${fmtSigned(c.deltaPct, 1)} %` : null}
+        label={t('health.map.delta')}
+        value={isNum(c.deltaPct) ? fmtSignedPct(c.deltaPct, 1) : null}
         className={cn('font-semibold', notable ? 'text-warn' : 'text-ink-2')}
       />
-      <Metric label="Échantillon" value={correlationSample(c)} className="text-ink-2" />
+      <Metric label={t('health.map.sample')} value={correlationSample(c)} className="text-ink-2" />
     </dl>
   )
 
@@ -49,8 +51,8 @@ function CorrelationItem({ c }: { c: BodyCorrelationFactor }) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-ink">{c.factorLabel}</h3>
-            <span className="chip h-5 border border-line bg-track/60 px-2 text-[11px] text-ink-2">{c.zoneLabel}</span>
+            <h3 className="text-sm font-semibold text-ink">{tDyn(`health.map.factors.${c.factor}`, undefined, c.factorLabel)}</h3>
+            <span className="chip h-5 border border-line bg-track/60 px-2 text-[11px] text-ink-2">{BODY_ZONE_META[c.zone]?.short ?? c.zoneLabel}</span>
           </div>
           {!insufficient && c.summary && <p className="mt-1 text-xs text-ink-2">{c.summary}</p>}
         </div>
@@ -72,7 +74,7 @@ function CorrelationItem({ c }: { c: BodyCorrelationFactor }) {
 
 export function BodyCorrelationList({
   correlations,
-  emptyLabel = 'Pas encore assez de sorties associées pour isoler un facteur mécanique.',
+  emptyLabel = t('health.map.corrEmpty'),
 }: {
   correlations: BodyCorrelationFactor[]
   emptyLabel?: string
@@ -82,7 +84,7 @@ export function BodyCorrelationList({
   }
 
   return (
-    <ul className="divide-y divide-line" aria-label="Facteurs de corrélation biomécanique">
+    <ul className="divide-y divide-line" aria-label={t('health.map.corrList')}>
       {correlations.map((c, idx) => (
         <CorrelationItem key={`${c.zone}-${c.factor}-${idx}`} c={c} />
       ))}

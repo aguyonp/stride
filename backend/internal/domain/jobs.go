@@ -247,6 +247,8 @@ func (s *Services) registerJobs() {
 		return out, nil
 	})
 
+	s.queue.Register(queue.KindLLMMorphRefine, s.runMorphRefine)
+
 	s.queue.Register(queue.KindWebhookDeliver, func(ctx context.Context, jc *queue.JobContext) (any, error) {
 		var p webhookDeliverPayload
 		if err := json.Unmarshal(jc.Payload, &p); err != nil {
@@ -288,7 +290,7 @@ func (s *Services) runLLMJob(ctx context.Context, jc *queue.JobContext, label, p
 	cctx, cancel := context.WithTimeout(ctx, llmTimeout)
 	defer cancel()
 	jc.UpdateProgress(label, nil, nil, nil)
-	text, err := s.callLLMStream(cctx, jc.UserID, c, llmRequest{system: systemDirective(), prompt: prompt, maxTokens: llmMaxTokens},
+	text, err := s.callLLMStream(cctx, jc.UserID, c, llmRequest{system: systemDirective(prompt), prompt: prompt, maxTokens: llmMaxTokens},
 		async || s.hasSSESubscribers(jc.UserID), func(delta string) { s.emitLLMToken(jc.UserID, jc.ID, kind, ref, delta) })
 	if err != nil {
 		s.emitLLMFailed(jc, kind, ref, err)
@@ -353,7 +355,7 @@ func (s *Services) execAnalyzeLLM(ctx context.Context, jc *queue.JobContext, p l
 	t0 := time.Now()
 	wantStream := p.Async || s.hasSSESubscribers(jc.UserID)
 	text, err := s.callLLMStream(cctx, jc.UserID, c, llmRequest{
-		system: systemDirective(), prompt: p.Prompt, maxTokens: llmMaxTokens,
+		system: systemDirective(p.Prompt), prompt: p.Prompt, maxTokens: llmMaxTokens,
 	}, wantStream, func(delta string) {
 		s.emitLLMToken(jc.UserID, jc.ID, p.Kind, p.Ref, delta)
 	})

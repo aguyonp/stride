@@ -93,13 +93,94 @@ var conditionsByZone = map[BodyZone][]Condition{
 }
 
 // Conditions returns the catalog, zones in canonical order, « Autre (préciser) » closing each list.
-func Conditions() ConditionCatalog {
+func Conditions() ConditionCatalog { return ConditionsIn(frfmt.FR) }
+
+// ConditionsIn returns the catalog with its labels in language l (§15.2, GET follows Accept-Language).
+func ConditionsIn(l frfmt.Lang) ConditionCatalog {
 	out := ConditionCatalog{Zones: make([]ZoneConditions, 0, len(AllBodyZones))}
 	for _, z := range AllBodyZones {
 		list := append(append([]Condition{}, conditionsByZone[z]...), otherCondition)
-		out.Zones = append(out.Zones, ZoneConditions{Zone: z, ZoneLabel: BodyZoneLabel(z), Conditions: list})
+		zoneLabel := BodyZoneLabel(z)
+		if l == frfmt.EN {
+			for i, c := range list {
+				if en, ok := conditionLabelsEN[c.Key]; ok {
+					list[i].Label = en
+				}
+			}
+			if en, ok := bodyZoneLabelsEN[z]; ok {
+				zoneLabel = en
+			}
+		}
+		out.Zones = append(out.Zones, ZoneConditions{Zone: z, ZoneLabel: zoneLabel, Conditions: list})
 	}
 	return out
+}
+
+// conditionLabelsEN are the English labels of the catalog (same keys).
+var conditionLabelsEN = map[string]string{
+	ConditionOther:                    "Other (specify)",
+	"patellofemoral_pain":             "Patellofemoral pain syndrome",
+	"patellar_tendinopathy":           "Patellar tendinopathy",
+	"pes_anserine_tendinopathy":       "Pes anserine tendinopathy",
+	"meniscus_tear":                   "Meniscus tear",
+	"knee_ligament_sprain":            "Knee sprain (ligament)",
+	"medial_tibial_stress":            "Medial tibial stress syndrome (shin splints)",
+	"tibial_stress_fracture":          "Tibial stress fracture",
+	"compartment_syndrome":            "Compartment syndrome",
+	"iliotibial_band_syndrome":        "Iliotibial band syndrome",
+	"achilles_tendinopathy":           "Achilles tendinopathy",
+	"retrocalcaneal_bursitis":         "Retrocalcaneal bursitis",
+	"achilles_partial_tear":           "Partial Achilles tendon tear",
+	"plantar_fasciitis":               "Plantar fasciitis",
+	"calcaneal_stress_fracture":       "Calcaneal stress fracture",
+	"hamstring_strain":                "Hamstring strain",
+	"calf_strain":                     "Calf strain",
+	"proximal_hamstring_tendinopathy": "Proximal hamstring tendinopathy",
+	"ankle_sprain":                    "Ankle sprain",
+	"ankle_fracture":                  "Ankle fracture (malleolus)",
+	"peroneal_tendinopathy":           "Peroneal tendinopathy",
+	"tibialis_posterior_tendinopathy": "Tibialis posterior tendinopathy",
+	"chronic_ankle_instability":       "Chronic ankle instability",
+	"metatarsal_stress_fracture":      "Metatarsal stress fracture",
+	"metatarsalgia":                   "Metatarsalgia",
+	"morton_neuroma":                  "Morton’s neuroma",
+	"gluteal_tendinopathy":            "Gluteal tendinopathy (gluteus medius)",
+	"hip_flexor_tendinopathy":         "Hip flexor (psoas) tendinopathy",
+	"pubalgia":                        "Athletic pubalgia",
+	"femoral_neck_stress_fracture":    "Femoral neck stress fracture",
+	"low_back_pain":                   "Low back pain",
+	"sciatica":                        "Sciatica",
+	"sacroiliac_pain":                 "Sacroiliac joint pain",
+}
+
+// bodyZoneLabelsEN are the English body zone labels.
+var bodyZoneLabelsEN = map[BodyZone]string{
+	"knee_pfps":         "Kneecap / knee (PFPS)",
+	"shin_splints":      "Tibial periosteum (shin splints)",
+	"iliotibial_band":   "Iliotibial band (ITB)",
+	"achilles":          "Achilles tendon",
+	"plantar_fascia":    "Plantar fascia",
+	"hamstrings_calves": "Hamstrings / calves",
+	"ankle":             "Ankle",
+	"forefoot":          "Forefoot / metatarsals",
+	"hip":               "Hip / pelvis",
+	"lower_back":        "Lower back (lumbar)",
+}
+
+// BodyZoneLabelIn is BodyZoneLabel in language l.
+func BodyZoneLabelIn(z BodyZone, l frfmt.Lang) string {
+	if en, ok := bodyZoneLabelsEN[z]; ok && l == frfmt.EN {
+		return en
+	}
+	return BodyZoneLabel(z)
+}
+
+// ConditionLabelIn is ConditionLabelOf in language l (custom labels are the athlete's own text).
+func ConditionLabelIn(z HealthZone, l frfmt.Lang) string {
+	if en, ok := conditionLabelsEN[z.Condition]; ok && l == frfmt.EN && z.Condition != ConditionOther {
+		return en
+	}
+	return ConditionLabelOf(z)
 }
 
 func findCondition(zone BodyZone, key string) (Condition, bool) {

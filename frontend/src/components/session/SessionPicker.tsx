@@ -10,7 +10,8 @@ import { SegmentedControl } from '../ui/SegmentedControl'
 import { Skeleton } from '../ui/Skeleton'
 import { ActivityRow } from './ActivityRow'
 import { MiniCalendar, monthBounds } from './MiniCalendar'
-import { clampMonth, MONTHS_FR, yearsBack } from './monthJump'
+import { clampMonth, monthNames, yearsBack } from './monthJump'
+import { t } from '../../i18n'
 
 interface SessionPickerProps {
   open: boolean
@@ -71,14 +72,14 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
   const calendar = (
     <div>
       <div className="mb-3 flex gap-2">
-        <select className="field h-9 min-h-9 flex-1 py-1 text-sm" aria-label="Mois" value={ym.m} onChange={(e) => setYm(clampMonth(ym.y, Number(e.target.value), today))}>
-          {MONTHS_FR.map((label, i) => (
+        <select className="field h-9 min-h-9 flex-1 py-1 text-sm" aria-label={t('session.picker.month')} value={ym.m} onChange={(e) => setYm(clampMonth(ym.y, Number(e.target.value), today))}>
+          {monthNames().map((label, i) => (
             <option key={label} value={i}>
               {label}
             </option>
           ))}
         </select>
-        <select className="field num h-9 min-h-9 w-28 py-1 text-sm" aria-label="Année" value={ym.y} onChange={(e) => setYm(clampMonth(Number(e.target.value), ym.m, today))}>
+        <select className="field num h-9 min-h-9 w-28 py-1 text-sm" aria-label={t('session.picker.year')} value={ym.y} onChange={(e) => setYm(clampMonth(Number(e.target.value), ym.m, today))}>
           {yearsBack(today).map((y) => (
             <option key={y} value={y}>
               {y}
@@ -99,9 +100,9 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
       />
       {month.isError && !month.isFetching && (
         <div role="alert" className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-          <span className="min-w-0">Impossible de charger les activités de ce mois.</span>
+          <span className="min-w-0">{t('session.picker.monthFailed')}</span>
           <button type="button" className="btn btn-ghost h-8 min-h-8 flex-none px-2.5 text-xs" onClick={() => void month.refetch()}>
-            Réessayer
+            {t('common.actions.retry')}
           </button>
         </div>
       )}
@@ -111,7 +112,7 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
           {!monthReady && !month.isError ? (
             <Skeleton className="h-14" />
           ) : dayItems.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-sm text-ink-3">Aucune activité ce jour-là.</p>
+            <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-sm text-ink-3">{t('session.picker.dayEmpty')}</p>
           ) : (
             <ul className="space-y-1">
               {dayItems.map((a) => (
@@ -128,10 +129,10 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
     <div>
       <div className="mb-2 flex gap-1.5">
         <ChipToggle pressed={!runsOnly} onChange={() => setRunsOnly(false)}>
-          Toutes
+          {t('common.misc.all')}
         </ChipToggle>
         <ChipToggle pressed={runsOnly} onChange={() => setRunsOnly(true)}>
-          Course
+          {t('common.misc.run')}
         </ChipToggle>
       </div>
       {recent.isPending ? (
@@ -141,9 +142,9 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
           ))}
         </div>
       ) : recent.isError ? (
-        <p className="text-sm text-danger">Impossible de charger les activités.</p>
+        <p className="text-sm text-danger">{t('session.picker.loadFailed')}</p>
       ) : items.length === 0 ? (
-        <p className="py-6 text-center text-sm text-ink-3">Aucune activité trouvée.</p>
+        <p className="py-6 text-center text-sm text-ink-3">{t('session.picker.empty')}</p>
       ) : (
         <ul className="space-y-1">
           {items.map((a) => (
@@ -154,14 +155,14 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
       {recent.hasNextPage && (
         <button type="button" className="btn btn-ghost mt-3 w-full" onClick={() => void recent.fetchNextPage()} disabled={recent.isFetchingNextPage}>
           {recent.isFetchingNextPage && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-          {recent.isFetchingNextPage ? 'Chargement…' : 'Charger plus'}
+          {recent.isFetchingNextPage ? t('common.actions.loading') : t('session.picker.more')}
         </button>
       )}
     </div>
   )
 
   return (
-    <Dialog open={open} onClose={onClose} title="Choisir une séance" description="Récentes, ou n’importe quel mois de ton historique" size="xl">
+    <Dialog open={open} onClose={onClose} title={t('session.picker.title')} description={t('session.picker.description')} size="xl">
       {isDesktop ? (
         <div className="grid grid-cols-[minmax(0,300px)_minmax(0,1fr)] gap-6">
           <div>
@@ -172,7 +173,7 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
           </div>
           <div className="min-w-0">
             <p className="label-caps mb-2 flex items-center gap-1.5">
-              <List className="size-3.5" aria-hidden="true" /> Activités récentes
+              <List className="size-3.5" aria-hidden="true" /> {t('session.picker.recent')}
             </p>
             {list}
           </div>
@@ -180,14 +181,14 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
       ) : (
         <div>
           <SegmentedControl
-            ariaLabel="Affichage"
+            ariaLabel={t('session.picker.display')}
             size="sm"
             className="mb-4"
             value={tab}
             onChange={setTab}
             options={[
-              { value: 'list', label: 'Récentes', icon: <List /> },
-              { value: 'calendar', label: 'Calendrier', icon: <CalendarDays /> },
+              { value: 'list', label: t('session.picker.recentShort'), icon: <List /> },
+              { value: 'calendar', label: t('session.picker.calendar'), icon: <CalendarDays /> },
             ]}
           />
           {tab === 'list' ? list : calendar}

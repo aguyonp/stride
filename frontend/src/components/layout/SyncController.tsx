@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { invalidateDomain, useIntegrations, useStartSync, useSyncStatus } from '../../api/queries'
 import { useToast } from '../ui/Toast'
+import { t } from '../../i18n'
 
 let kickedFor: number | null = null
 
@@ -28,7 +29,7 @@ export function SyncController({ userId }: { userId: number }) {
       void invalidateDomain(qc, ['activities', 'activity', 'day', 'week', 'report', 'integrations'])
       const p = status.data?.providers
       const n = (p?.garmin?.newActivities ?? 0) + (p?.strava?.newActivities ?? 0)
-      if (n > 0) toast({ title: `${n} nouvelle${n > 1 ? 's' : ''} activité${n > 1 ? 's' : ''} synchronisée${n > 1 ? 's' : ''}` })
+      if (n > 0) toast({ title: t('layout.syncDone.synced', { count: n }) })
     }
     prev.current = running
   }, [running, qc, status.data?.providers, toast])

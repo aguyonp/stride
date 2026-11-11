@@ -2,6 +2,7 @@ import { CircleCheck, Info, OctagonAlert, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { AlertLevel } from '../../api/types'
 import { cn } from '../../lib/cn'
+import { lazyRecord, t } from '../../i18n'
 
 const LEVEL_TEXT: Record<AlertLevel, string> = {
   ok: 'text-ok',
@@ -17,12 +18,7 @@ const LEVEL_BG: Record<AlertLevel, string> = {
   danger: 'bg-danger/12 border-danger/30',
 }
 
-export const LEVEL_LABEL: Record<AlertLevel, string> = {
-  ok: 'OK',
-  info: 'Info',
-  warn: 'Attention',
-  danger: 'Danger',
-}
+export const LEVEL_LABEL: Record<AlertLevel, string> = lazyRecord(['ok', 'info', 'warn', 'danger'] as const, (k) => t(`common.ui.level.${k}`))
 
 export function LevelIcon({ level, className }: { level: AlertLevel; className?: string }) {
   const Icon = level === 'ok' ? CircleCheck : level === 'info' ? Info : level === 'warn' ? TriangleAlert : OctagonAlert

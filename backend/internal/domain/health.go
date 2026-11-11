@@ -9,6 +9,7 @@ import (
 
 	"stride/internal/analysis"
 	"stride/internal/athlete"
+	"stride/internal/frfmt"
 )
 
 const (
@@ -61,7 +62,7 @@ func (s *Services) HealthStatus(ctx context.Context, uid int64) (*HealthStatus, 
 		out.UpdatedAt = rfc3339(at)
 	}
 	for i := range out.Zones {
-		out.Zones[i].ConditionLabel = analysis.ConditionLabelOf(out.Zones[i])
+		out.Zones[i].ConditionLabel = analysis.ConditionLabelIn(out.Zones[i], s.lang(ctx, p))
 	}
 	if len(out.Zones) > 0 {
 		out.Mode = HealthTracking
@@ -244,7 +245,14 @@ func (s *Services) healthFromProfileBody(ctx context.Context, uid int64, keys ma
 }
 
 // HealthConditions is the pathology catalog (GET /api/health/conditions, §14.7).
-func (s *Services) HealthConditions() analysis.ConditionCatalog { return analysis.Conditions() }
+// HealthConditions is the pathology catalog in the effective language (§15.2).
+func (s *Services) HealthConditions(ctx context.Context, uid int64) analysis.ConditionCatalog {
+	l := frfmt.Resolve(nil, frfmt.LangFrom(ctx))
+	if p, err := s.profile(ctx, uid); err == nil {
+		l = s.lang(ctx, p)
+	}
+	return analysis.ConditionsIn(l)
+}
 
 // trackedZones returns the zones under follow-up (empty in performance mode).
 func (s *Services) trackedZones(ctx context.Context, uid int64) ([]HealthZone, error) {

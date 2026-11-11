@@ -8,6 +8,7 @@ import { InlineError } from '../../ui/Misc'
 import { useToast } from '../../ui/Toast'
 import { PHASE_TYPE_META, PHASE_TYPES } from './cycleMeta'
 import { numberField, parseOptionalNumber, validatePhaseForm } from './cycleModel'
+import { t } from '../../../i18n'
 
 export function PhaseDialog({
   open,
@@ -66,7 +67,7 @@ export function PhaseDialog({
         { id: phase.id, ...body },
         {
           onSuccess: () => {
-            toast({ title: 'Mésocycle mis à jour', tone: 'success' })
+            toast({ title: t('plan.cycleDialogs.phaseUpdated'), tone: 'success' })
             onClose()
           },
           onError: (e) => setErrMsg(e.message),
@@ -75,7 +76,7 @@ export function PhaseDialog({
     } else {
       mut.createPhase.mutate(body, {
         onSuccess: () => {
-          toast({ title: 'Mésocycle ajouté', tone: 'success' })
+          toast({ title: t('plan.cycleDialogs.phaseAdded'), tone: 'success' })
           onClose()
         },
         onError: (e) => setErrMsg(e.message),
@@ -87,8 +88,8 @@ export function PhaseDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={phase ? 'Modifier le mésocycle' : 'Nouveau mésocycle'}
-      description="Définis la dominante physiologique et les repères hebdomadaires du bloc."
+      title={phase ? t('plan.cycleDialogs.editPhase') : t('plan.cycleDialogs.newPhase')}
+      description={t('plan.cycleDialogs.phaseHint')}
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
           {phase ? (
@@ -100,7 +101,7 @@ export function PhaseDialog({
                 onClick={() =>
                   mut.removePhase.mutate(phase.id, {
                     onSuccess: () => {
-                      toast({ title: 'Mésocycle supprimé' })
+                      toast({ title: t('plan.cycleDialogs.phaseDeleted') })
                       onClose()
                     },
                     onError: (e) => setErrMsg(e.message),
@@ -111,7 +112,7 @@ export function PhaseDialog({
               </button>
             ) : (
               <button type="button" className="btn btn-ghost text-danger" onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="size-4" aria-hidden="true" /> Supprimer
+                <Trash2 className="size-4" aria-hidden="true" /> {t('common.actions.delete')}
               </button>
             )
           ) : (
@@ -119,11 +120,11 @@ export function PhaseDialog({
           )}
           <div className="flex gap-2">
             <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Annuler
+              {t('common.actions.cancel')}
             </button>
             <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
               {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-              Enregistrer
+              {t('common.actions.save')}
             </button>
           </div>
         </div>
@@ -131,7 +132,7 @@ export function PhaseDialog({
     >
       <div className="space-y-3.5">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Type de bloc">
+          <Field label={t('plan.cycleDialogs.blockType')}>
             {(p) => (
               <select
                 {...p}
@@ -152,22 +153,22 @@ export function PhaseDialog({
               </select>
             )}
           </Field>
-          <Field label="Nom du mésocycle">
+          <Field label={t('plan.cycleDialogs.phaseName')}>
             {(p) => <input {...p} className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />}
           </Field>
-          <Field label="Début">{(p) => <input {...p} type="date" className="field num" value={startDate} onChange={(e) => setStartDate(e.target.value)} />}</Field>
-          <Field label="Fin">{(p) => <input {...p} type="date" className="field num" value={endDate} onChange={(e) => setEndDate(e.target.value)} />}</Field>
-          <Field label="Volume hebdo cible (km)">
+          <Field label={t('plan.cycleDialogs.phaseStart')}>{(p) => <input {...p} type="date" className="field num" value={startDate} onChange={(e) => setStartDate(e.target.value)} />}</Field>
+          <Field label={t('plan.cycleDialogs.phaseEnd')}>{(p) => <input {...p} type="date" className="field num" value={endDate} onChange={(e) => setEndDate(e.target.value)} />}</Field>
+          <Field label={t('plan.cycleDialogs.weeklyVolume')}>
             {(p) => <input {...p} type="number" min={0} max={300} step={0.5} className="field num" value={volKm} onChange={(e) => setVolKm(e.target.value)} />}
           </Field>
-          <Field label="Charge hebdo cible (pts)">
+          <Field label={t('plan.cycleDialogs.weeklyLoad')}>
             {(p) => <input {...p} type="number" min={0} max={3000} step={5} className="field num" value={load} onChange={(e) => setLoad(e.target.value)} />}
           </Field>
         </div>
-        <Field label="Dominante / Focus">
-          {(p) => <input {...p} className="field" value={focus} onChange={(e) => setFocus(e.target.value)} maxLength={140} placeholder="Ex. Endurance fondamentale + vélocité" />}
+        <Field label={t('plan.cycleDialogs.focus')}>
+        {(p) => <input {...p} className="field" value={focus} onChange={(e) => setFocus(e.target.value)} maxLength={140} placeholder={t('plan.cycleDialogs.focusPlaceholder')} />}
         </Field>
-        <Field label="Note (facultatif)">
+        <Field label={t('plan.cycleDialogs.note')}>
           {(p) => <textarea {...p} className="field min-h-16 resize-y" value={note} onChange={(e) => setNote(e.target.value)} maxLength={400} />}
         </Field>
         {errMsg && <InlineError>{errMsg}</InlineError>}

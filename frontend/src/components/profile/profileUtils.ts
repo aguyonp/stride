@@ -1,6 +1,7 @@
 import type { FocusArea, FocusPreset, PaceTarget, Thresholds } from '../../api/types'
 import { fmtPaceValue, parsePace } from '../../lib/format'
 import { FOCUS_FALLBACK } from '../../lib/labels'
+import { t } from '../../i18n'
 
 export interface ThresholdField {
   key: keyof Thresholds
@@ -9,25 +10,37 @@ export interface ThresholdField {
   step: number
 }
 
+const UNIT_KEY: Record<string, 'unitFloors' | 'unitRatio'> = { étages: 'unitFloors', ratio: 'unitRatio' }
+const field = (key: keyof Thresholds, unit: string, step: number): ThresholdField => ({
+  key,
+  step,
+  get label() {
+    return t(`settings.thresholds.fields.${key}`)
+  },
+  get unit() {
+    return UNIT_KEY[unit] ? t(`settings.thresholds.${UNIT_KEY[unit]}`) : unit
+  },
+})
+
 export const THRESHOLD_FIELDS: ThresholdField[] = [
-  { key: 'cadenceMinSpm', label: 'Cadence minimale', unit: 'spm', step: 1 },
-  { key: 'cadenceTargetMin', label: 'Cible cadence (min)', unit: 'spm', step: 1 },
-  { key: 'cadenceTargetMax', label: 'Cible cadence (max)', unit: 'spm', step: 1 },
-  { key: 'gctBalanceGapPct', label: 'Écart d’équilibre G/D max', unit: 'pt', step: 0.1 },
-  { key: 'verticalOscillationMaxCm', label: 'Oscillation verticale max', unit: 'cm', step: 0.1 },
-  { key: 'gctDriftMaxPct', label: 'Dérive du temps de contact max', unit: '%', step: 0.5 },
-  { key: 'descentMaxM', label: 'Dénivelé négatif max', unit: 'm', step: 5 },
-  { key: 'floorsPrevDayMax', label: 'Étages montés la veille max', unit: 'étages', step: 1 },
-  { key: 'loadRatioMax', label: 'Ratio de charge max', unit: 'ratio', step: 0.05 },
-  { key: 'rhrDeltaMaxBpm', label: 'Hausse de FC repos max', unit: 'bpm', step: 1 },
-  { key: 'planDeviationPct', label: 'Écart au plan max', unit: '%', step: 1 },
-  { key: 'downhillCadenceDropSpm', label: 'Chute de cadence en descente max', unit: 'spm', step: 1 },
+  field('cadenceMinSpm', 'spm', 1),
+  field('cadenceTargetMin', 'spm', 1),
+  field('cadenceTargetMax', 'spm', 1),
+  field('gctBalanceGapPct', 'pt', 0.1),
+  field('verticalOscillationMaxCm', 'cm', 0.1),
+  field('gctDriftMaxPct', '%', 0.5),
+  field('descentMaxM', 'm', 5),
+  field('floorsPrevDayMax', 'étages', 1),
+  field('loadRatioMax', 'ratio', 0.05),
+  field('rhrDeltaMaxBpm', 'bpm', 1),
+  field('planDeviationPct', '%', 1),
+  field('downhillCadenceDropSpm', 'spm', 1),
 ]
 
 export type ThresholdDraft = Record<keyof Thresholds, string>
 
-export const thresholdsToDraft = (t: Thresholds): ThresholdDraft =>
-  Object.fromEntries(THRESHOLD_FIELDS.map((f) => [f.key, String(t[f.key])])) as ThresholdDraft
+export const thresholdsToDraft = (th: Thresholds): ThresholdDraft =>
+  Object.fromEntries(THRESHOLD_FIELDS.map((f) => [f.key, String(th[f.key])])) as ThresholdDraft
 
 export function draftToThresholds(d: ThresholdDraft): { value: Thresholds | null; errors: Partial<Record<keyof Thresholds, string>> } {
   const errors: Partial<Record<keyof Thresholds, string>> = {}
@@ -35,11 +48,11 @@ export function draftToThresholds(d: ThresholdDraft): { value: Thresholds | null
   for (const f of THRESHOLD_FIELDS) {
     const raw = d[f.key].replace(',', '.').trim()
     const v = Number(raw)
-    if (raw === '' || !Number.isFinite(v) || v < 0) errors[f.key] = 'Nombre positif attendu'
+    if (raw === '' || !Number.isFinite(v) || v < 0) errors[f.key] = t('settings.thresholds.positive')
     else out[f.key] = v
   }
   if (!errors.cadenceTargetMin && !errors.cadenceTargetMax && (out.cadenceTargetMin as number) > (out.cadenceTargetMax as number)) {
-    errors.cadenceTargetMax = 'Doit être ≥ à la cible min'
+    errors.cadenceTargetMax = t('settings.thresholds.gteMin')
   }
   return { value: Object.keys(errors).length ? null : (out as Thresholds), errors }
 }
@@ -58,9 +71,9 @@ export function draftToPaces(d: PaceDraft[]): { value: PaceTarget[] | null; erro
   d.forEach((p, i) => {
     const min = parsePace(p.min)
     const max = parsePace(p.max)
-    if (!p.label.trim()) errors[i] = 'Nom requis'
-    else if (min === null || max === null) errors[i] = 'Allures au format m:ss (ex. 3:35)'
-    else if (min > max) errors[i] = 'L’allure la plus rapide doit venir en premier'
+    if (!p.label.trim()) errors[i] = t('settings.thresholds.nameRequired')
+    else if (min === null || max === null) errors[i] = t('settings.thresholds.paceFormat')
+    else if (min > max) errors[i] = t('settings.thresholds.paceOrder')
     else out.push({ label: p.label.trim(), minSecPerKm: min, maxSecPerKm: max })
   })
   return { value: Object.keys(errors).length ? null : out, errors }
@@ -73,7 +86,7 @@ export const focusTitle = (presets: FocusPreset[] | undefined, area: FocusArea) 
 
 export function isValidTimezone(tz: string): boolean {
   try {
-    new Intl.DateTimeFormat('fr-FR', { timeZone: tz })
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz })
     return true
   } catch {
     return false

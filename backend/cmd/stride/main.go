@@ -27,6 +27,7 @@ import (
 	"stride/internal/apimeter"
 	"stride/internal/applog"
 	"stride/internal/auth"
+	"stride/internal/backup"
 	"stride/internal/buildinfo"
 	"stride/internal/cache"
 	"stride/internal/database"
@@ -152,7 +153,8 @@ func run() error {
 	if err := ensureWritable(cfg.DataDir); err != nil {
 		return fmt.Errorf("STRIDE_DATA_DIR %q non inscriptible (droits du volume ?) : %w", cfg.DataDir, err)
 	}
-	st, err := store.Open(ctx, cfg.DBPath)
+	// A snapshot is taken before pending migrations are applied to a non-empty database (§15.4).
+	st, err := store.OpenWith(ctx, cfg.DBPath, store.Options{PreMigrate: backup.PreMigrate(cfg.DataDir, buildinfo.Version, log)})
 	if err != nil {
 		return fmt.Errorf("base SQLite %s : %w", cfg.DBPath, err)
 	}
@@ -223,6 +225,13 @@ func run() error {
 		log.Warn("⚠️ Dédoublonnage des activités en échec", "err", err.Error())
 	}
 	dom.SeedFirstAdmin(ctx)
+	backups := backup.New(backup.Options{Store: st, Sealer: sealer, DataDir: cfg.DataDir, Version: buildinfo.Version, Env: cfg,
+		Metrics: metrics, Log: log, Location: loc})
+	backups.Register(dom.Jobs())
+	backups.InitMetrics()
+	if err := backups.Seed(ctx); err != nil {
+		log.Warn("☁️ Configuration S3 de l'environnement ignorée", "err", err.Error())
+	}
 	authSvc, err := auth.New(auth.Options{Env: cfg, Store: st, Cache: kv, Log: log,
 		OnUserCreated: dom.OnUserCreated, OnUserDeleted: dom.PurgeUserCache})
 	if err != nil {
@@ -239,7 +248,7 @@ func run() error {
 		Static: web.New(),
 		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log,
 			Domain: dom, SSE: sseHub, Logs: logs, DBPath: cfg.DBPath, Runtime: admin.RuntimeFromEnv(cfg, cacheBackend),
-			StartedAt: startedAt, Maintenance: purgeExpired(st, dom, logs)}),
+			StartedAt: startedAt, Maintenance: purgeExpired(st, dom, logs), Backups: backups}),
 		SSE:      sseHub,
 		Metrics:  metrics,
 		Feedback: feedback.New(feedback.Deps{DB: st.DB, Auth: authSvc, Log: log}),
@@ -251,6 +260,7 @@ func run() error {
 		LastSync: dom.LastSyncAt,
 		Sync:     dom.MorningSync,
 		Purge:    maintenance(st, dom, logs, log),
+		Backup:   backups.RunDaily, BackupHour: backup.DefaultHour,
 	})
 
 	srv := &http.Server{

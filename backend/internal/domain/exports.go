@@ -56,7 +56,14 @@ func (s *Services) ActivityReport(ctx context.Context, uid, id int64, include st
 	if v.Health, err = s.trackedZones(ctx, uid); err != nil {
 		return "", err
 	}
-	return report.Activity(v, p, inc), nil
+	ids := []int64{v.Activity.ID}
+	for _, h := range v.History {
+		ids = append(ids, h.ActivityID)
+	}
+	if v.CoachNotes, err = s.coachNotes(ctx, uid, s.today(p), ids, ""); err != nil {
+		return "", err
+	}
+	return report.Localize(report.Activity(v, p, inc), s.lang(ctx, p)), nil
 }
 
 // DayReport renders §6.3.
@@ -82,7 +89,17 @@ func (s *Services) DayReport(ctx context.Context, uid int64, date, include strin
 	if v.Health, err = s.trackedZones(ctx, uid); err != nil {
 		return "", err
 	}
-	return report.Day(v, p, inc), nil
+	ids := make([]int64, 0, len(v.Activities)+len(v.History))
+	for _, a := range v.Activities {
+		ids = append(ids, a.ID)
+	}
+	for _, h := range v.History {
+		ids = append(ids, h.ActivityID)
+	}
+	if v.CoachNotes, err = s.coachNotes(ctx, uid, s.today(p), ids, ""); err != nil {
+		return "", err
+	}
+	return report.Localize(report.Day(v, p, inc), s.lang(ctx, p)), nil
 }
 
 // MultiExport renders §6.4 for explicit activities or the last N weeks of running.
@@ -353,7 +370,14 @@ func (s *Services) MultiExport(ctx context.Context, uid int64, ids []int64, week
 	if m.Health, err = s.trackedZones(ctx, uid); err != nil {
 		return nil, err
 	}
-	md := report.Multi(m, p, inc)
+	sessionIDs := make([]int64, 0, len(m.Sessions))
+	for _, ms := range m.Sessions {
+		sessionIDs = append(sessionIDs, ms.Summary.ID)
+	}
+	if m.CoachNotes, err = s.coachNotes(ctx, uid, today, sessionIDs, ""); err != nil {
+		return nil, err
+	}
+	md := report.Localize(report.Multi(m, p, inc), s.lang(ctx, p))
 	return &view.MultiExportResult{Markdown: md, TokensEstimate: report.EstimateTokens(md), Sessions: len(m.Sessions)}, nil
 }
 
