@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/go-webauthn/webauthn v0.18.2
-	github.com/klauspost/compress v1.20.3
+	github.com/klauspost/compress v1.20.4
 	github.com/muktihari/fit v0.28.5
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/prometheus/client_golang v1.25.0
