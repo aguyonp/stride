@@ -698,6 +698,11 @@ input[type='range'].pain-range:focus-visible::-webkit-slider-thumb {
   .ambient .blob {
     animation: none !important;
   }
+  /* Loaders are essential status cues: keep them turning, just slower. */
+  .animate-spin {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* V3 light UX: grouped collapsible sections, flattened nested cards, readiness tones. */
