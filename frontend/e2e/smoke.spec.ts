@@ -8,7 +8,9 @@ test('boots to the dashboard with the demo data', async ({ page }) => {
 
   await page.goto('/')
 
-  await expect(page).toHaveTitle('Dashboard · Stride')
+  // Once the mock data loads the dashboard auto-selects the first session, and the title
+  // becomes “<session> · Stride” — so assert the stable suffix, not an exact name.
+  await expect(page).toHaveTitle(/· Stride$/)
   // The “demo” badge only exists in mock builds (IS_MOCK): proof the app runs on the mock
   // backend, not a live one.
   await expect(page.getByText('demo', { exact: true })).toBeVisible()

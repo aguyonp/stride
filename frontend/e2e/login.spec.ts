@@ -15,7 +15,7 @@ test('signs in with a passkey from the logged-out state', async ({ page }) => {
   await button.click()
 
   // The ceremony shows a spinner, then lands on the dashboard (admin, onboarding done).
-  await expect(page).toHaveTitle('Dashboard · Stride')
+  await expect(page).toHaveTitle(/· Stride$/)
   await expect(page.getByText('demo', { exact: true })).toBeVisible()
 
   assertNoConsoleErrors(errors)

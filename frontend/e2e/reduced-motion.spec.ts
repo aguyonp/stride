@@ -12,7 +12,8 @@ test('loaders keep spinning under prefers-reduced-motion: reduce', async ({ page
   expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
 
   await page.goto('/?mock=syncrunning')
-  await expect(page).toHaveTitle('Dashboard · Stride')
+  // The dashboard auto-selects the first session once the data loads: assert the suffix.
+  await expect(page).toHaveTitle(/· Stride$/)
 
   // The sync indicator in the header never settles: a .animate-spin stays on screen.
   const spinner = page.locator('.animate-spin').first()
