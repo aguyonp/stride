@@ -52,9 +52,29 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # Browser smoke (issue #91): the mock-mode production build under a real Chromium.
+  # Catches render regressions (e.g. the 4.2.1 reduced-motion loaders) that unit tests
+  # cannot see. Hermetic: no Go backend, no secrets.
+  smoke:
+    name: Browser smoke (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
   image:
     name: Docker image
-    needs: [backend, frontend]
+    needs: [backend, frontend, smoke]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:

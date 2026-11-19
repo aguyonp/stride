@@ -93,6 +93,7 @@ Full list: [docs/SPEC.md](docs/SPEC.md) §9.
 make dev            # Go API on :8080 (in-memory cache)
 make dev-frontend   # Vite on :5173 (npm run dev:mock for mocked data)
 make test           # Go race tests + frontend Vitest suite
+make test-e2e       # Playwright browser smoke against the mock build (Chromium, issue #91)
 make docker-up      # Build locally and start docker compose (stride + valkey)
 ```
 

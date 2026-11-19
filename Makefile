@@ -9,7 +9,7 @@ ENV_FILE_ARG := $(if $(wildcard .env),ENV_FILE=../.env,)
 
 COMPOSE_DEV := docker compose -f compose.yml -f compose.dev.yml
 
-.PHONY: help dev dev-frontend frontend-build build test up docker-up docker-down logs keygen changelog release clean
+.PHONY: help dev dev-frontend frontend-build build test test-e2e up docker-up docker-down logs keygen changelog release clean
 
 help:
 	@echo "make keygen        how to generate STRIDE_MASTER_KEY"
@@ -17,6 +17,7 @@ help:
 	@echo "make dev-frontend  Vite on :5173 (proxy /api -> :8080)"
 	@echo "make build         $(BIN) with the embedded SPA"
 	@echo "make test          go vet + go test + vitest"
+	@echo "make test-e2e      Playwright browser smoke against the mock build (Chromium)"
 	@echo "make up            pull and start the published image (STRIDE_TAG=latest|prerelease|dev|X.Y.Z)"
 	@echo "make changelog     preview the changelog since the last release tag"
 	@echo "make release       tag main as \$$(cat VERSION) with its changelog and push (CI builds latest + X.Y.Z)"
@@ -49,6 +50,11 @@ build: frontend-build
 test:
 	cd backend && go vet ./... && go test ./...
 	cd frontend && npm test
+
+# Browser smoke (issue #91): builds the mock-mode production build and runs Playwright
+# (Chromium) against it. No Go backend or secrets required.
+test-e2e:
+	cd frontend && npm run test:e2e
 
 up:
 	mkdir -p data
