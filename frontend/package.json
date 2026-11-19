@@ -10,6 +10,7 @@
     "build:mock": "tsc -b && VITE_MOCK=1 vite build --outDir dist-mock",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "tsc -b"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "wouter": "^3.13.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.3.5",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.6",
