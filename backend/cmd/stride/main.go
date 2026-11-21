@@ -36,6 +36,7 @@ import (
 	"stride/internal/feedback"
 	"stride/internal/httpapi"
 	"stride/internal/logx"
+	"stride/internal/mcp"
 	"stride/internal/observability"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
@@ -242,6 +243,7 @@ func run() error {
 		Cache:  kv,
 		Auth:   authSvc,
 		Domain: dom,
+		MCP:    mcp.New(st, dom, log),
 		Log:    log,
 		Logs:   logs,
 		HTTPS:  cfg.CookieSecure,

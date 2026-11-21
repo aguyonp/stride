@@ -227,7 +227,7 @@ func (a *api) deleteShareLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) publicShare(w http.ResponseWriter, r *http.Request) {
-	if !a.shareLimit.allow(clientIP(r), time.Now()) {
+	if !a.shareLimit.Allow(clientIP(r), time.Now()) {
 		w.Header().Set("Retry-After", "60")
 		httpx.Fail(w, http.StatusTooManyRequests, httpx.CodeRateLimited, "Trop de consultations, réessayez dans une minute.")
 		return

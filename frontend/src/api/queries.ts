@@ -37,6 +37,7 @@ const PAGE_SIZE = 30
 export const qk = {
   auth: ['auth'] as const,
   passkeys: ['passkeys'] as const,
+  mcp: ['mcp'] as const,
   integrations: ['integrations'] as const,
   sync: ['sync', 'status'] as const,
   activities: (p: ListActivitiesParams = {}) => ['activities', 'list', p] as const,
@@ -158,6 +159,22 @@ export function usePasskeyMutations() {
   return {
     rename: useMutation({ mutationFn: ({ id, name }: { id: string; name: string }) => api.renamePasskey(id, name), onSuccess: done }),
     remove: useMutation({ mutationFn: (id: string) => api.deletePasskey(id), onSuccess: done }),
+  }
+}
+
+/* ---------------------------------- MCP server ---------------------------------- */
+
+export function useMcpStatus() {
+  return useQuery({ queryKey: qk.mcp, queryFn: api.mcpStatus })
+}
+
+export function useMcpMutations() {
+  const qc = useQueryClient()
+  const done = () => void qc.invalidateQueries({ queryKey: qk.mcp })
+  return {
+    setEnabled: useMutation({ mutationFn: (enabled: boolean) => api.mcpSetEnabled(enabled), onSuccess: done }),
+    generateToken: useMutation({ mutationFn: api.mcpGenerateToken, onSuccess: done }),
+    revokeToken: useMutation({ mutationFn: api.mcpRevokeToken, onSuccess: done }),
   }
 }
 

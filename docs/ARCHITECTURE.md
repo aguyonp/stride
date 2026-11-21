@@ -8,7 +8,7 @@ Stride is a self-hosted, multi-user training platform: one statically linked Go 
 
 | Component | Technology | Responsibility |
 | --- | --- | --- |
-| API + SPA | Go (`net/http`), embedded Vite bundle | passkey auth, CSRF / CSP headers, REST JSON API, SSE `/api/events/stream`, public `/version` and `/share/:token`, in-process jobs |
+| API + SPA | Go (`net/http`), embedded Vite bundle | passkey auth, CSRF / CSP headers, REST JSON API, SSE `/api/events/stream`, public `/version`, `/share/:token` and per-user MCP `POST /mcp/{token}`, in-process jobs |
 | Storage | SQLite (`modernc.org/sqlite`, WAL, `foreign_keys = ON`) | users, passkeys, sealed credentials, activity bundles, cycles, body map, share links and portal notes, job statuses |
 | Backups | `internal/backup`, local volume + optional S3-compatible bucket | atomic snapshots (`<STRIDE_DATA_DIR>/backups`), SHA-256 sidecars, SigV4 uploads through the egress guard |
 | Cache & Pub/Sub | Valkey 9 (`valkey-go`), optional | TTL cache (`stride:cache:*`, public share views), WebAuthn / OAuth ceremonies, SSE fan-out between instances |
@@ -20,7 +20,7 @@ Without `STRIDE_VALKEY_URL` an in-memory cache is used (single instance).
 
 ## 2. Migrations (`internal/database`)
 
-- `pressly/goose/v3`, embedded `.up.sql` / `.down.sql` pairs (`00001_platform` .. `00011_portal_morph`), additive only; applied files are never edited. A table is rebuilt (rows copied as is) only when SQLite cannot alter it (CHECK change, column used by a foreign key in a down migration).
+- `pressly/goose/v3`, embedded `.up.sql` / `.down.sql` pairs (`00001_platform` .. `00013_mcp_access`), additive only; applied files are never edited. A table is rebuilt (rows copied as is) only when SQLite cannot alter it (CHECK change, column used by a foreign key in a down migration).
 - Before pending migrations are applied to a non-empty database, boot takes a `pre_migration` snapshot (see §7); a failed snapshot stops the boot.
 - 3.x databases: rows of the legacy `schema_migrations` table are bridged into `goose_db_version` before the newer migrations run.
 - Boot asserts the expected tables and columns (fast) and logs orphan rows as warnings in the background; `stride doctor` runs the full `integrity_check` and `foreign_key_check`.
@@ -51,12 +51,15 @@ One authenticated stream, outside gzip, write deadline cleared, `connected` even
 - **Physio / coach portal** (`/api/public/share/{token}/…`, §15.1): permissions `comments`, `planning`, `activityDetails` (off by default). Notes live in `share_notes` (one directive per link, one remark per link and session, upserts); prescribed sessions and events carry `share_link_id` + a label snapshot (`PlanSource` `share`) and stay editable by their link only. Unknown, revoked and expired tokens are the same 404; a permission that is off is `403 SHARE_FORBIDDEN`. A write drops the owner's cached public views and publishes `share.updated`.
 - **Coach notes in the AI** (`report/coach.go`): every prompt (activity, day, multi, plan generation and adaptation, morph refinement) starts, right after the system directive, with « Consignes kiné / coach (prioritaires) »: active directives (link valid, `validUntil` not passed) and the remarks on the sessions of the prompt (plans: last 14 days). Third-party text is quoted in a fenced block, fences and headings neutralized, 600 characters per note, 12 notes at most.
 - **Smart Workout Morphing** (`domain/morph.go`, §15.5): for today's or tomorrow's session, constraints come from active directive restrictions, pain ≥ 3/10 in the last 48 h (notes and body map), ACWR > 1.3, and the Open-Meteo forecast at the session slot (> 22 °C, wind > 30 km/h). Deterministic rules: intervals → easy continuous run (no-interval / easy-only directive, pain), volume −15/−20/−30 % (load, pain), paces slowed with heat, effort cues on wind, physio cadence in the steps. Refinement runs on the LLM pool; apply keeps the planned trace in `planned_sessions.morph_json` (revertible), the `.FIT` export encodes the current steps.
+- **Per-user MCP** (`internal/mcp`, §16): `POST /mcp/{token}` over the official Go SDK (Streamable HTTP, stateless), one shared fr/en tool instance pair; the token is resolved from `mcp_access` (SHA-256) and the user is injected in the request context; the 13 tools call the same domain services as the REST API and are scoped to the resolved user.
 
 ## 6. Security
 
 Credentials, webhook URLs, bot tokens, share URLs and the S3 secret key are sealed with AES-256-GCM (`secret.Sealer`, AAD `<scope>:<uid>:<field>`, `backup:0:s3_secret_key`), never logged or returned. User ids come only from the session; any id received in a body or query must belong to the caller, otherwise 404.
 
 Portal writes have no session: they require the CSRF header and the Stride origin (`Origin` / `Sec-Fetch-Site` against `STRIDE_PUBLIC_URL`), a 16 KB body without unknown fields, sanitized text (control and invisible characters dropped), and pass two limits (30 writes / 10 min per token, 60 per client IP). Logs and the audit trail keep only the token prefix (actions `share.public_*`, actor `share:<prefix>`).
+
+MCP tokens are never stored in plaintext (SHA-256 in `mcp_access`; the plaintext is the one-time answer of the generate endpoint). The public route answers the same 404 for unknown, revoked or disabled tokens, rejects cross-origin requests (403, no CORS headers) and passes two in-memory limits (100 requests / 10 min per token, 200 per client IP). The uid of a tool call comes only from the resolved token (request context), never from the request body; logs and the audit trail keep only the token prefix (action `mcp.request`, actor `mcp:<prefix>`).
 
 ## 7. Backups (`internal/backup`)
 

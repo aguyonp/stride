@@ -104,6 +104,8 @@ import type {
   ShareDirectiveInput,
   ShareNote,
   ShareRemarkInput,
+  McpStatus,
+  McpToken,
 } from './types'
 import { getLang } from '../i18n/lang'
 import { t } from '../i18n/t'
@@ -454,6 +456,12 @@ export const api = {
   morphRefine: (id: number, note?: string) => json<JobStatus>(`/api/plan/${id}/morph/refine`, { method: 'POST', body: note ? { note } : {} }),
   morphApply: (id: number, proposal: PlannedSession) => json<PlannedSession>(`/api/plan/${id}/morph/apply`, { method: 'POST', body: { proposal } }),
   morphRevert: (id: number) => json<PlannedSession>(`/api/plan/${id}/morph/revert`, { method: 'POST' }),
+
+  /* 4.3.0 endpoints (§MCP) */
+  mcpStatus: () => json<McpStatus>('/api/mcp'),
+  mcpSetEnabled: (enabled: boolean) => json<void>('/api/mcp', { method: 'PUT', body: { enabled } }),
+  mcpGenerateToken: () => json<McpToken>('/api/mcp/token', { method: 'POST' }),
+  mcpRevokeToken: () => json<void>('/api/mcp/token', { method: 'DELETE' }),
 }
 
 function pub(token: string) {

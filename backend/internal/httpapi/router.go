@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/klauspost/compress/gzhttp"
@@ -18,6 +19,7 @@ import (
 	"stride/internal/domainapi"
 	"stride/internal/feedback"
 	"stride/internal/httpx"
+	"stride/internal/mcp"
 	"stride/internal/observability"
 	"stride/internal/sse"
 	"stride/internal/store"
@@ -31,12 +33,14 @@ type Deps struct {
 	// Feedback is optional (POST /api/feedback, admin listing and triage).
 	Feedback *feedback.Handler
 	Domain   *domain.Services
-	Log      *slog.Logger
-	Logs     *applog.Log
-	HTTPS    bool
-	Static   http.Handler
-	SSE      *sse.Hub
-	Metrics  *observability.Metrics
+	// MCP is the per-user MCP server (POST /mcp/{token} + /api/mcp* management).
+	MCP     *mcp.Server
+	Log     *slog.Logger
+	Logs    *applog.Log
+	HTTPS   bool
+	Static  http.Handler
+	SSE     *sse.Hub
+	Metrics *observability.Metrics
 }
 
 func New(d Deps) http.Handler {
@@ -63,6 +67,11 @@ func New(d Deps) http.Handler {
 	if d.Feedback != nil {
 		d.Feedback.Register(mux)
 	}
+	if d.MCP != nil {
+		// The public /mcp/ subtree is mounted in the gzip bypass below (single mount
+		// point); only the session-protected management API goes on the mux.
+		mcp.RegisterAPI(mux, mcp.Deps{Store: d.Store, RequireUser: d.Auth.RequireUser, RequireAdmin: d.Auth.RequireAdmin})
+	}
 	domainapi.Register(mux, domainapi.Deps{
 		Services:     d.Domain,
 		RequireUser:  d.Auth.RequireUser,
@@ -76,20 +85,37 @@ func New(d Deps) http.Handler {
 		mux.Handle("/", d.Static)
 	}
 
-	var sseHandler http.Handler
+	// Streaming handlers bypass the gzip layer (it would buffer the first events): the SSE
+	// stream and the MCP subtree (Streamable HTTP, token-authenticated, no CORS).
+	type passthrough struct {
+		match   func(*http.Request) bool
+		handler http.Handler
+	}
+	var pass []passthrough
 	if d.SSE != nil {
-		sseHandler = d.Auth.RequireUser(http.HandlerFunc(d.SSE.ServeHTTP))
+		pass = append(pass, passthrough{
+			match:   func(r *http.Request) bool { return r.Method == http.MethodGet && r.URL.Path == "/api/events/stream" },
+			handler: d.Auth.RequireUser(http.HandlerFunc(d.SSE.ServeHTTP)),
+		})
+	}
+	if d.MCP != nil {
+		pass = append(pass, passthrough{
+			match:   func(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/mcp/") },
+			handler: d.MCP.PublicHandler(),
+		})
 	}
 
 	var h http.Handler = d.Metrics.HTTPMiddleware(mux)
 	h = gzhttp.GzipHandler(h)
 
-	if sseHandler != nil {
+	if len(pass) > 0 {
 		gzHandler := h
 		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodGet && r.URL.Path == "/api/events/stream" {
-				sseHandler.ServeHTTP(w, r)
-				return
+			for _, p := range pass {
+				if p.match(r) {
+					p.handler.ServeHTTP(w, r)
+					return
+				}
 			}
 			gzHandler.ServeHTTP(w, r)
 		})
