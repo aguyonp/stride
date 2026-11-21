@@ -75,8 +75,12 @@ func call(h http.Handler, method, path string, hdr map[string]string) *httptest.
 
 func TestHealthAndReadiness(t *testing.T) {
 	h := newRouter(t, cache.NewMemory(), nil)
-	if rec := call(h, "GET", "/health", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"ok"`) {
-		t.Fatalf("health: %d %s", rec.Code, rec.Body)
+	if rec := call(h, "GET", "/healthz", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"ok"`) {
+		t.Fatalf("healthz: %d %s", rec.Code, rec.Body)
+	}
+	// /health is the SPA « Santé & forme » route: a refresh (F5) must not serve the API status JSON.
+	if rec := call(h, "GET", "/health", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), "<html") || strings.Contains(rec.Body.String(), `"status":"ok"`) {
+		t.Fatalf("/health must serve the SPA, not the status endpoint: %d %s", rec.Code, rec.Body)
 	}
 	rec := call(h, "GET", "/health/ready", nil)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"checks":{"cache":"ok","db":"ok"}`) {

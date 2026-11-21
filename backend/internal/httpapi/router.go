@@ -41,7 +41,7 @@ type Deps struct {
 
 func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
 	})
 	mux.HandleFunc("GET /health/ready", d.ready)

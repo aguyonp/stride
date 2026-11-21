@@ -57,7 +57,7 @@ JSON camelCase. Errors: `{"error": "message FR lisible", "code": "<httpx.Code*>"
 
 | Method & path | Body → Response |
 |---|---|
-| `GET /health` | liveness → `{"status":"ok"}` |
+| `GET /healthz` | liveness → `{"status":"ok"}` (moved from `/health`, which is the SPA « Santé & forme » route and would otherwise be masked on refresh) |
 | `GET /health/ready` | DB + cache ping → 200 `{"status":"ready","checks":{"db":"ok","cache":"ok"}}` or 503 with failing check message |
 | `GET /api/auth/state` | → `AuthState` |
 | `POST /api/auth/register/begin` | `{displayName, inviteCode?}` → `{publicKey: PublicKeyCredentialCreationOptionsJSON}` (resident key required, user verification preferred) |
@@ -92,7 +92,7 @@ Rules: the very first registered user needs no invitation and becomes `admin`. A
 - Missing/invalid invitation → 403 `INVITE_REQUIRED`. Invitation codes look like `ABCD-EFGH-…` (24 base32 chars), case and dashes are ignored; `codePrefix` = first 4 chars. `DELETE /api/admin/invitations/{id}` revokes (soft, `revoked: true`) → 204. `expiresInHours: 0` = no expiry; `maxUses` 1–1000.
 - `POST /api/me/passkeys/begin` accepts an optional `{name}`; `/finish` and `PATCH /{id}` return a `Passkey`. `Passkey.id` is the base64url credential id. Default names come from the user agent (« Chrome · macOS »).
 - `PATCH` / `DELETE /api/admin/users/{id}` on oneself → 409 `CONFLICT`. `DELETE /api/me` by the only active admin while other users exist → 409.
-- `register/finish` → 200 `Me`; `/health` also returns `version`; `/health/ready` 503 body `{"status":"unavailable","checks":{…}}`.
+- `register/finish` → 200 `Me`; `/healthz` also returns `version`; `/health/ready` 503 body `{"status":"unavailable","checks":{…}}`.
 - CSRF: any non-GET `/api/*` call without `X-Stride-CSRF: 1` → 403 `FORBIDDEN` (except `POST /api/webhooks/strava`).
 - CSP is `default-src 'self'` (inline styles allowed, **no inline scripts**, no external hosts): the SPA must not rely on inline `<script>`.
 - `RequireUser` injects both `auth.User` and `apimeter.WithUser(ctx, id)`.
