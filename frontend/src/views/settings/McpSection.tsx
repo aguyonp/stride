@@ -1,9 +1,8 @@
-import { Copy, KeyRound, ListChecks, Loader2, RefreshCw, Trash2, Webhook } from 'lucide-react'
+import { ChevronDown, Copy, KeyRound, ListChecks, Loader2, RefreshCw, Trash2, Webhook } from 'lucide-react'
 import { useState } from 'react'
 import { useMcpMutations, useMcpStatus } from '../../api/queries'
 import type { McpToken } from '../../api/types'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
-import { Popover } from '../../components/ui/Popover'
 import { InlineError } from '../../components/ui/Misc'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
@@ -18,14 +17,14 @@ import { Section } from './Section'
 const READ_TOOLS = ['planning', 'day', 'activities', 'activity', 'health', 'cycles', 'profile'] as const
 const WRITE_TOOLS = ['plan_create', 'plan_update', 'plan_delete', 'event_create', 'event_update', 'event_delete'] as const
 
-/** Popover listing the 13 MCP tools (7 read / 6 write) with one-line descriptions. */
-function ToolsPopover() {
+/** The 13 MCP tools (7 read / 6 write) as a compact inline reference list, expanded in place. */
+function ToolsList({ hidden }: { hidden: boolean }) {
   const group = (titleKey: 'settings.mcp.toolsRead' | 'settings.mcp.toolsWrite', prefix: 'read' | 'write', names: readonly string[]) => (
-    <div className="mb-2">
-      <p className="px-2 pb-1 text-xs font-semibold tracking-wide text-ink-3 uppercase">{t(titleKey, { count: names.length })}</p>
-      <ul className="space-y-0.5">
+    <div>
+      <p className="mb-1.5 text-xs font-semibold tracking-wide text-ink-3 uppercase">{t(titleKey, { count: names.length })}</p>
+      <ul className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
         {names.map((n) => (
-          <li key={n} className="flex items-baseline gap-2 rounded-lg px-2 py-1 text-xs">
+          <li key={n} className="flex items-baseline gap-2 text-xs">
             <code className="num w-28 flex-none text-ink">{n}</code>
             <span className="min-w-0 text-ink-2">{tDyn(`settings.mcp.tools.${prefix}.${n}`)}</span>
           </li>
@@ -34,24 +33,11 @@ function ToolsPopover() {
     </div>
   )
   return (
-    <Popover
-      kind="dialog"
-      trigger={(p) => (
-        <button {...p} type="button" className="btn btn-ghost">
-          <ListChecks className="size-4" aria-hidden="true" />
-          {t('settings.mcp.toolsButton')}
-        </button>
-      )}
-      panelClassName="w-[min(24rem,calc(100vw-2rem))]"
-    >
-      {() => (
-        <div className="max-h-[70vh] overflow-y-auto p-2">
-          <p className="px-2 pb-2 text-sm font-semibold">{t('settings.mcp.toolsTitle')}</p>
-          {group('settings.mcp.toolsRead', 'read', READ_TOOLS)}
-          {group('settings.mcp.toolsWrite', 'write', WRITE_TOOLS)}
-        </div>
-      )}
-    </Popover>
+    <div id="mcp-tools" hidden={hidden} className="space-y-3 rounded-xl border border-line bg-track/40 p-3">
+      <p className="text-sm font-semibold">{t('settings.mcp.toolsTitle')}</p>
+      {group('settings.mcp.toolsRead', 'read', READ_TOOLS)}
+      {group('settings.mcp.toolsWrite', 'write', WRITE_TOOLS)}
+    </div>
   )
 }
 
@@ -62,6 +48,7 @@ export function McpSection() {
   const m = useMcpMutations()
   const [fresh, setFresh] = useState<McpToken | null>(null)
   const [confirm, setConfirm] = useState<null | 'regenerate' | 'revoke'>(null)
+  const [showTools, setShowTools] = useState(false)
 
   const endpoint = (token: string) => `${window.location.origin}/mcp/${token}`
   const copy = (text: string, what: string) => {
@@ -99,7 +86,11 @@ export function McpSection() {
               {t('settings.mcp.generate')}
             </button>
           ) : null}
-          <ToolsPopover />
+          <button type="button" className="btn btn-ghost" aria-expanded={showTools} aria-controls="mcp-tools" onClick={() => setShowTools((v) => !v)}>
+            <ListChecks className="size-4" aria-hidden="true" />
+            {t('settings.mcp.toolsButton')}
+            <ChevronDown className={cn('size-4 text-ink-3 transition-transform duration-200', showTools && 'rotate-180')} aria-hidden="true" />
+          </button>
         </>
       }
     >
@@ -112,6 +103,7 @@ export function McpSection() {
         <ErrorView error={st.error} onRetry={() => void st.refetch()} title={t('settings.mcp.unavailable')} />
       ) : s ? (
         <div className="space-y-4">
+          <ToolsList hidden={!showTools} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <label className="flex min-w-0 items-center gap-3">
               <button

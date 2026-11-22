@@ -106,9 +106,13 @@ describe('McpSection', () => {
     stubApi(state)
     mounted = await mountWithProviders(<McpSection />)
 
-    // The functions popover is available before any token exists.
-    await clickEl(sectionButton('Fonctions'))
+    // The functions list expands inline (no popover: it can never be clipped by the viewport).
+    const toolsBtn = sectionButton('Fonctions')
+    expect(toolsBtn?.getAttribute('aria-expanded')).toBe('false')
+    await clickEl(toolsBtn)
     await waitFor(() => {
+      expect(toolsBtn?.getAttribute('aria-expanded')).toBe('true')
+      expect(mounted!.container.querySelector('#mcp-tools')?.hasAttribute('hidden')).toBe(false)
       expect(mounted!.container.textContent).toContain('Fonctions disponibles')
       expect(mounted!.container.textContent).toContain('Lecture (7)')
       expect(mounted!.container.textContent).toContain('Écriture (6)')
@@ -116,6 +120,9 @@ describe('McpSection', () => {
         expect(mounted!.container.textContent).toContain(name)
       }
     })
+    // Toggling again hides the list.
+    await clickEl(toolsBtn)
+    await waitFor(() => expect(mounted!.container.querySelector('#mcp-tools')?.hasAttribute('hidden')).toBe(true))
 
     // Generate → the paste-ready message embeds the real endpoint.
     await clickEl(sectionButton('Générer un jeton'))
