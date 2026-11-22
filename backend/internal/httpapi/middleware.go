@@ -73,10 +73,10 @@ func redactedQuery(raw string) string {
 // shareTokenPrefix is the part of a share token kept in logs (the prefix shown to its owner).
 const shareTokenPrefix = 8
 
-// redactPath keeps only the short prefix of share tokens (/share/{token}, /api/public/share/{token}/…);
-// the portal sub-path after the token is kept.
+// redactPath keeps only the short prefix of share tokens (/share/{token}, /api/public/share/{token}/…)
+// and MCP tokens (/mcp/{token}); the portal sub-path after a share token is kept.
 func redactPath(p string) string {
-	for _, prefix := range []string{"/api/public/share/", "/share/"} {
+	for _, prefix := range []string{"/api/public/share/", "/share/", "/mcp/"} {
 		if rest, ok := strings.CutPrefix(p, prefix); ok {
 			tok, tail, _ := strings.Cut(rest, "/")
 			if len(tok) > shareTokenPrefix {
@@ -88,6 +88,12 @@ func redactPath(p string) string {
 		}
 	}
 	return p
+}
+
+// mcpActor is the audit actor of a public MCP request: mcp:<token prefix>.
+func mcpActor(p string) string {
+	tok, _, _ := strings.Cut(strings.TrimPrefix(p, "/mcp/"), "/")
+	return "mcp:" + tok[:min(len(tok), shareTokenPrefix)]
 }
 
 // shareActor is the audit actor of a portal write: share:<token prefix>.

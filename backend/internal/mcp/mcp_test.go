@@ -1,0 +1,593 @@
+// mcp_test.go tests the per-user MCP server end to end: the /api/mcp* management endpoints,
+// the public route POST /mcp/{token} (stateless Streamable HTTP, official SDK client), the
+// token lifecycle, the per-user isolation, the rate limits and the cross-origin protection.
+package mcp_test
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"stride/internal/auth"
+	"stride/internal/cache"
+	"stride/internal/domain"
+	"stride/internal/env"
+	"stride/internal/mcp"
+	"stride/internal/secret"
+	"stride/internal/store"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+var paris, _ = time.LoadLocation("Europe/Paris")
+
+// initMsg is a minimal valid initialize request.
+const initMsg = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18",` +
+	`"capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`
+
+type harn struct {
+	t   *testing.T
+	srv *httptest.Server
+	st  *store.Store
+	dom *domain.Services
+}
+
+// newHarness builds a real SQLite store, domain services (no providers) and the MCP routes,
+// following the domainapi test pattern (X-Test-User stands in for the session).
+func newHarness(t *testing.T) *harn {
+	t.Helper()
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/t.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	for i, name := range []string{"admin", "alice", "bob"} {
+		role := "user"
+		if i == 0 {
+			role = "admin"
+		}
+		if _, err := st.DB.Exec(`INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, ?, 1)`, i+1, name, role); err != nil {
+			t.Fatal(err)
+		}
+	}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	sealer, _ := secret.New(key, nil)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	dom, err := domain.New(domain.Deps{
+		Env:   env.Config{Timezone: "Europe/Paris", PublicURL: "http://localhost:8080"},
+		Store: st, Cache: cache.NewMemory(), Sealer: sealer, Log: log,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(dom.Wait)
+
+	requireUser := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id, _ := strconv.ParseInt(r.Header.Get("X-Test-User"), 10, 64)
+			if id == 0 {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), auth.User{ID: id, DisplayName: "u", Role: auth.RoleUser})))
+		})
+	}
+	requireAdmin := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			u, _ := auth.UserFrom(r.Context())
+			if !u.IsAdmin() {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	api := mcp.New(st, dom, log)
+	mux := http.NewServeMux()
+	mcp.RegisterAPI(mux, mcp.Deps{Store: st, RequireUser: requireUser, RequireAdmin: requireAdmin})
+	mux.Handle("/mcp/", api.PublicHandler())
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return &harn{t: t, srv: ts, st: st, dom: dom}
+}
+
+// do sends a request to the harness; user 0 means unauthenticated.
+func (h *harn) do(user int, method, path string, body any, out any) (int, string, http.Header) {
+	h.t.Helper()
+	var rd io.Reader
+	if body != nil {
+		if s, ok := body.(string); ok {
+			rd = strings.NewReader(s)
+		} else {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		}
+	}
+	req, _ := http.NewRequest(method, h.srv.URL+path, rd)
+	if user > 0 {
+		req.Header.Set("X-Test-User", strconv.Itoa(user))
+	}
+	if strings.HasPrefix(path, "/mcp/") && method == "POST" {
+		// Streamable HTTP: the server answers 415 without the MCP accept header.
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if out != nil && resp.StatusCode < 300 && len(raw) > 0 {
+		if err := json.Unmarshal(raw, out); err != nil {
+			h.t.Fatalf("%s %s: decode: %v (%s)", method, path, err, raw)
+		}
+	}
+	return resp.StatusCode, string(raw), resp.Header
+}
+
+type mcpStatus struct {
+	Enabled     bool       `json:"enabled"`
+	HasToken    bool       `json:"hasToken"`
+	TokenPrefix string     `json:"tokenPrefix"`
+	LastUsedAt  *time.Time `json:"lastUsedAt"`
+}
+
+// genToken generates (or regenerates) the token of user user via the API and returns it.
+func (h *harn) genToken(user int) string {
+	h.t.Helper()
+	code, body, _ := h.do(user, "POST", "/api/mcp/token", nil, nil)
+	if code != http.StatusOK {
+		h.t.Fatalf("generate: %d %s", code, body)
+	}
+	var out struct {
+		Token  string `json:"token"`
+		Prefix string `json:"prefix"`
+	}
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		h.t.Fatal(err)
+	}
+	if out.Prefix != out.Token[:len(mcp.TokenPrefix)+4] {
+		h.t.Fatalf("prefix %q != %q", out.Prefix, out.Token[:len(mcp.TokenPrefix)+4])
+	}
+	return out.Token
+}
+
+// mcpPost posts a raw JSON-RPC message to the public route and returns the status code.
+func (h *harn) mcpPost(token, msg string) int {
+	h.t.Helper()
+	code, _, _ := h.do(0, "POST", "/mcp/"+token, msg, nil)
+	return code
+}
+
+// connect opens a real SDK client session on the public route.
+func (h *harn) connect(t *testing.T, token string, lang string) *mcpsdk.ClientSession {
+	t.Helper()
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "t", Version: "0"}, nil)
+	tr := &mcpsdk.StreamableClientTransport{Endpoint: h.srv.URL + "/mcp/" + token, DisableStandaloneSSE: true}
+	if lang != "" {
+		tr.HTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if lang != "" {
+				req.Header.Set("Accept-Language", lang)
+			}
+			return http.DefaultTransport.RoundTrip(req)
+		})}
+	}
+	cs, err := client.Connect(context.Background(), tr, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	return cs
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func mustMap(t *testing.T, v any) map[string]any {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// ---------- management API ----------
+
+func TestMCPTokenLifecycle(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	// No session: 401.
+	if code, _, _ := h.do(0, "GET", "/api/mcp", nil, nil); code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated: %d", code)
+	}
+
+	var st mcpStatus
+	code, _, _ := h.do(2, "GET", "/api/mcp", nil, &st)
+	if code != http.StatusOK || st.Enabled || st.HasToken {
+		t.Fatalf("initial: %d %+v", code, st)
+	}
+
+	// Enable keeps no token: the switch alone does not mint credentials.
+	if code, _, _ := h.do(2, "PUT", "/api/mcp", map[string]any{"enabled": true}, nil); code != http.StatusNoContent {
+		t.Fatalf("enable: %d", code)
+	}
+	code, _, _ = h.do(2, "GET", "/api/mcp", nil, &st)
+	if code != http.StatusOK || !st.Enabled || st.HasToken {
+		t.Fatalf("enabled: %d %+v", code, st)
+	}
+
+	// A malformed body is rejected.
+	if code, _, _ := h.do(2, "PUT", "/api/mcp", "not-json", nil); code != http.StatusBadRequest {
+		t.Fatalf("malformed: %d", code)
+	}
+
+	// Generate: the plaintext is returned exactly once, prefixed and 256 bits long.
+	token := h.genToken(2)
+	if !strings.HasPrefix(token, mcp.TokenPrefix) || len(token) != len(mcp.TokenPrefix)+43 {
+		t.Fatalf("token shape: %q", token)
+	}
+	code, _, _ = h.do(2, "GET", "/api/mcp", nil, &st)
+	if !st.HasToken || st.TokenPrefix != token[:len(mcp.TokenPrefix)+4] {
+		t.Fatalf("status after generate: %+v", st)
+	}
+
+	// The token is live: a valid initialize gets 200.
+	if code := h.mcpPost(token, initMsg); code != http.StatusOK {
+		t.Fatalf("live token: %d", code)
+	}
+	// And the last use is recorded (throttled, but set on first use).
+	code, _, _ = h.do(2, "GET", "/api/mcp", nil, &st)
+	if st.LastUsedAt == nil {
+		t.Fatalf("last use not recorded: %+v", st)
+	}
+
+	// Regenerate: the old token is revoked, the new one is live.
+	old := token
+	token = h.genToken(2)
+	if token == old {
+		t.Fatal("regenerate returned the same token")
+	}
+	if code := h.mcpPost(old, initMsg); code != http.StatusNotFound {
+		t.Fatalf("old token: %d", code)
+	}
+	if code := h.mcpPost(token, initMsg); code != http.StatusOK {
+		t.Fatalf("new token: %d", code)
+	}
+
+	// Revoke: the token stops working, the switch is left as is.
+	if code, _, _ := h.do(2, "DELETE", "/api/mcp/token", nil, nil); code != http.StatusNoContent {
+		t.Fatalf("revoke: %d", code)
+	}
+	code, _, _ = h.do(2, "GET", "/api/mcp", nil, &st)
+	if !st.Enabled || st.HasToken {
+		t.Fatalf("after revoke: %+v", st)
+	}
+	if code := h.mcpPost(token, initMsg); code != http.StatusNotFound {
+		t.Fatalf("revoked token: %d", code)
+	}
+
+	// Disabling and re-enabling keeps the master switch state consistent.
+	if code, _, _ := h.do(2, "PUT", "/api/mcp", map[string]any{"enabled": false}, nil); code != http.StatusNoContent {
+		t.Fatalf("disable: %d", code)
+	}
+	code, _, _ = h.do(2, "GET", "/api/mcp", nil, &st)
+	if st.Enabled {
+		t.Fatalf("disabled: %+v", st)
+	}
+	_ = ctx
+}
+
+// ---------- public route: shape of the failure answers ----------
+
+func TestMCPFailureShapes(t *testing.T) {
+	h := newHarness(t)
+	token := h.genToken(2)
+
+	// Unknown, revoked and empty tokens all get a uniform 404 (no token exists to be revealed).
+	unknown, _, _ := h.do(0, "POST", "/mcp/sm4_unknownTokenValue1234567890123456789", initMsg, nil)
+	if unknown != http.StatusNotFound {
+		t.Fatalf("unknown: %d", unknown)
+	}
+	if code := h.mcpPost("", initMsg); code != http.StatusNotFound {
+		t.Fatalf("empty: %d", code)
+	}
+
+	// A valid token on the wrong method gets a 405 with Allow: POST (stateless).
+	if code, _, hdr := h.do(0, "GET", "/mcp/"+token, nil, nil); code != http.StatusMethodNotAllowed || hdr.Get("Allow") != "POST" {
+		t.Fatalf("GET: %d %q", code, hdr.Get("Allow"))
+	}
+
+	// The disabled master switch stops a live token with the same 404.
+	if code, _, _ := h.do(2, "PUT", "/api/mcp", map[string]any{"enabled": false}, nil); code != http.StatusNoContent {
+		t.Fatalf("disable: %d", code)
+	}
+	disabled, _, _ := h.do(0, "POST", "/mcp/"+token, initMsg, nil)
+	if disabled != http.StatusNotFound {
+		t.Fatalf("disabled: %d", disabled)
+	}
+	// Uniformity: unknown and disabled are indistinguishable.
+	code, bodyA, _ := h.do(0, "POST", "/mcp/sm4_unknownTokenValue1234567890123456789", initMsg, nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("unknown2: %d", code)
+	}
+	if _, bodyB, _ := h.do(0, "POST", "/mcp/"+token, initMsg, nil); bodyA != bodyB {
+		t.Fatalf("non-uniform 404: %q vs %q", bodyA, bodyB)
+	}
+
+	// Re-enabling reuses the same token.
+	if code, _, _ := h.do(2, "PUT", "/api/mcp", map[string]any{"enabled": true}, nil); code != http.StatusNoContent {
+		t.Fatalf("enable: %d", code)
+	}
+	if code := h.mcpPost(token, initMsg); code != http.StatusOK {
+		t.Fatalf("re-enabled: %d", code)
+	}
+}
+
+// Cross-site requests are rejected before the token is even resolved: the answer is a 403
+// (Go 1.26 CrossOriginProtection), whatever the token.
+func TestMCPCrossOriginRejected(t *testing.T) {
+	h := newHarness(t)
+	token := h.genToken(2)
+	post := func(hdr map[string]string) int {
+		h.t.Helper()
+		req, _ := http.NewRequest("POST", h.srv.URL+"/mcp/"+token, strings.NewReader(initMsg))
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Content-Type", "application/json")
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode
+	}
+	if code := post(map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"}); code != http.StatusForbidden {
+		t.Fatalf("sec-fetch-site: %d", code)
+	}
+	if code := post(map[string]string{"Origin": "https://evil.example"}); code != http.StatusForbidden {
+		t.Fatalf("origin: %d", code)
+	}
+	// Same origin and non-browser clients (no Origin at all) pass.
+	if code := post(map[string]string{"Origin": h.srv.URL}); code != http.StatusOK {
+		t.Fatalf("same-origin: %d", code)
+	}
+	if code := post(nil); code != http.StatusOK {
+		t.Fatalf("no origin: %d", code)
+	}
+}
+
+// ---------- protocol, with the official SDK client ----------
+
+func TestMCPProtocol(t *testing.T) {
+	h := newHarness(t)
+	token := h.genToken(2)
+	cs := h.connect(t, token, "")
+	defer cs.Close()
+
+	if got := cs.InitializeResult().ServerInfo.Name; got != "stride" {
+		t.Fatalf("server name: %q", got)
+	}
+
+	tools, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"planning": true, "day": true, "activities": true, "activity": true, "health": true,
+		"cycles": true, "profile": true, "plan_create": true, "plan_update": true, "plan_delete": true,
+		"event_create": true, "event_update": true, "event_delete": true,
+	}
+	if len(tools.Tools) != len(want) {
+		t.Fatalf("tool count: %d", len(tools.Tools))
+	}
+	for _, tl := range tools.Tools {
+		if !want[tl.Name] {
+			t.Fatalf("unexpected tool %q", tl.Name)
+		}
+		delete(want, tl.Name)
+	}
+
+	ctx := context.Background()
+	today := time.Now().In(paris).Format("2006-01-02")
+	call := func(name string, args any) map[string]any {
+		h.t.Helper()
+		res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			h.t.Fatalf("%s: %v", name, err)
+		}
+		if res.IsError {
+			h.t.Fatalf("%s: IsError: %v", name, res.Content)
+		}
+		return mustMap(t, res.StructuredContent)
+	}
+
+	// health works with no provider connected (empty zones, default mode).
+	if m := call("health", struct{}{}); m["mode"] != "performance" {
+		t.Fatalf("health: %v", m)
+	}
+
+	// plan_create returns the created session; planning then lists it.
+	created := call("plan_create", map[string]any{"date": today, "sport": "run", "title": "MCP test"})
+	id, _ := created["id"].(float64)
+	if id <= 0 {
+		t.Fatalf("plan_create: %v", created)
+	}
+	if m := call("planning", struct{}{}); m["totals"].(map[string]any)["sessionsPlanned"] != float64(1) {
+		t.Fatalf("planning: %v", m)
+	}
+
+	// plan_update applies only the provided fields.
+	updated := call("plan_update", map[string]any{"id": int64(id), "instructions": "zone 2"})
+	if updated["instructions"] != "zone 2" || updated["title"] != "MCP test" {
+		t.Fatalf("plan_update: %v", updated)
+	}
+	if m := call("day", map[string]any{"date": today}); m["date"] != today {
+		t.Fatalf("day: %v", m)
+	}
+	if m := call("activities", struct{}{}); m["items"] == nil {
+		t.Fatalf("activities: %v", m)
+	}
+	if m := call("cycles", struct{}{}); m["plans"] == nil && m["cycles"] == nil {
+		t.Fatalf("cycles: %v", m)
+	}
+	if m := call("profile", struct{}{}); m["language"] == nil && m["timezone"] == nil {
+		t.Fatalf("profile: %v", m)
+	}
+
+	// A tool error (unknown activity) is reported in-band, not as a protocol failure.
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "activity", Arguments: map[string]any{"id": int64(999999999)}})
+	if err == nil && !res.IsError {
+		t.Fatalf("activity: expected an error, got %+v", res.StructuredContent)
+	}
+
+	// events: create, partial update, delete.
+	ev := call("event_create", map[string]any{"kind": "fatigue", "startDate": today})
+	eid, _ := ev["id"].(float64)
+	if ev["severity"] != float64(2) {
+		t.Fatalf("event_create default severity: %v", ev)
+	}
+	evu := call("event_update", map[string]any{"id": int64(eid), "severity": 3})
+	if evu["severity"] != float64(3) || evu["kind"] != "fatigue" {
+		t.Fatalf("event_update: %v", evu)
+	}
+	if m := call("event_delete", map[string]any{"id": int64(eid)}); m["deleted"] != true {
+		t.Fatalf("event_delete: %v", m)
+	}
+
+	// Missing required arguments are rejected (schema validation, or the domain bad-request
+	// surfaced as an in-band tool error).
+	if res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "plan_create", Arguments: map[string]any{}}); err == nil && !res.IsError {
+		t.Fatalf("plan_create without date: %+v", res.StructuredContent)
+	}
+
+	if m := call("plan_delete", map[string]any{"id": int64(id)}); m["deleted"] != true {
+		t.Fatalf("plan_delete: %v", m)
+	}
+}
+
+// The language of the tools follows the effective language: profile ?? Accept-Language ?? en.
+func TestMCPProtocolLanguage(t *testing.T) {
+	h := newHarness(t)
+	token := h.genToken(2)
+
+	// No profile row: Accept-Language wins.
+	csFR := h.connect(t, token, "fr")
+	toolsFR, err := csFR.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csEN := h.connect(t, token, "en")
+	toolsEN, err := csEN.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc := func(tools *mcpsdk.ListToolsResult, name string) string {
+		for _, tl := range tools.Tools {
+			if tl.Name == name {
+				return tl.Description
+			}
+		}
+		return ""
+	}
+	if desc(toolsFR, "planning") == desc(toolsEN, "planning") {
+		t.Fatalf("identical descriptions: %q", desc(toolsFR, "planning"))
+	}
+	if !strings.HasPrefix(desc(toolsFR, "planning"), "Le planning de la semaine") {
+		t.Fatalf("fr: %q", desc(toolsFR, "planning"))
+	}
+	if !strings.HasPrefix(desc(toolsEN, "planning"), "The week plan") {
+		t.Fatalf("en: %q", desc(toolsEN, "planning"))
+	}
+	csFR.Close()
+	csEN.Close()
+
+	// The profile language beats Accept-Language.
+	if _, err := h.st.DB.Exec(`INSERT INTO athlete_profiles (user_id, timezone, updated_at, language) VALUES (2, 'Europe/Paris', 1, 'en')`); err != nil {
+		t.Fatal(err)
+	}
+	cs := h.connect(t, token, "fr")
+	defer cs.Close()
+	tools, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(desc(tools, "planning"), "The week plan") {
+		t.Fatalf("profile language ignored: %q", desc(tools, "planning"))
+	}
+}
+
+// A token only ever acts on its owner's data: bob cannot read or write alice's plan.
+func TestMCPPerUserIsolation(t *testing.T) {
+	h := newHarness(t)
+	today := time.Now().In(paris).Format("2006-01-02")
+	// alice (2) plans a session.
+	alice := h.genToken(2)
+	csA := h.connect(t, alice, "")
+	defer csA.Close()
+	ctx := context.Background()
+	created, err := csA.CallTool(ctx, &mcpsdk.CallToolParams{Name: "plan_create", Arguments: map[string]any{"date": today, "sport": "run"}})
+	if err != nil || created.IsError {
+		t.Fatalf("alice plan_create: %v %v", err, created)
+	}
+	id, _ := mustMap(t, created.StructuredContent)["id"].(float64)
+
+	// bob (3) sees an empty week and cannot touch alice's session.
+	bob := h.genToken(3)
+	csB := h.connect(t, bob, "")
+	defer csB.Close()
+	r, err := csB.CallTool(ctx, &mcpsdk.CallToolParams{Name: "planning", Arguments: struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := mustMap(t, r.StructuredContent)
+	if f, _ := m["totals"].(map[string]any)["sessionsPlanned"].(float64); f != 0 {
+		t.Fatalf("bob sees alice's plan: %v", m)
+	}
+	res, err := csB.CallTool(ctx, &mcpsdk.CallToolParams{Name: "plan_delete", Arguments: map[string]any{"id": int64(id)}})
+	if err == nil && !res.IsError {
+		t.Fatalf("bob deleted alice's session: %v", res.StructuredContent)
+	}
+	// alice's session is still there.
+	rA, err := csA.CallTool(ctx, &mcpsdk.CallToolParams{Name: "plan_delete", Arguments: map[string]any{"id": int64(id)}})
+	if err != nil || rA.IsError {
+		t.Fatalf("alice delete: %v %v", err, rA)
+	}
+}
+
+// ---------- rate limits ----------
+
+// The per-token limit (100 requests / 10 min) stops a flooding client; the per-IP limit
+// (200 / 10 min) bounds unauthenticated guessing.
+func TestMCPRateLimits(t *testing.T) {
+	h := newHarness(t)
+	token := h.genToken(2)
+	for i := 1; i <= 100; i++ {
+		if code := h.mcpPost(token, initMsg); code != http.StatusOK {
+			t.Fatalf("request %d: %d", i, code)
+		}
+	}
+	if code := h.mcpPost(token, initMsg); code != http.StatusTooManyRequests {
+		t.Fatalf("101st: %d", code)
+	}
+}

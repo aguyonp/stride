@@ -1,4 +1,4 @@
-import { Bell, Bot, CircleUser, DatabaseBackup, FileUp, Footprints, KeyRound, Monitor, Moon, Palette, Plug, Sun, UserRound, type LucideIcon } from 'lucide-react'
+import { Bell, Bot, CircleUser, DatabaseBackup, FileUp, Footprints, KeyRound, Monitor, Moon, Palette, Plug, Sun, UserRound, Webhook, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Me } from '../../api/types'
 import { consumeStravaResult } from '../../components/profile/StravaConnect'
@@ -13,6 +13,7 @@ import { BackupSection } from './BackupSection'
 import { ImportSection } from './ImportSection'
 import { IntegrationsSection } from './IntegrationsSection'
 import { LlmSection } from './LlmSection'
+import { McpSection } from './McpSection'
 import { NotificationsSection } from './NotificationsSection'
 import { PasskeysSection } from './PasskeysSection'
 import { ProfileSection } from './ProfileSection'
@@ -22,7 +23,7 @@ import { VersionFooter } from './VersionFooter'
 import { t } from '../../i18n'
 import { useLanguageSwitch, type LanguagePref } from '../../i18n/useLanguage'
 
-type SectionId = 'profil' | 'apparence' | 'integrations' | 'ia' | 'notifications' | 'chaussures' | 'passkeys' | 'sauvegarde' | 'import' | 'compte'
+type SectionId = 'profil' | 'apparence' | 'integrations' | 'ia' | 'notifications' | 'chaussures' | 'passkeys' | 'mcp' | 'sauvegarde' | 'import' | 'compte'
 const SECTIONS: { id: SectionId; icon: LucideIcon; readonly label: string }[] = (
   [
     ['profil', UserRound],
@@ -32,6 +33,7 @@ const SECTIONS: { id: SectionId; icon: LucideIcon; readonly label: string }[] = 
     ['notifications', Bell],
     ['chaussures', Footprints],
     ['passkeys', KeyRound],
+    ['mcp', Webhook],
     ['sauvegarde', DatabaseBackup],
     ['import', FileUp],
     ['compte', CircleUser],
@@ -168,6 +170,7 @@ export default function SettingsView({ me }: { me: Me }) {
           <NotificationsSection />
           <ShoesSection />
           <PasskeysSection />
+          <McpSection />
           <BackupSection />
           <ImportSection />
           <AccountSection me={me} />

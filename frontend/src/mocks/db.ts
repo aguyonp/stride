@@ -37,6 +37,14 @@ export interface MockUser {
   passkeys: Passkey[]
 }
 
+/** Per-user MCP server state (mock of the mcp_access table). The plaintext token is mock-only. */
+export interface MockMcpState {
+  enabled: boolean
+  token: string | null
+  createdAt: string | null
+  lastUsedAt: string | null
+}
+
 export interface StoredNotes {
   painDuring: number | null
   painCold: number | null
@@ -64,6 +72,7 @@ export interface UserData {
   /** 4.2 share notes (see ./v42.ts). */
   v42?: unknown
   health?: HealthStatus
+  mcp?: MockMcpState
 }
 
 export interface V3Data {

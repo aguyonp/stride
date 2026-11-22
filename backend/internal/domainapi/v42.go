@@ -93,7 +93,7 @@ func (a *api) portalWrite(h func(http.ResponseWriter, *http.Request, string)) ht
 		token := r.PathValue("token")
 		th := sha256.Sum256([]byte(token))
 		now := time.Now()
-		if !a.portalIPLimit.allow(clientIP(r), now) || !a.portalTokenLimit.allow(hex.EncodeToString(th[:]), now) {
+		if !a.portalIPLimit.Allow(clientIP(r), now) || !a.portalTokenLimit.Allow(hex.EncodeToString(th[:]), now) {
 			w.Header().Set("Retry-After", strconv.Itoa(int(portalWriteWindow.Seconds())))
 			httpx.Fail(w, http.StatusTooManyRequests, httpx.CodeRateLimited, "Trop de modifications, réessayez dans quelques minutes.")
 			return
@@ -132,7 +132,7 @@ func (a *api) portalReply(w http.ResponseWriter, r *http.Request, status int, v 
 // ---------- portal endpoints ----------
 
 func (a *api) publicActivity(w http.ResponseWriter, r *http.Request) {
-	if !a.shareLimit.allow(clientIP(r), time.Now()) {
+	if !a.shareLimit.Allow(clientIP(r), time.Now()) {
 		w.Header().Set("Retry-After", "60")
 		httpx.Fail(w, http.StatusTooManyRequests, httpx.CodeRateLimited, "Trop de consultations, réessayez dans une minute.")
 		return

@@ -45,7 +45,7 @@ compose.yml
 
 ### 2.1 Backend packages
 
-`cmd/stride` (serve, healthcheck, version, doctor) · `env` · `store` (SQLite) · `database` (goose migrations, schema check) · `queue` (in-process jobs) · `sse` · `observability` (Prometheus) · `cache` · `secret` (AES-GCM) · `auth` (passkeys, sessions) · `admin` · `scheduler` · `apimeter` · `httpapi` / `httpx` / `web` (router, middlewares, embedded SPA) · `domain` / `domainapi` (sync, views, athlete data, HTTP) · `garmin`, `provider/strava`, `provider/weather` · `fitdata` · `analysis` · `athlete` · `view` · `report` · `frfmt` · `logx`.
+`cmd/stride` (serve, healthcheck, version, doctor) · `env` · `store` (SQLite) · `database` (goose migrations, schema check) · `queue` (in-process jobs) · `sse` · `observability` (Prometheus) · `cache` · `secret` (AES-GCM) · `auth` (passkeys, sessions) · `admin` · `scheduler` · `apimeter` · `mcp` (per-user MCP server, §16) · `ratelimit` (in-memory limits) · `httpapi` / `httpx` / `web` (router, middlewares, embedded SPA) · `domain` / `domainapi` (sync, views, athlete data, HTTP) · `garmin`, `provider/strava`, `provider/weather` · `fitdata` · `analysis` · `athlete` · `view` · `report` · `frfmt` · `logx`.
 
 ---
 
@@ -70,6 +70,10 @@ JSON camelCase. Errors: `{"error": "message FR lisible", "code": "<httpx.Code*>"
 | `GET /api/me/passkeys` | → `Passkey[]` |
 | `POST /api/me/passkeys/begin` · `/finish` | add a passkey while logged in |
 | `PATCH /api/me/passkeys/{id}` · `DELETE /api/me/passkeys/{id}` | rename `{name}` · delete (refuse last one: 409) |
+| `GET /api/mcp` | → `McpStatus` (§16) |
+| `PUT /api/mcp` | `{enabled: boolean}` → 204 (disabling keeps the token) |
+| `POST /api/mcp/token` | → `{token, prefix}` (plaintext shown once; replacing revokes the previous token) |
+| `DELETE /api/mcp/token` | → 204 |
 | `GET /api/admin/users` | → `AdminUser[]` |
 | `PATCH /api/admin/users/{id}` | `{status?: "active"\|"disabled", role?: "user"\|"admin"}` (cannot change self) → `AdminUser`; disabling revokes sessions |
 | `DELETE /api/admin/users/{id}` | → 204 (not self) |
@@ -82,6 +86,7 @@ JSON camelCase. Errors: `{"error": "message FR lisible", "code": "<httpx.Code*>"
 interface AuthState { authenticated: boolean; user: Me | null; registrationMode: "open" | "invite"; firstUser: boolean; rpId: string }
 interface Me { id: number; displayName: string; role: "user" | "admin"; createdAt: string; onboardingCompleted: boolean }
 interface Passkey { id: string; name: string; createdAt: string; lastUsedAt: string | null; backedUp: boolean }
+interface McpStatus { enabled: boolean; hasToken: boolean; tokenPrefix: string; createdAt: string | null; lastUsedAt: string | null }
 interface AdminUser { id: number; displayName: string; role: "user" | "admin"; status: "active" | "disabled"; createdAt: string; lastLoginAt: string | null; passkeys: number }
 interface Invitation { id: number; label: string; codePrefix: string; createdAt: string; expiresAt: string | null; maxUses: number; uses: number; revoked: boolean }
 ```
@@ -767,3 +772,28 @@ Storage: migration `00009_admin` adds `async_jobs.payload_json` (written for the
 - `GET /api/share/notes?active=1` = active directives then the remarks of the last 30 days; without `active`, every note (latest 200).
 - Morph: `GET …/morph` outside J/J+1 → 400; `refine` → 202 `JobStatus` (kind `llm.morph_refine`; 412 without LLM), `llm.done` `{ kind: 'morph_refine', ref: '<planned session id>', morphPreview }`; `revert` of a plain session → 409. `changes[].field` ∈ `title|targetDurationS|targetDistanceM|targetPace|targetCadenceSpm|steps|steps.note|instructions`; `apply` only takes the morphable fields of `proposal` (date, sport and links stay).
 - Backups: jobs `backup.run` / `backup.upload` (group `backup`, 1 worker); `POST /api/admin/backups` and `…/{name}/upload` → 202 `JobStatus`, 412 when S3 is not configured; daily snapshot at 03:00 local; `X-Checksum-Sha256` on downloads.
+
+---
+
+## 16. 4.3.0 — Per-user MCP server
+
+Each user can expose their own data to AI assistants (Claude and others) through the Model Context Protocol, using the official Go SDK (`modelcontextprotocol/go-sdk` v1.8.0) on the **Streamable HTTP** transport, **stateless**. The endpoint is `POST /mcp/{token}` — no session, no CORS: the token **is** the authorisation. Implementation in `internal/mcp` (token lifecycle in `Service`, public handler in `server.go`, tools in `tools.go`, account API in `handlers.go`) and migration `00013_mcp_access`.
+
+### 16.1 Public route `POST /mcp/{token}`
+- Stateless: only `POST` is served; `GET` / `DELETE` → 405 + `Allow: POST`. The SDK's localhost DNS-rebinding protection stays enabled; request cancellation propagates (a disconnected client stops the in-flight tool call); body capped at 16 MiB.
+- Uniform 404 `NOT_FOUND` for unknown, revoked or disabled tokens and for malformed paths (`/mcp/` alone, nested paths): the subtree never falls through to the SPA and never reveals whether a token is valid.
+- Cross-origin protection (Go 1.26 `http.CrossOriginProtection`): `Sec-Fetch-Site: cross-site` or a foreign `Origin` → 403. No CORS headers on `/mcp`.
+- Rate limits (in-memory, `internal/ratelimit`): **100 requests / 10 min per token** (key = hex SHA-256 of the token) and **200 requests / 10 min per client IP** → 429 `RATE_LIMITED`.
+- The resolved user is injected in the request context (`auth.WithUser`); a tool handler never takes a user id from its arguments. Language of the tool descriptions and errors: profile.language ?? `Accept-Language` ?? en (two pre-built fr/en tool instances, shared).
+
+### 16.2 Tokens & account API
+- Token = 256 bits from `crypto/rand`, `sm4_` + base64url (47 chars). Only the SHA-256 is stored (`mcp_access`); the plaintext exists exactly once, in the answer of `POST /api/mcp/token`. `tokenPrefix` = `sm4_` + 4 chars is the only part shown again (account screen, logs, audit).
+- `PUT /api/mcp {enabled}` toggles access; **disabling keeps the token** (re-enabling reuses it). Generating a new token **revokes** the previous one immediately. `lastUsedAt` is refreshed with a 5-min minimum interval.
+- Audit: public action `mcp.request` (actor `mcp:<prefix>`, no user id — the token is the actor) and session actions `mcp.toggle`, `mcp.token_generate`, `mcp.token_revoke`. Logs redact the token to its prefix.
+
+### 16.3 Tools (v1, 13)
+- Read: `planning` (week plan + totals), `day` (day view), `activities` (list; `limit` default 30, `from`/`to`, `sport`; response `{items, hasMore}`), `activity` (full detail; unknown id = in-band tool error), `health` (health status + zones), `cycles` (plans → phases → weeks, planned vs actual), `profile` (athlete profile, thresholds, pace targets).
+- Write: `plan_create`, `plan_update`, `plan_delete`; `event_create`, `event_update`, `event_delete` (kinds `fatigue`, `pain`, `illness`, `unavailable`, `forced_rest`). Same domain services and validation as the REST routes, including `Normalize()` (`endDate` ← `startDate`, `severity` ← 2).
+- Argument validation failures come back **in-band** in the tool result (`isError`), not as transport errors.
+- Output schema: tools whose view embeds planned sessions (`planning`, `day`, `activities`, `activity`, `cycles`, `plan_create`, `plan_update`) declare no JSON output schema — the recursive `workout.Step` type is rejected by jsonschema generation; the SDK then omits the schema while still returning `structuredContent` plus the text fallback. The other tools keep their typed output.
+- Isolation: every tool is scoped to the resolved user; another user's data is unreachable (covered by tests).

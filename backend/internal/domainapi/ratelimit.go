@@ -1,10 +1,10 @@
 package domainapi
 
 import (
-	"net"
 	"net/http"
-	"sync"
 	"time"
+
+	"stride/internal/ratelimit"
 )
 
 // shareRateLimit is the number of public share views allowed per client IP and minute.
@@ -17,37 +17,14 @@ const (
 	portalWritesByIP    = 60
 )
 
-// ipLimiter counts requests per key (client IP, token hash) in a fixed window shared by all keys,
-// which keeps memory bounded without a janitor.
-type ipLimiter struct {
-	mu     sync.Mutex
-	limit  int
-	window time.Duration
-	start  time.Time
-	hits   map[string]int
-}
+// ipLimiter is the shared fixed-window limiter, keyed by client IP or token hash.
+type ipLimiter = ratelimit.Limiter
 
-func newIPLimiter(limit int) *ipLimiter { return newWindowLimiter(limit, time.Minute) }
+func newIPLimiter(limit int) *ipLimiter { return ratelimit.New(limit, time.Minute) }
 
 func newWindowLimiter(limit int, window time.Duration) *ipLimiter {
-	return &ipLimiter{limit: limit, window: window, hits: map[string]int{}}
-}
-
-func (l *ipLimiter) allow(key string, now time.Time) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if now.Sub(l.start) >= l.window {
-		l.start = now
-		clear(l.hits)
-	}
-	l.hits[key]++
-	return l.hits[key] <= l.limit
+	return ratelimit.New(limit, window)
 }
 
 // clientIP is the TCP peer address (the reverse proxy's when one fronts Stride).
-func clientIP(r *http.Request) string {
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
-}
+func clientIP(r *http.Request) string { return ratelimit.ClientIP(r) }

@@ -38,7 +38,7 @@ import { todayISO } from '../lib/format'
 import { CONTEXT_TAGS } from '../lib/labels'
 import { emitStreamEvent } from '../state/events'
 import { getCatalog } from './catalog'
-import { currentUser, db, emptyData, nextId, presetFor, PRESETS, save, userData, type MockUser, type PlanEntry, type StoredNotes, type UserData } from './db'
+import { currentUser, db, emptyData, nextId, presetFor, PRESETS, save, userData, type MockMcpState, type MockUser, type PlanEntry, type StoredNotes, type UserData } from './db'
 import { notesOf, plannedWithMatch, summarize, visibleItems, weekPlan } from './domain'
 import { has } from './flags'
 import { localShoe, syncStravaGear } from './gear'
@@ -384,6 +384,40 @@ route('DELETE', /^\/api\/me\/passkeys\/([^/]+)$/, ({ me, params }) => {
   if (!me.passkeys.some((p) => p.id === id)) return err(404, 'NOT_FOUND', 'Passkey introuvable.')
   if (me.passkeys.length <= 1) return err(409, 'CONFLICT', 'Impossible de supprimer ta dernière passkey : ajoutes-en une autre d’abord.')
   me.passkeys = me.passkeys.filter((p) => p.id !== id)
+  return noContent()
+})
+
+/* --- platform: MCP server (4.3, per-user) --- */
+
+const mcpOf = (data: UserData) => {
+  if (!data.mcp) data.mcp = { enabled: false, token: null, createdAt: null, lastUsedAt: null }
+  return data.mcp
+}
+const mcpStatusOf = (s: MockMcpState) => ({
+  enabled: s.enabled,
+  hasToken: s.token !== null,
+  tokenPrefix: s.token ? s.token.slice(0, 8) : '',
+  createdAt: s.token ? s.createdAt : null,
+  lastUsedAt: s.token ? s.lastUsedAt : null,
+})
+route('GET', /^\/api\/mcp$/, ({ data }) => json(mcpStatusOf(mcpOf(data))))
+route('PUT', /^\/api\/mcp$/, ({ data, init }) => {
+  mcpOf(data).enabled = !!parse<{ enabled?: boolean }>(init)?.enabled
+  return noContent()
+})
+route('POST', /^\/api\/mcp\/token$/, ({ data }) => {
+  const s = mcpOf(data)
+  const token = 'sm4_' + rand(43)
+  s.token = token
+  s.createdAt = isoNow()
+  s.lastUsedAt = null
+  return json({ token, prefix: token.slice(0, 8) })
+})
+route('DELETE', /^\/api\/mcp\/token$/, ({ data }) => {
+  const s = mcpOf(data)
+  s.token = null
+  s.createdAt = null
+  s.lastUsedAt = null
   return noContent()
 })
 

@@ -25,6 +25,9 @@ open http://localhost:8080
 
 ## Highlights
 
+**4.3.0**
+- Per-user MCP server: expose your own data to AI assistants (Claude, …) at `POST /mcp/{token}` (Streamable HTTP, official Go SDK), toggled from your account; 13 read/write tools scoped to you.
+
 **4.2.0**
 - Physio / coach portal on share links: directives with restrictions, session remarks, prescribed sessions and events, per-session detail (each permission opt-in).
 - Coach notes injected first into every AI prompt, plan generation and adaptation (quoted, capped).

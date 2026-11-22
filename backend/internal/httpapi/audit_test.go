@@ -79,6 +79,52 @@ func TestLoggingRedactsShareTokens(t *testing.T) {
 	}
 }
 
+// Public MCP calls are audited without a session: the actor is mcp:<prefix>, the target keeps
+// only the token prefix, and the management API is audited like the other user actions.
+func TestAuditMCPRequestsRedactToken(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "a.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	st.DB.Exec(`INSERT INTO users (id, display_name, created_at) VALUES (3, 'Sam', 1)`)
+	l := applog.New(st.DB, nil)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /mcp/{token}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /mcp/{token}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusMethodNotAllowed) })
+	mux.HandleFunc("POST /api/mcp/token", func(w http.ResponseWriter, r *http.Request) {
+		applog.SetUser(r.Context(), 3)
+		w.WriteHeader(http.StatusOK)
+	})
+	h := withAudit(l, mux)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/mcp/sm4_SECRETtokenValue", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/mcp/sm4_SECRETtokenValue", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/mcp/token", nil))
+	l.Close()
+	acts, _ := l.Query(ctx, applog.Filter{Category: applog.CategoryAction})
+	if len(acts.Items) != 3 {
+		t.Fatalf("actions: %+v", acts.Items)
+	}
+	// Newest first.
+	gen, get, pub := acts.Items[0], acts.Items[1], acts.Items[2]
+	if gen.Action != "mcp.token_generate" || gen.UserID == nil || *gen.UserID != 3 {
+		t.Fatalf("generate: %+v", gen)
+	}
+	if pub.Action != "mcp.request" || pub.Message != "mcp:sm4_SECR" || pub.UserID != nil || pub.Target != "/mcp/sm4_SECR…" {
+		t.Fatalf("post: %+v", pub)
+	}
+	if get.Action != "mcp.request" || get.Level != applog.LevelError {
+		t.Fatalf("get: %+v", get)
+	}
+	all, _ := l.Query(ctx, applog.Filter{})
+	for _, it := range all.Items {
+		if strings.Contains(it.Target, "SECRET") || strings.Contains(it.Message, "SECRET") {
+			t.Fatalf("token stored: %+v", it)
+		}
+	}
+}
+
 // Portal writes are audited without a session: the actor is share:<prefix>, the target keeps the
 // sub-path and never the token.
 func TestAuditPortalWritesRedactToken(t *testing.T) {

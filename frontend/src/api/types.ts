@@ -1729,3 +1729,18 @@ export interface PlannedSessionMorph {
   reasons: string[]
   original: MorphOriginal
 }
+
+/* 4.3.0 per-user MCP server */
+
+export interface McpStatus {
+  enabled: boolean
+  hasToken: boolean
+  tokenPrefix: string
+  createdAt: string | null
+  lastUsedAt: string | null
+}
+
+export interface McpToken {
+  token: string
+  prefix: string
+}
