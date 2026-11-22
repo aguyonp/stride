@@ -97,4 +97,32 @@ describe('McpSection', () => {
       expect(mounted!.container.textContent).toContain('Générer un jeton')
     })
   })
+
+  it('lists the 13 functions and offers a paste-ready setup message with the real endpoint', async () => {
+    const state: McpState = {
+      status: { enabled: true, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null },
+      calls: [],
+    }
+    stubApi(state)
+    mounted = await mountWithProviders(<McpSection />)
+
+    // The functions popover is available before any token exists.
+    await clickEl(sectionButton('Fonctions'))
+    await waitFor(() => {
+      expect(mounted!.container.textContent).toContain('Fonctions disponibles')
+      expect(mounted!.container.textContent).toContain('Lecture (7)')
+      expect(mounted!.container.textContent).toContain('Écriture (6)')
+      for (const name of ['planning', 'day', 'activities', 'activity', 'health', 'cycles', 'profile', 'plan_create', 'plan_update', 'plan_delete', 'event_create', 'event_update', 'event_delete']) {
+        expect(mounted!.container.textContent).toContain(name)
+      }
+    })
+
+    // Generate → the paste-ready message embeds the real endpoint.
+    await clickEl(sectionButton('Générer un jeton'))
+    await waitFor(() => {
+      expect(mounted!.container.textContent).toContain(
+        `Aide-moi à ajouter un serveur MCP dans ma configuration globale. Je veux connecter ce serveur MCP : ${window.location.origin}/mcp/${TOKEN}`,
+      )
+    })
+  })
 })

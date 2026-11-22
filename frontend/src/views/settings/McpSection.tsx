@@ -1,8 +1,9 @@
-import { Copy, KeyRound, Loader2, RefreshCw, Trash2, Webhook } from 'lucide-react'
+import { Copy, KeyRound, ListChecks, Loader2, RefreshCw, Trash2, Webhook } from 'lucide-react'
 import { useState } from 'react'
 import { useMcpMutations, useMcpStatus } from '../../api/queries'
 import type { McpToken } from '../../api/types'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { Popover } from '../../components/ui/Popover'
 import { InlineError } from '../../components/ui/Misc'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
@@ -10,9 +11,49 @@ import { fmtDay } from '../../components/profile/download'
 import { copyText } from '../../lib/clipboard'
 import { cn } from '../../lib/cn'
 import { fmtWhen } from '../../lib/format'
-import { t } from '../../i18n'
+import { t, tDyn } from '../../i18n'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
+
+const READ_TOOLS = ['planning', 'day', 'activities', 'activity', 'health', 'cycles', 'profile'] as const
+const WRITE_TOOLS = ['plan_create', 'plan_update', 'plan_delete', 'event_create', 'event_update', 'event_delete'] as const
+
+/** Popover listing the 13 MCP tools (7 read / 6 write) with one-line descriptions. */
+function ToolsPopover() {
+  const group = (titleKey: 'settings.mcp.toolsRead' | 'settings.mcp.toolsWrite', prefix: 'read' | 'write', names: readonly string[]) => (
+    <div className="mb-2">
+      <p className="px-2 pb-1 text-xs font-semibold tracking-wide text-ink-3 uppercase">{t(titleKey, { count: names.length })}</p>
+      <ul className="space-y-0.5">
+        {names.map((n) => (
+          <li key={n} className="flex items-baseline gap-2 rounded-lg px-2 py-1 text-xs">
+            <code className="num w-28 flex-none text-ink">{n}</code>
+            <span className="min-w-0 text-ink-2">{tDyn(`settings.mcp.tools.${prefix}.${n}`)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+  return (
+    <Popover
+      kind="dialog"
+      trigger={(p) => (
+        <button {...p} type="button" className="btn btn-ghost">
+          <ListChecks className="size-4" aria-hidden="true" />
+          {t('settings.mcp.toolsButton')}
+        </button>
+      )}
+      panelClassName="w-[min(24rem,calc(100vw-2rem))]"
+    >
+      {() => (
+        <div className="max-h-[70vh] overflow-y-auto p-2">
+          <p className="px-2 pb-2 text-sm font-semibold">{t('settings.mcp.toolsTitle')}</p>
+          {group('settings.mcp.toolsRead', 'read', READ_TOOLS)}
+          {group('settings.mcp.toolsWrite', 'write', WRITE_TOOLS)}
+        </div>
+      )}
+    </Popover>
+  )
+}
 
 /** Settings › Serveur MCP: per-user MCP endpoint. The token is shown once, at generation time. */
 export function McpSection() {
@@ -51,12 +92,15 @@ export function McpSection() {
       icon={<Webhook />}
       description={t('settings.mcp.description')}
       actions={
-        s && !s.hasToken && !fresh ? (
-          <button type="button" className="btn btn-primary" disabled={m.generateToken.isPending} onClick={() => generate(false)}>
-            {m.generateToken.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <KeyRound className="size-4" aria-hidden="true" />}
-            {t('settings.mcp.generate')}
-          </button>
-        ) : undefined
+        <>
+          {s && !s.hasToken && !fresh ? (
+            <button type="button" className="btn btn-primary" disabled={m.generateToken.isPending} onClick={() => generate(false)}>
+              {m.generateToken.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <KeyRound className="size-4" aria-hidden="true" />}
+              {t('settings.mcp.generate')}
+            </button>
+          ) : null}
+          <ToolsPopover />
+        </>
       }
     >
       {st.isPending ? (
@@ -115,6 +159,22 @@ export function McpSection() {
                 <button type="button" className="icon-btn size-9" aria-label={t('settings.mcp.copyEndpoint')} onClick={() => copy(endpoint(fresh.token), t('settings.mcp.endpoint'))}>
                   <Copy className="size-4" />
                 </button>
+              </div>
+              <div className="space-y-1.5 border-t border-warn/30 pt-2">
+                <p className="text-xs font-semibold text-ink-2">{t('settings.mcp.pasteTitle')}</p>
+                <div className="flex items-start gap-2">
+                  <code className="num min-w-0 flex-1 break-all rounded-lg bg-track/60 px-2 py-1.5 text-xs">
+                    {t('settings.mcp.pasteMessage', { endpoint: endpoint(fresh.token) })}
+                  </code>
+                  <button
+                    type="button"
+                    className="icon-btn size-9"
+                    aria-label={t('settings.mcp.copyPaste')}
+                    onClick={() => copy(t('settings.mcp.pasteMessage', { endpoint: endpoint(fresh.token) }), t('settings.mcp.paste'))}
+                  >
+                    <Copy className="size-4" />
+                  </button>
+                </div>
               </div>
               <p className="text-xs text-ink-3">{t('settings.mcp.howTo')}</p>
             </div>
