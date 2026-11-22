@@ -104,6 +104,26 @@ func mcpResolve(ctx context.Context, db *sql.DB, hash []byte) (*Resolved, error)
 	return &Resolved{UserID: uid, DisplayName: name, TokenPrefix: prefix}, nil
 }
 
+// mcpGetQuota loads the stored public-route quota (defaults when the row is missing).
+func mcpGetQuota(ctx context.Context, db *sql.DB) (Quota, error) {
+	var q Quota
+	err := db.QueryRowContext(ctx, `SELECT token_limit, token_window, ip_limit, ip_window FROM mcp_quota WHERE id = 1`).
+		Scan(&q.TokenLimit, &q.TokenWindow, &q.IPLimit, &q.IPWindow)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DefaultQuota, nil
+	}
+	return q, err
+}
+
+func mcpSetQuota(ctx context.Context, db *sql.DB, q Quota) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO mcp_quota (id, token_limit, token_window, ip_limit, ip_window)
+		VALUES (1, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET token_limit = excluded.token_limit,
+			token_window = excluded.token_window, ip_limit = excluded.ip_limit, ip_window = excluded.ip_window`,
+		q.TokenLimit, q.TokenWindow, q.IPLimit, q.IPWindow)
+	return err
+}
+
 // mcpTouchLastUsed records the last use at most once per refresh interval (one conditional
 // update, a no-op outside it), so a steady stream of calls never hammers the write pool.
 func mcpTouchLastUsed(ctx context.Context, db *sql.DB, uid int64, now time.Time, refresh time.Duration) error {

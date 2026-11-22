@@ -70,7 +70,7 @@ func New(d Deps) http.Handler {
 	if d.MCP != nil {
 		// The public /mcp/ subtree is mounted in the gzip bypass below (single mount
 		// point); only the session-protected management API goes on the mux.
-		mcp.RegisterAPI(mux, mcp.Deps{Store: d.Store, RequireUser: d.Auth.RequireUser, RequireAdmin: d.Auth.RequireAdmin})
+		mcp.RegisterAPI(mux, mcp.Deps{Store: d.Store, RequireUser: d.Auth.RequireUser, RequireAdmin: d.Auth.RequireAdmin, Srv: d.MCP})
 	}
 	domainapi.Register(mux, domainapi.Deps{
 		Services:     d.Domain,

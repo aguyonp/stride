@@ -35,6 +35,32 @@ func (l *Limiter) Allow(key string, now time.Time) bool {
 	return l.hits[key] <= l.limit
 }
 
+// SetConfig changes the limit and the window at runtime (admin-tunable quota). The window is
+// restarted so no counter outlives the settings it was counted under.
+func (l *Limiter) SetConfig(limit int, window time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.limit = limit
+	l.window = window
+	l.start = time.Time{}
+	clear(l.hits)
+}
+
+// Used reports how many requests key has consumed in the current window (0 once the window
+// has elapsed). Refused attempts count against the hits map, so the answer is capped at the
+// limit: consumption can never exceed the quota. It never mutates the counters.
+func (l *Limiter) Used(key string, now time.Time) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if now.Sub(l.start) >= l.window {
+		return 0
+	}
+	if u := l.hits[key]; u < l.limit {
+		return u
+	}
+	return l.limit
+}
+
 // ClientIP is the TCP peer address (the reverse proxy's when one fronts Stride).
 func ClientIP(r *http.Request) string {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {

@@ -2,7 +2,7 @@
 // on-demand sync and database maintenance. Flags: `dbcorrupt` (integrity check reports problems),
 // `adminbusy` (more running / failed jobs).
 
-import type { AdminJob, AdminOverview, AdminShareLink, AdminUser, ErrorCode, FeedbackItem, FeedbackStatus, JobGroup, JobGroupStats, JobState, JobStatus, MeterSnapshot, ShareLink } from '../api/types'
+import type { AdminJob, AdminOverview, AdminShareLink, AdminUser, ErrorCode, FeedbackItem, FeedbackStatus, JobGroup, JobGroupStats, JobState, JobStatus, McpQuota, McpTokenUsage, McpUsage, MeterSnapshot, ShareLink } from '../api/types'
 
 type JobKind = JobStatus['kind']
 import { db, userData, type MockUser } from './db'
@@ -392,4 +392,52 @@ export function registerAdmin(route: RouteFn, meter: () => MeterSnapshot) {
       ? json({ ok: false, problems: ['foreign_key_check: activity_notes rowid 412 → activities (parent manquant)', 'foreign_key_check: activity_notes rowid 413 → activities (parent manquant)'], total: 2, durationMs: 940 })
       : json({ ok: true, problems: [], total: 0, durationMs: 870 }),
   )
+
+  /* --- 4.3.0: MCP public route — usage & admin quota --- */
+  // In-memory, per session: one row per user holding a token, counters derived from the user id.
+  const mcpQuota: McpQuota = { tokenLimit: 100, tokenWindow: 10, ipLimit: 200, ipWindow: 10 }
+  const mcpUsage = (): McpUsage => {
+    const tokens: McpTokenUsage[] = db()
+      .users.filter((u) => u.id <= 2)
+      .map((u) => {
+        const d = userData(u.id)
+        const token = d.mcp?.token ?? `sm4_m${u.id}ab${u.id}mock`
+        if (!d.mcp || !d.mcp.token) d.mcp = { enabled: true, token, createdAt: ago(40 * 24 * H), lastUsedAt: ago(u.id === 1 ? 2 * H : 15 * MIN) }
+        const st = d.mcp
+        const reqs = 14 + u.id * 9
+        return {
+          prefix: token.slice(0, 8),
+          userId: u.id,
+          displayName: u.displayName,
+          enabled: st.enabled,
+          lastUsedAt: st.lastUsedAt,
+          used: Math.min(Math.floor(reqs / 4), mcpQuota.tokenLimit),
+          denied24h: u.id === 2 ? 3 : 0,
+          requests24h: reqs,
+        }
+      })
+    return {
+      quota: { ...mcpQuota },
+      tokens,
+      requests24h: tokens.reduce((n, x) => n + x.requests24h, 0),
+      denied24h: tokens.reduce((n, x) => n + x.denied24h, 0) + 1,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+  const clampQuota = (v: unknown, lo: number, hi: number) => {
+    const n = typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : lo
+    return Math.min(hi, Math.max(lo, n))
+  }
+  route('GET', /^\/api\/admin\/mcp\/usage$/, () => json(mcpUsage()))
+  route('PUT', /^\/api\/admin\/mcp\/quota$/, ({ init }) => {
+    const b = (typeof init?.body === 'string' ? JSON.parse(init.body) : {}) as Partial<McpQuota>
+    const q: McpQuota = {
+      tokenLimit: clampQuota(b.tokenLimit, 1, 100000),
+      tokenWindow: clampQuota(b.tokenWindow, 1, 1440),
+      ipLimit: clampQuota(b.ipLimit, 1, 100000),
+      ipWindow: clampQuota(b.ipWindow, 1, 1440),
+    }
+    Object.assign(mcpQuota, q)
+    return json(q)
+  })
 }

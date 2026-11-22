@@ -1744,3 +1744,28 @@ export interface McpToken {
   token: string
   prefix: string
 }
+
+/** Admin view of the public MCP route: the active quota and the rolling usage per token (24 h). */
+export interface McpQuota {
+  tokenLimit: number
+  tokenWindow: number
+  ipLimit: number
+  ipWindow: number
+}
+export interface McpTokenUsage {
+  prefix: string
+  userId: number
+  displayName: string
+  enabled: boolean
+  lastUsedAt: string | null
+  used: number
+  denied24h: number
+  requests24h: number
+}
+export interface McpUsage {
+  quota: McpQuota
+  tokens: McpTokenUsage[]
+  requests24h: number
+  denied24h: number
+  updatedAt: string
+}

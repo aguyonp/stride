@@ -16,6 +16,8 @@ type Deps struct {
 	Store        *store.Store
 	RequireUser  func(http.Handler) http.Handler
 	RequireAdmin func(http.Handler) http.Handler
+	// Srv serves the admin usage/quota endpoints; nil skips them.
+	Srv *Server
 }
 
 // RegisterAPI mounts the MCP management endpoints on mux.
@@ -79,6 +81,35 @@ func RegisterAPI(mux *http.ServeMux, d Deps) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+
+	if d.Srv == nil {
+		return
+	}
+	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireAdmin(h)) }
+
+	admin("GET /api/admin/mcp/usage", func(w http.ResponseWriter, r *http.Request) {
+		u, err := d.Srv.Usage(r.Context())
+		if err != nil {
+			httpx.Fail(w, http.StatusInternalServerError, httpx.CodeInternal, "Erreur interne du serveur.")
+			return
+		}
+		httpx.JSON(w, http.StatusOK, u)
+	})
+
+	// Quota is clamped server-side (Sanitize): out-of-bounds values are corrected, not rejected.
+	admin("PUT /api/admin/mcp/quota", func(w http.ResponseWriter, r *http.Request) {
+		var q Quota
+		if err := httpx.Decode(w, r, &q, 4<<10); err != nil {
+			httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, "Corps JSON invalide.")
+			return
+		}
+		saved, err := d.Srv.SetQuota(r.Context(), q)
+		if err != nil {
+			httpx.Fail(w, http.StatusInternalServerError, httpx.CodeInternal, "Erreur interne du serveur.")
+			return
+		}
+		httpx.JSON(w, http.StatusOK, saved)
 	})
 }
 

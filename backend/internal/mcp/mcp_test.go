@@ -80,22 +80,27 @@ func newHarness(t *testing.T) *harn {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), auth.User{ID: id, DisplayName: "u", Role: auth.RoleUser})))
+			role := auth.RoleUser
+			if id == 1 {
+				role = auth.RoleAdmin // user 1 is the harness admin row
+			}
+			next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), auth.User{ID: id, DisplayName: "u", Role: role})))
 		})
 	}
+	// Like the production middleware: RequireUser first, then the role check.
 	requireAdmin := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return requireUser(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			u, _ := auth.UserFrom(r.Context())
 			if !u.IsAdmin() {
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
 			next.ServeHTTP(w, r)
-		})
+		}))
 	}
 	api := mcp.New(st, dom, log)
 	mux := http.NewServeMux()
-	mcp.RegisterAPI(mux, mcp.Deps{Store: st, RequireUser: requireUser, RequireAdmin: requireAdmin})
+	mcp.RegisterAPI(mux, mcp.Deps{Store: st, RequireUser: requireUser, RequireAdmin: requireAdmin, Srv: api})
 	mux.Handle("/mcp/", api.PublicHandler())
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
@@ -589,5 +594,109 @@ func TestMCPRateLimits(t *testing.T) {
 	}
 	if code := h.mcpPost(token, initMsg); code != http.StatusTooManyRequests {
 		t.Fatalf("101st: %d", code)
+	}
+}
+
+// ---------- admin usage & quota ----------
+
+type mcpQuotaOut struct {
+	TokenLimit  int `json:"tokenLimit"`
+	TokenWindow int `json:"tokenWindow"`
+	IPLimit     int `json:"ipLimit"`
+	IPWindow    int `json:"ipWindow"`
+}
+
+type mcpUsageOut struct {
+	Quota  mcpQuotaOut `json:"quota"`
+	Tokens []struct {
+		Prefix      string     `json:"prefix"`
+		UserID      int64      `json:"userId"`
+		DisplayName string     `json:"displayName"`
+		Enabled     bool       `json:"enabled"`
+		LastUsedAt  *time.Time `json:"lastUsedAt"`
+		Used        int        `json:"used"`
+		Denied24h   int        `json:"denied24h"`
+		Requests24h int        `json:"requests24h"`
+	} `json:"tokens"`
+	Requests24h int       `json:"requests24h"`
+	Denied24h   int       `json:"denied24h"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// The admin sees the rolling usage per token and tunes the public-route quota: the change
+// applies live (limiters restart), is persisted (read back by a fresh service) and clamped.
+func TestAdminMCPUsageAndQuota(t *testing.T) {
+	h := newHarness(t)
+	token := h.genToken(2)
+
+	// Non-admins never see the admin routes.
+	if code, _, _ := h.do(2, "GET", "/api/admin/mcp/usage", nil, nil); code != http.StatusForbidden {
+		t.Fatalf("non-admin usage: %d", code)
+	}
+	if code, _, _ := h.do(2, "PUT", "/api/admin/mcp/quota", map[string]any{"tokenLimit": 5}, nil); code != http.StatusForbidden {
+		t.Fatalf("non-admin quota: %d", code)
+	}
+
+	// No traffic yet: the token is listed with zero counters and the default quota.
+	var u mcpUsageOut
+	code, _, _ := h.do(1, "GET", "/api/admin/mcp/usage", nil, &u)
+	if code != http.StatusOK {
+		t.Fatalf("usage: %d", code)
+	}
+	if want := (mcpQuotaOut{100, 10, 200, 10}); u.Quota != want {
+		t.Fatalf("quota: %+v, want %+v", u.Quota, want)
+	}
+	if len(u.Tokens) != 1 || u.Tokens[0].UserID != 2 || u.Tokens[0].Prefix != token[:len(mcp.TokenPrefix)+4] ||
+		u.Tokens[0].DisplayName != "alice" || !u.Tokens[0].Enabled || u.Tokens[0].Requests24h != 0 {
+		t.Fatalf("tokens: %+v", u.Tokens)
+	}
+
+	// Three public calls are served and counted (window + 24 h).
+	for i := 0; i < 3; i++ {
+		if c := h.mcpPost(token, initMsg); c != http.StatusOK {
+			t.Fatalf("call %d: %d", i, c)
+		}
+	}
+	u = mcpUsageOut{}
+	h.do(1, "GET", "/api/admin/mcp/usage", nil, &u)
+	if u.Tokens[0].Requests24h != 3 || u.Tokens[0].Used != 3 || u.Requests24h != 3 {
+		t.Fatalf("counters: %+v", u)
+	}
+	if u.Tokens[0].LastUsedAt == nil {
+		t.Fatal("lastUsedAt must be set after a call")
+	}
+
+	// The admin lowers the per-token quota: 5 allowed in the fresh window, the 6th is a 429
+	// counted for the token, and the persisted row is returned clamped.
+	var q mcpQuotaOut
+	code, _, _ = h.do(1, "PUT", "/api/admin/mcp/quota", map[string]any{"tokenLimit": 5, "tokenWindow": 1, "ipLimit": 200, "ipWindow": 10}, &q)
+	if code != http.StatusOK || q != (mcpQuotaOut{5, 1, 200, 10}) {
+		t.Fatalf("put quota: %d %+v", code, q)
+	}
+	for i := 0; i < 5; i++ {
+		if c := h.mcpPost(token, initMsg); c != http.StatusOK {
+			t.Fatalf("call %d: %d", i, c)
+		}
+	}
+	if c := h.mcpPost(token, initMsg); c != http.StatusTooManyRequests {
+		t.Fatalf("6th: %d", c)
+	}
+	u = mcpUsageOut{}
+	h.do(1, "GET", "/api/admin/mcp/usage", nil, &u)
+	if u.Tokens[0].Requests24h != 8 || u.Tokens[0].Used != 5 || u.Tokens[0].Denied24h < 1 || u.Denied24h < 1 {
+		t.Fatalf("after 429: %+v", u)
+	}
+
+	// Out-of-bounds input is clamped, not rejected.
+	q = mcpQuotaOut{}
+	code, _, _ = h.do(1, "PUT", "/api/admin/mcp/quota", map[string]any{"tokenLimit": 0, "tokenWindow": 0, "ipLimit": 999999, "ipWindow": 999999}, &q)
+	if code != http.StatusOK || q != (mcpQuotaOut{1, 1, 100000, 1440}) {
+		t.Fatalf("clamped: %d %+v", code, q)
+	}
+
+	// The change is persisted: a fresh service reads the stored row.
+	stored, err := mcp.NewService(h.st, nil).GetQuota(context.Background())
+	if err != nil || stored.TokenLimit != 1 || stored.TokenWindow != 1 || stored.IPLimit != 100000 || stored.IPWindow != 1440 {
+		t.Fatalf("persisted quota: %+v (%v)", stored, err)
 	}
 }

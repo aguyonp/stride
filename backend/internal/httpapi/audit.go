@@ -88,9 +88,10 @@ var actions = map[string]string{
 	"PUT /api/admin/backups/s3":              "admin.backup_s3_update",
 	"POST /api/admin/backups/s3/test":        "admin.backup_s3_test",
 	// 4.3.0 per-user MCP server (public calls are recorded as mcp.request by withAudit).
-	"PUT /api/mcp":          "mcp.toggle",
-	"POST /api/mcp/token":   "mcp.token_generate",
-	"DELETE /api/mcp/token": "mcp.token_revoke",
+	"PUT /api/mcp":             "mcp.toggle",
+	"POST /api/mcp/token":      "mcp.token_generate",
+	"DELETE /api/mcp/token":    "mcp.token_revoke",
+	"PUT /api/admin/mcp/quota": "mcp.quota_update",
 }
 
 // publicActions are the portal writes (§15.1): no session, the actor is the link (share:<prefix>).
