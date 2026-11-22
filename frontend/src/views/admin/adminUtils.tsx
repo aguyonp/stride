@@ -53,20 +53,23 @@ export function MiniSwitch({ checked, onChange, label, disabled }: { checked: bo
   )
 }
 
-export function UsageBar({ label, used, limit }: { label: string; used: number; limit: number }) {
+/** Vertical gauge of quota usage: a track filled from the bottom, colored by load (accent / warn / danger). */
+export function QuotaGauge({ label, used, limit }: { label: string; used: number; limit: number }) {
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0
   const color = pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warn)' : 'var(--accent)'
   return (
-    <div>
-      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-ink-3">{label}</span>
-        <span className="num font-semibold text-ink">
-          {used} / {limit}
-        </span>
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className="flex h-24 w-3.5 flex-col justify-end overflow-hidden rounded-full bg-track"
+        role="img"
+        aria-label={t('admin.common.quotaAria', { label, used, limit, pct: fmtPct(Math.round(pct), 0) })}
+      >
+        <div className="w-full transition-[height] duration-500" style={{ height: `${pct}%`, background: color }} />
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-track" role="img" aria-label={t('admin.common.quotaAria', { label, used, limit, pct: fmtPct(Math.round(pct), 0) })}>
-        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: color }} />
-      </div>
+      <span className="num text-[11px] font-semibold text-ink-2">
+        {used}/{limit}
+      </span>
+      <span className="text-[11px] text-ink-3">{label}</span>
     </div>
   )
 }

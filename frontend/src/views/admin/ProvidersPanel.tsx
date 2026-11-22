@@ -8,7 +8,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { cn } from '../../lib/cn'
 import { fmtClock, fmtNumber, fmtWhen } from '../../lib/format'
 import { ErrorView } from '../StateViews'
-import { providerName, UsageBar, userName } from './adminUtils'
+import { providerName, QuotaGauge, userName } from './adminUtils'
 import { getLang, t } from '../../i18n'
 
 function StatusBadge({ status }: { status: string }) {
@@ -133,13 +133,17 @@ function ProviderMeterCard({ p }: { p: ProviderStats }) {
         ))}
       </dl>
       {p.quota && (
-        <div className="mt-3 space-y-2.5 border-t border-line pt-3">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-ink-2">
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-ink-2">
             <Activity className="size-3.5" aria-hidden="true" /> {t('admin.providers.quota')}
           </p>
-          <UsageBar label={t('admin.providers.q15')} used={p.quota.usage15m} limit={p.quota.limit15m} />
-          <UsageBar label={t('admin.providers.qDay')} used={p.quota.usageDaily} limit={p.quota.limitDaily} />
-          <p className="num text-[11px] text-ink-3">{t('admin.providers.updated', { when: fmtWhen(p.quota.updatedAt) })}</p>
+          <div className="flex items-end gap-4">
+            <div className="flex gap-5">
+              <QuotaGauge label={t('admin.providers.q15')} used={p.quota.usage15m} limit={p.quota.limit15m} />
+              <QuotaGauge label={t('admin.providers.qDay')} used={p.quota.usageDaily} limit={p.quota.limitDaily} />
+            </div>
+            <p className="num min-w-0 flex-1 pb-5 text-[11px] text-ink-3">{t('admin.providers.updated', { when: fmtWhen(p.quota.updatedAt) })}</p>
+          </div>
         </div>
       )}
     </Card>
