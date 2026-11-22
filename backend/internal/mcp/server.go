@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -23,14 +24,8 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// POST /mcp/{token} rate limits: bounded per client IP and per token.
-const (
-	tokenWindow   = 10 * time.Minute
-	tokenRequests = 100
-	ipWindow      = 10 * time.Minute
-	ipRequests    = 200
-	maxBodyBytes  = 16 << 20
-)
+// maxBodyBytes caps the public MCP body (16 MiB).
+const maxBodyBytes = 16 << 20
 
 // Server serves the public MCP route. The fr/en tool instances are shared:
 // their handlers resolve the caller from the request context at call time.
@@ -41,14 +36,20 @@ type Server struct {
 	ens  *mcpsdk.Server
 	hdl  *mcpsdk.StreamableHTTPHandler
 	cors *http.CrossOriginProtection
-	limT *ratelimit.Limiter
-	limI *ratelimit.Limiter
+	met  *meter
 }
 
-// New builds the per-user MCP server.
+// New builds the per-user MCP server. The public-route quota is loaded from mcp_quota
+// (defaults when unreadable) so an admin change survives a restart.
 func New(st *store.Store, svc *domain.Services, log *slog.Logger) *Server {
-	s := &Server{svc: svc, tok: NewService(st, log),
-		limT: ratelimit.New(tokenRequests, tokenWindow), limI: ratelimit.New(ipRequests, ipWindow)}
+	tok := NewService(st, log)
+	q := DefaultQuota
+	if stored, err := tok.GetQuota(context.Background()); err == nil {
+		q = stored
+	} else {
+		log.Warn("⚠️ MCP : quota stockée illisible, valeurs par défaut", "err", err.Error())
+	}
+	s := &Server{svc: svc, tok: tok, met: newMeter(q)}
 	s.frs = newTools(svc, frfmt.FR).build()
 	s.ens = newTools(svc, frfmt.EN).build()
 	s.hdl = mcpsdk.NewStreamableHTTPHandler(s.serverFor, &mcpsdk.StreamableHTTPOptions{
@@ -81,7 +82,8 @@ func (s *Server) PublicHandler() http.Handler {
 // disabled) and serves MCP with the owner injected in the request context.
 func (s *Server) serve(w http.ResponseWriter, r *http.Request, token string) {
 	now := time.Now()
-	if !s.limI.Allow(ratelimit.ClientIP(r), now) {
+	if !s.met.limI.Allow(ratelimit.ClientIP(r), now) {
+		s.met.noteDenied(now)
 		failRateLimited(w)
 		return
 	}
@@ -90,7 +92,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, token string) {
 		return
 	}
 	hash := sha256.Sum256([]byte(token))
-	if !s.limT.Allow(hex.EncodeToString(hash[:]), now) {
+	key := hex.EncodeToString(hash[:])
+	if !s.met.limT.Allow(key, now) {
+		// Attribute the 429 to the token when it exists; unknown probes are counted globally.
+		if _, _, err := s.tok.Resolve(r.Context(), token); err == nil {
+			s.met.noteTokenDenied(key, now)
+		} else {
+			s.met.noteDenied(now)
+		}
 		failRateLimited(w)
 		return
 	}
@@ -105,6 +114,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, token string) {
 	}
 	applog.SetUser(r.Context(), user.ID)
 	s.tok.Touch(r.Context(), user.ID)
+	s.met.noteRequest(key, now)
 	s.cors.Handler(s.hdl).ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), user)))
 }
 

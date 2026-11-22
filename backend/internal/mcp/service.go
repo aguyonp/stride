@@ -42,6 +42,11 @@ func NewService(st *store.Store, log *slog.Logger) *Service {
 	return &Service{db: st.DB, read: st.R, log: log, now: time.Now}
 }
 
+// GetQuota loads the stored public-route quota (defaults when the row is missing).
+func (s *Service) GetQuota(ctx context.Context) (Quota, error) {
+	return mcpGetQuota(ctx, s.read)
+}
+
 // Status returns the MCP access state of a user.
 func (s *Service) Status(ctx context.Context, uid int64) (Status, error) {
 	a, err := mcpGet(ctx, s.read, uid)

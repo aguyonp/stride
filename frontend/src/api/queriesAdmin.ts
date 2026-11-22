@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import { ADMIN_METER_POLL_MS } from './polling'
-import type { AdminJobFilter, FeedbackCategory, FeedbackInput, FeedbackStatus } from './types'
+import type { AdminJobFilter, FeedbackCategory, FeedbackInput, FeedbackStatus, McpQuota, McpUsage } from './types'
 
 /** Active jobs move fast: poll them more often than the overview. */
 export const ADMIN_JOBS_POLL_MS = 5_000
@@ -13,6 +13,7 @@ export const qkAdmin = {
   jobs: (state: AdminJobFilter) => ['admin', 'jobs', state] as const,
   shares: (state: 'active' | 'all') => ['admin', 'shares', state] as const,
   feedback: (status: FeedbackStatus | 'all', category: FeedbackCategory | 'all') => ['admin', 'feedback', status, category] as const,
+  mcpUsage: ['admin', 'mcp', 'usage'] as const,
 }
 
 /** Instance health at a glance, refreshed every 15 s while the page is visible. */
@@ -41,6 +42,11 @@ export function useSendFeedback() {
   return useMutation({ mutationFn: (body: FeedbackInput) => api.sendFeedback(body) })
 }
 
+/** MCP usage on the public route: the counters move fast, poll them like the meter. */
+export function useAdminMcpUsage() {
+  return useQuery({ queryKey: qkAdmin.mcpUsage, queryFn: api.adminMcpUsage, refetchInterval: ADMIN_METER_POLL_MS })
+}
+
 /** Control center actions; each one refreshes every admin view (counts live in the overview). */
 export function useAdminControl() {
   const qc = useQueryClient()
@@ -57,6 +63,12 @@ export function useAdminControl() {
     updateFeedback: useMutation({
       mutationFn: ({ id, ...b }: { id: number; status?: FeedbackStatus; adminNote?: string }) => api.adminUpdateFeedback(id, b),
       onSuccess: refresh,
+    }),
+    updateMcpQuota: useMutation({
+      mutationFn: (q: McpQuota) => api.adminMcpQuota(q),
+      onSuccess: (q) => {
+        qc.setQueryData(qkAdmin.mcpUsage, (old: McpUsage | undefined) => (old ? { ...old, quota: q } : old))
+      },
     }),
   }
 }
