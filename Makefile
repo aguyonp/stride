@@ -9,7 +9,7 @@ ENV_FILE_ARG := $(if $(wildcard .env),ENV_FILE=../.env,)
 
 COMPOSE_DEV := docker compose -f compose.yml -f compose.dev.yml
 
-.PHONY: help dev dev-frontend frontend-build build test test-e2e up docker-up docker-down logs keygen changelog release clean
+.PHONY: help dev dev-frontend frontend-build build test test-e2e up docker-up docker-down logs keygen changelog release clean diagram
 
 help:
 	@echo "make keygen        how to generate STRIDE_MASTER_KEY"
@@ -23,6 +23,7 @@ help:
 	@echo "make release       tag main as \$$(cat VERSION) with its changelog and push (CI builds latest + X.Y.Z)"
 	@echo "make docker-up     build locally and start docker compose (stride + valkey)"
 	@echo "make logs          follow the stride container logs"
+	@echo "make diagram       regenerate docs/architecture.svg from scripts/gen_architecture.py (CI checks byte-identity)"
 
 keygen:
 	@echo "Generate the master key and paste it into .env as STRIDE_MASTER_KEY=<value>:"
@@ -69,6 +70,11 @@ docker-down:
 
 logs:
 	docker compose logs -f --tail=200 stride
+
+# Regenerate the architecture diagram from its Python generator. CI runs --check and
+# fails when the checked-in SVG is not byte-identical to the generated output.
+diagram:
+	uv run scripts/gen_architecture.py
 
 changelog:
 	@scripts/changelog.sh HEAD
