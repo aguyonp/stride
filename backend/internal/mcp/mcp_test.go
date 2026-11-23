@@ -491,6 +491,103 @@ func TestMCPProtocol(t *testing.T) {
 	}
 }
 
+// TestMCPDayDefaultDate covers issue #131: the optional date of the dated tools (day, planning)
+// must default to "today" in the token owner's timezone — never an empty string propagated to the
+// Garmin API and SQLite — and a malformed date must surface as an explicit, localized tool error.
+func TestMCPDayDefaultDate(t *testing.T) {
+	h := newHarness(t)
+	token := h.genToken(2) // user 2 has no profile row: default timezone Europe/Paris
+
+	// Pin the clock to an instant just after midnight in Paris (CET, UTC+1) but still the
+	// previous day in UTC: 2026-11-22 23:30 UTC == 2026-11-23 00:30 Paris.
+	fixed := time.Date(2026, 11, 22, 23, 30, 0, 0, time.UTC)
+	parisToday := fixed.In(paris).Format("2006-01-02")
+	utcToday := fixed.In(time.UTC).Format("2006-01-02")
+	if parisToday != "2026-11-23" || utcToday != "2026-11-22" || parisToday == utcToday {
+		t.Fatalf("test setup: wanted a Paris/UTC date boundary, got Paris=%s UTC=%s", parisToday, utcToday)
+	}
+	h.dom.Now = func() time.Time { return fixed }
+
+	ctx := context.Background()
+	// callRaw reports the result without failing on a tool error, so the in-band IsError
+	// cases can be inspected.
+	callRaw := func(cs *mcpsdk.ClientSession, name string, args any) (map[string]any, bool, string) {
+		h.t.Helper()
+		res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			h.t.Fatalf("%s: %v", name, err)
+		}
+		if res.IsError {
+			var b strings.Builder
+			for _, c := range res.Content {
+				if tc, ok := c.(*mcpsdk.TextContent); ok {
+					b.WriteString(tc.Text)
+				}
+			}
+			return nil, true, b.String()
+		}
+		return mustMap(h.t, res.StructuredContent), false, ""
+	}
+	ok := func(cs *mcpsdk.ClientSession, name string, args any) map[string]any {
+		h.t.Helper()
+		m, isErr, msg := callRaw(cs, name, args)
+		if isErr {
+			h.t.Fatalf("%s: unexpected IsError: %s", name, msg)
+		}
+		return m
+	}
+
+	csEN := h.connect(t, token, "")
+	defer csEN.Close()
+	csFR := h.connect(t, token, "fr")
+	defer csFR.Close()
+
+	// 1) No argument: the date defaults to today in the owner's (Paris) timezone, not UTC.
+	m := ok(csEN, "day", struct{}{})
+	if m["date"] != parisToday {
+		t.Fatalf("day {}: date %v, want %s (Paris today; UTC would be %s)", m["date"], parisToday, utcToday)
+	}
+	// The crossLoad window is well-formed for the resolved day: J-1 00:00:00 .. J 23:59:59.
+	cl, _ := m["crossLoad"].(map[string]any)
+	if cl == nil {
+		t.Fatalf("day {}: no crossLoad: %v", m)
+	}
+	if cl["windowStart"] != "2026-11-22T00:00:00" || cl["windowEnd"] != "2026-11-23T23:59:59" {
+		t.Fatalf("day {}: crossLoad window %v", cl)
+	}
+
+	// 2) Empty and blank dates resolve to today the same way.
+	for _, d := range []string{"", "   "} {
+		if m := ok(csEN, "day", map[string]any{"date": d}); m["date"] != parisToday {
+			t.Fatalf("day {date:%q}: %v, want %s", d, m["date"], parisToday)
+		}
+	}
+
+	// 3) An explicit valid date passes through unchanged.
+	if m := ok(csEN, "day", map[string]any{"date": "2026-01-15"}); m["date"] != "2026-01-15" {
+		t.Fatalf("day explicit: %v", m["date"])
+	}
+
+	// 4) Malformed dates are rejected in-band (IsError, LLM-readable and localized) before
+	//    reaching DayView, Garmin or SQLite.
+	for _, d := range []string{"22-11-2026", "invalid"} {
+		if _, isErr, msg := callRaw(csEN, "day", map[string]any{"date": d}); !isErr || !strings.Contains(msg, "YYYY-MM-DD") {
+			t.Fatalf("day {date:%q}: isErr=%v msg=%q (want a YYYY-MM-DD hint)", d, isErr, msg)
+		}
+		if _, isErr, msg := callRaw(csFR, "day", map[string]any{"date": d}); !isErr || !strings.Contains(msg, "AAAA-MM-JJ") {
+			t.Fatalf("day(fr) {date:%q}: isErr=%v msg=%q (want an AAAA-MM-JJ hint)", d, isErr, msg)
+		}
+	}
+
+	// 5) planning is aligned on the same helper: a malformed date errors, an empty date works.
+	if _, isErr, msg := callRaw(csEN, "planning", map[string]any{"date": "22-11-2026"}); !isErr || !strings.Contains(msg, "YYYY-MM-DD") {
+		t.Fatalf("planning malformed: isErr=%v msg=%q", isErr, msg)
+	}
+	if m := ok(csEN, "planning", struct{}{}); m["totals"] == nil {
+		t.Fatalf("planning {}: %v", m)
+	}
+}
+
 // The language of the tools follows the effective language: profile ?? Accept-Language ?? en.
 func TestMCPProtocolLanguage(t *testing.T) {
 	h := newHarness(t)
