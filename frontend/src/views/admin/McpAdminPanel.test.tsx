@@ -115,17 +115,18 @@ describe('McpAdminPanel', () => {
 
   it('shows the call journal, the 24 h errors KPI and the failed-only filter', async () => {
     mounted = await mountWithProviders(<McpAdminPanel />)
-    await waitFor(() => expect(mounted!.container.textContent).toContain('Journal des appels'))
 
-    // The KPI tile quotes the usage payload.
+    // The card titles render before the card bodies (the usage KPIs and the journal rows come from
+    // two independent fetches): wait on the rendered state each assertion targets.
     const kpiValue = (label: string) =>
       Array.from(document.querySelectorAll('dt')).find((d) => d.textContent === label)?.nextElementSibling?.textContent ?? ''
-    expect(kpiValue('Erreurs / Timeouts · 24 h')).toBe('2')
+    await waitFor(() => expect(kpiValue('Erreurs / Timeouts · 24 h')).toBe('2'))
 
-    // The journal is the last table of the page (the per-token table comes first).
-    const tables = document.querySelectorAll('table')
-    const journalTable = tables[tables.length - 1]
-    expect(journalTable.querySelectorAll('tbody tr').length).toBe(2)
+    // The journal is the second table of the page (the per-token table comes first); the journal
+    // table only exists once its rows have rendered.
+    await waitFor(() => expect(document.querySelectorAll('table').length).toBe(2))
+    const journalTable = document.querySelectorAll('table')[1]
+    await waitFor(() => expect(journalTable.querySelectorAll('tbody tr').length).toBe(2))
 
     // Both filters of the journal card are its two selects (the card holds no other).
     const selects = document.querySelectorAll('select')
