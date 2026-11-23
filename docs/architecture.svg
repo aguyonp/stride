@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 720" width="1080" height="720" role="img" aria-label="Architecture de Stride 4.2.0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 720" width="1080" height="720" role="img" aria-label="Stride 4.4.0 architecture">
   <defs>
     <marker id="ah" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
       <path d="M1.5,1.5 L10,6 L1.5,10.5" fill="none" stroke="#1e1e1e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -11,69 +11,69 @@
   <rect width="1080" height="720" rx="18" fill="#ffffff"/>
 
   <!-- Header -->
-  <text x="40" y="52" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e1e1e">Stride 4.2.0 — Architecture</text>
-  <text x="40" y="76" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#495057">compose.yml : stride (Go API + tâches en processus + SPA embarquée) · valkey (Cache TTL + Pub/Sub SSE) · SQLite WAL (Goose) · sauvegardes S3</text>
+  <text x="40" y="52" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e1e1e">Stride 4.4.0 — Architecture</text>
+  <text x="40" y="76" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#495057">compose.yml: stride (Go API + in-process jobs + embedded SPA) · valkey (TTL cache + SSE Pub/Sub) · SQLite WAL (Goose) · S3 backups</text>
 
   <!-- React PWA -->
   <rect x="40" y="135" width="225" height="150" rx="14" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="152.5" y="165" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">React 19 + TS PWA</text>
   <text x="152.5" y="188" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Dashboard · Cycles Gantt (/plan)</text>
-  <text x="152.5" y="207" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Cartographie Corporelle (/body)</text>
-  <text x="152.5" y="226" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Command Palette (Cmd+K)</text>
-  <text x="152.5" y="245" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Client typé · Passkeys</text>
-  <text x="152.5" y="266" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#1864ab" text-anchor="middle">Zéro polling · SSE temps réel</text>
+  <text x="152.5" y="207" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Body Map (/body)</text>
+  <text x="152.5" y="226" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Command palette (Cmd+K)</text>
+  <text x="152.5" y="245" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Typed client · passkeys</text>
+  <text x="152.5" y="266" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#1864ab" text-anchor="middle">Zero polling · realtime SSE</text>
 
   <!-- Public Physio / Coach Share View -->
   <rect x="40" y="315" width="225" height="96" rx="14" fill="#e7f5ff" stroke="#1e1e1e" stroke-width="1.6" stroke-dasharray="5,3"/>
-  <text x="152.5" y="344" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Portail Kiné &amp; Coach</text>
-  <text x="152.5" y="365" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">/share/:token (permissions par lien)</text>
-  <text x="152.5" y="384" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#495057" text-anchor="middle">Consignes · remarques · prescriptions</text>
+  <text x="152.5" y="344" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Physio &amp; Coach Portal</text>
+  <text x="152.5" y="365" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">/share/:token (per-link permissions)</text>
+  <text x="152.5" y="384" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#495057" text-anchor="middle">Instructions · notes · prescriptions</text>
 
   <!-- Prometheus Scraper -->
   <rect x="40" y="440" width="225" height="74" rx="14" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="1.5"/>
-  <text x="152.5" y="468" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Observabilité</text>
-  <text x="152.5" y="489" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">GET /version · /metrics (écoute dédiée)</text>
+  <text x="152.5" y="468" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Observability</text>
+  <text x="152.5" y="489" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">GET /version · /metrics (dedicated port)</text>
 
   <!-- Go API + Worker Core -->
   <rect x="365" y="125" width="300" height="295" rx="14" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="515" y="156" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1e1e1e" text-anchor="middle">Go Server (HTTP + Worker)</text>
-  <text x="515" y="180" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">WebAuthn Passkeys · AES-256-GCM · SHA-256</text>
-  <text x="515" y="200" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Contrat : SPEC.md + types.ts</text>
-  <text x="515" y="220" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Hub SSE (/api/events/stream + LLM tokens)</text>
-  <text x="515" y="240" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Tâches : sync · llm · webhook · backup</text>
-  <text x="515" y="260" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Cycles Macro / Méso / Micro &amp; prévu/réalisé</text>
-  <text x="515" y="280" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Body Map &amp; corrélations (drop, usure, D-, GCT)</text>
-  <text x="515" y="300" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Biomécanique · EF · Impact · Readiness</text>
-  <text x="515" y="320" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Coach IA · Morphing de séance · Export .FIT</text>
-  <text x="515" y="342" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#2b8a3e" text-anchor="middle">Instrumenté Prometheus (P50/P95/P99)</text>
+  <text x="515" y="180" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">WebAuthn passkeys · recovery codes</text>
+  <text x="515" y="200" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">AES-256-GCM · SHA-256 · SPEC.md + types.ts</text>
+  <text x="515" y="220" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">SSE stream (LLM tokens) · per-user MCP</text>
+  <text x="515" y="240" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Jobs: sync · llm · webhook · backup</text>
+  <text x="515" y="260" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Macro / Meso / Micro cycles &amp; planned/done</text>
+  <text x="515" y="280" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Body Map &amp; correlations (drop, wear, D-, GCT)</text>
+  <text x="515" y="300" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">Biomechanics · EF · Impact · Readiness</text>
+  <text x="515" y="320" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#2b2b2b" text-anchor="middle">AI coach · session morphing · .FIT export</text>
+  <text x="515" y="342" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#2b8a3e" text-anchor="middle">Prometheus-instrumented (P50/P95/P99)</text>
   <rect x="387" y="358" width="256" height="44" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="1.2"/>
-  <text x="515" y="377" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#1e1e1e" text-anchor="middle">Jobs Asynchrones + Retries Backoff</text>
-  <text x="515" y="394" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#3b3b3b" text-anchor="middle">Sync · Parsing FIT/GPX/TCX · LLM · Webhooks</text>
+  <text x="515" y="377" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#1e1e1e" text-anchor="middle">Async jobs + backoff retries</text>
+  <text x="515" y="394" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#3b3b3b" text-anchor="middle">Sync · FIT/GPX/TCX parsing · LLM · webhooks</text>
 
   <!-- SQLite WAL -->
   <rect x="335" y="485" width="175" height="96" rx="14" fill="#ffec99" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="422.5" y="514" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">SQLite (WAL)</text>
-  <text x="422.5" y="535" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Migrations Goose embed</text>
+  <text x="422.5" y="535" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Embedded Goose migrations</text>
   <text x="422.5" y="553" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#495057" text-anchor="middle">Cycles · Body Map · Share</text>
-  <text x="422.5" y="570" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">1 écrivain · pool lecture seule</text>
+  <text x="422.5" y="570" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">1 writer · read-only pool</text>
 
   <!-- Valkey -->
   <rect x="530" y="485" width="185" height="96" rx="14" fill="#ffc9c9" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="622.5" y="514" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Valkey 9</text>
-  <text x="622.5" y="535" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Pools par groupe de tâches</text>
-  <text x="622.5" y="553" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#495057" text-anchor="middle">Cache TTL · Pub/Sub SSE</text>
-  <text x="622.5" y="570" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">(fallback mémoire en dev)</text>
+  <text x="622.5" y="535" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Pools per job group</text>
+  <text x="622.5" y="553" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#495057" text-anchor="middle">TTL cache · SSE Pub/Sub</text>
+  <text x="622.5" y="570" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">(in-memory fallback in dev)</text>
 
   <!-- External Providers -->
-  <text x="905" y="108" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#495057" text-anchor="middle">APIs sortantes (meter · quota · egress guard)</text>
+  <text x="905" y="108" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#495057" text-anchor="middle">Outbound APIs (meter · quota · egress guard)</text>
 
   <rect x="780" y="122" width="255" height="74" rx="14" fill="#d0bfff" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="907.5" y="152" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Garmin Connect</text>
-  <text x="907.5" y="174" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Personal API · archives .FIT · santé</text>
+  <text x="907.5" y="174" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Personal API · .FIT archives · health</text>
 
   <rect x="780" y="214" width="255" height="74" rx="14" fill="#ffd8a8" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="907.5" y="244" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Strava API v3</text>
-  <text x="907.5" y="266" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">OAuth2 · streams · chaussures · webhooks</text>
+  <text x="907.5" y="266" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">OAuth2 · streams · shoes · webhooks</text>
 
   <rect x="780" y="306" width="255" height="74" rx="14" fill="#eebefa" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="907.5" y="336" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">LLM Streaming</text>
@@ -81,10 +81,10 @@
 
   <rect x="780" y="398" width="255" height="74" rx="14" fill="#c5f6fa" stroke="#1e1e1e" stroke-width="1.8"/>
   <text x="907.5" y="428" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Open-Meteo</text>
-  <text x="907.5" y="450" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">météo horaire &amp; archive de séance</text>
+  <text x="907.5" y="450" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Hourly weather &amp; session archive</text>
 
   <rect x="780" y="490" width="255" height="74" rx="14" fill="#e9ecef" stroke="#1e1e1e" stroke-width="1.8"/>
-  <text x="907.5" y="520" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Webhooks sortants</text>
+  <text x="907.5" y="520" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Outbound webhooks</text>
   <text x="907.5" y="542" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">Discord · Telegram · JSON (retry 429/5xx)</text>
 
   <!-- Connections: Left -> Go Core -->
@@ -95,7 +95,7 @@
   <text x="315" y="242" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#1864ab" text-anchor="middle">SSE stream</text>
 
   <path d="M268,360 L361,330" fill="none" stroke="#1e1e1e" stroke-width="1.6" marker-end="url(#ah)"/>
-  <text x="315" y="335" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">portail public</text>
+  <text x="315" y="335" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">public portal</text>
 
   <path d="M268,476 L361,400" fill="none" stroke="#1e1e1e" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ah)"/>
   <text x="306" y="454" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">/metrics</text>
@@ -109,12 +109,12 @@
 
   <!-- Atomic backups -->
   <rect x="335" y="612" width="380" height="74" rx="14" fill="#fff9db" stroke="#1e1e1e" stroke-width="1.8"/>
-  <text x="525" y="640" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1e1e1e" text-anchor="middle">Sauvegardes atomiques</text>
-  <text x="525" y="661" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">VACUUM INTO · gzip · SHA-256 · quotidienne + avant migration</text>
-  <text x="525" y="677" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">data/backups (rétention 7 + 3 pré-migration)</text>
+  <text x="525" y="640" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1e1e1e" text-anchor="middle">Atomic backups</text>
+  <text x="525" y="661" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">VACUUM INTO · gzip · SHA-256 · daily + pre-migration</text>
+  <text x="525" y="677" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#495057" text-anchor="middle">data/backups (retention 7 + 3 pre-migration)</text>
 
   <rect x="780" y="602" width="255" height="74" rx="14" fill="#e6fcf5" stroke="#1e1e1e" stroke-width="1.8"/>
-  <text x="907.5" y="632" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">Stockage S3 compatible</text>
+  <text x="907.5" y="632" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#1e1e1e" text-anchor="middle">S3-compatible storage</text>
   <text x="907.5" y="654" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#3b3b3b" text-anchor="middle">AWS · MinIO · R2 · Scaleway · Garage · B2</text>
 
   <path d="M422.5,583 L422.5,608" fill="none" stroke="#1e1e1e" stroke-width="1.6" marker-end="url(#ah)"/>
