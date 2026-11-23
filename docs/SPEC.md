@@ -64,12 +64,15 @@ JSON camelCase. Errors: `{"error": "message FR lisible", "code": "<httpx.Code*>"
 | `POST /api/auth/register/finish` | RegistrationResponseJSON (as produced by `@simplewebauthn/browser` `startRegistration`) → `Me` + session cookie |
 | `POST /api/auth/login/begin` | `{}` → `{publicKey: PublicKeyCredentialRequestOptionsJSON}` (discoverable credentials, empty allowCredentials) |
 | `POST /api/auth/login/finish` | AuthenticationResponseJSON → `Me` + session cookie |
+| `POST /api/auth/login/recovery` | `{code}` → `Me` + session cookie (4.4, public; unknown/used code 401, disabled 403, 10 attempts/min/IP 429) |
 | `POST /api/auth/logout` | → 204 |
 | `GET /api/me` · `PATCH /api/me` | `{displayName?, onboardingCompleted?}` → `Me` |
 | `DELETE /api/me` | delete own account (cascade) → 204 |
 | `GET /api/me/passkeys` | → `Passkey[]` |
 | `POST /api/me/passkeys/begin` · `/finish` | add a passkey while logged in |
 | `PATCH /api/me/passkeys/{id}` · `DELETE /api/me/passkeys/{id}` | rename `{name}` · delete (refuse last one: 409) |
+| `GET /api/me/recovery` | → `RecoveryStatus` (4.4: how many one-time codes remain) |
+| `POST /api/me/recovery` | → `{ codes: string[] }` (4.4: fresh set of 10, previous ones voided; shown once) |
 | `GET /api/mcp` | → `McpStatus` (§16) |
 | `PUT /api/mcp` | `{enabled: boolean}` → 204 (disabling keeps the token) |
 | `POST /api/mcp/token` | → `{token, prefix}` (plaintext shown once; replacing revokes the previous token) |
@@ -86,6 +89,7 @@ JSON camelCase. Errors: `{"error": "message FR lisible", "code": "<httpx.Code*>"
 interface AuthState { authenticated: boolean; user: Me | null; registrationMode: "open" | "invite"; firstUser: boolean; rpId: string }
 interface Me { id: number; displayName: string; role: "user" | "admin"; createdAt: string; onboardingCompleted: boolean }
 interface Passkey { id: string; name: string; createdAt: string; lastUsedAt: string | null; backedUp: boolean }
+interface RecoveryStatus { remaining: number }
 interface McpStatus { enabled: boolean; hasToken: boolean; tokenPrefix: string; createdAt: string | null; lastUsedAt: string | null }
 interface AdminUser { id: number; displayName: string; role: "user" | "admin"; status: "active" | "disabled"; createdAt: string; lastLoginAt: string | null; passkeys: number }
 interface Invitation { id: number; label: string; codePrefix: string; createdAt: string; expiresAt: string | null; maxUses: number; uses: number; revoked: boolean }
@@ -96,6 +100,7 @@ Rules: the very first registered user needs no invitation and becomes `admin`. A
 - WebAuthn `begin` endpoints set an HttpOnly cookie `stride_webauthn` (path `/api/`, 5 min) bound to the ceremony stored in the cache; `finish` must be called from the same browser. `register/finish`, `login/finish` and `passkeys/finish` bodies are the raw `@simplewebauthn/browser` JSON. Verification failures → 400 `BAD_REQUEST`; unknown passkey at login → 401; disabled account → 403 `FORBIDDEN`; expired/replayed ceremony → 400.
 - Missing/invalid invitation → 403 `INVITE_REQUIRED`. Invitation codes look like `ABCD-EFGH-…` (24 base32 chars), case and dashes are ignored; `codePrefix` = first 4 chars. `DELETE /api/admin/invitations/{id}` revokes (soft, `revoked: true`) → 204. `expiresInHours: 0` = no expiry; `maxUses` 1–1000.
 - `POST /api/me/passkeys/begin` accepts an optional `{name}`; `/finish` and `PATCH /{id}` return a `Passkey`. `Passkey.id` is the base64url credential id. Default names come from the user agent (« Chrome · macOS »).
+- **Recovery codes (4.4)**: one-time login codes for the passkey-only flow — losing every device with unbacked passkeys must not mean losing the account. `POST /api/me/recovery` generates a set of 10 codes: 10 random bytes each, base32 (RFC 4648) without padding, 16 uppercase chars displayed `XXXX-XXXX-XXXX-XXXX`; on input, case and dashes are normalized. Only the **SHA-256** of the normalized code is stored (`recovery_codes`, migration `00015`, `ON DELETE CASCADE` on `users`); the plaintext is returned once and never recoverable. Each code is strictly single-use (atomic `UPDATE … SET used_at = ? WHERE code_hash = ? AND used_at IS NULL`, affected-rows guard → 401 `UNAUTHORIZED` for unknown/used/malformed codes). `POST` regenerates atomically (old set voided, new set stored in one transaction). `POST /api/auth/login/recovery` is public, session-issued like a passkey login, disabled account → 403 (the code is still consumed), rate-limited per client IP (10 attempts/min, 429 `RATE_LIMITED`). The passkeys « last credential » 409 guard is untouched by design.
 - `PATCH` / `DELETE /api/admin/users/{id}` on oneself → 409 `CONFLICT`. `DELETE /api/me` by the only active admin while other users exist → 409.
 - `register/finish` → 200 `Me`; `/healthz` also returns `version`; `/health/ready` 503 body `{"status":"unavailable","checks":{…}}`.
 - CSRF: any non-GET `/api/*` call without `X-Stride-CSRF: 1` → 403 `FORBIDDEN` (except `POST /api/webhooks/strava`).
@@ -388,7 +393,7 @@ No splits. Structure:
 - Freshness pill (db / cache / live + time) and sync status; `POST /api/sync` on load.
 - Planning & goals module (week view, plan vs done), pain form (0–10 step 0.5, labels from focus preset), shoes manager, context tags, daily readiness check-in.
 - Multi-session export (select sessions or last N weeks).
-- Settings: profile & thresholds, integrations, passkeys, backup export/restore JSON, account deletion.
+- Settings: profile & thresholds, integrations, passkeys, recovery codes (4.4), backup export/restore JSON, account deletion.
 - `/admin` (admin only): users (enable/disable/delete/role), invitations (create → copy link once, revoke), registration mode, provider connections, API meter (requests, 429s, cooldowns, recent errors), flush cache, resync user, user backup/restore.
 - PWA: `manifest.json`, icons (any + maskable), iOS meta tags (`apple-mobile-web-app-capable`, status bar style, `apple-touch-icon`), Android `theme-color`, minimal service worker (network-first navigation, cache-first hashed assets).
 - Glassmorphism design kept, mobile-first, accessible, no external network calls, French UI, rebranded « Stride » (new generic icon: no knee/kneecap).
@@ -422,7 +427,12 @@ No splits. Structure:
 | `STRIDE_SYNC_HOUR`, `STRIDE_SYNC_JITTER_MIN`, `STRIDE_SYNC_JITTER_MAX` | `7`, `30s`, `90s` | morning prefetch |
 | `STRIDE_GARMIN_BASE_URL` | Garmin personal API | tests |
 | `STRIDE_ALLOW_PRIVATE_EGRESS` | `false` | `true` lets user-supplied URLs (LLM `openai_compat` base URL, notification webhooks) reach loopback/private networks (e.g. a local Ollama) |
+| `STRIDE_S3_ENDPOINT` / `_REGION` / `_BUCKET` / `_PREFIX` | — / `us-east-1` / — / — | one-time seed of the admin S3 backup target (§15.4) |
+| `STRIDE_S3_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` | — | same seed (secret sealed in DB, never returned) |
+| `STRIDE_S3_PATH_STYLE` / `_AUTO_UPLOAD` / `_RETENTION_DAYS` | `false` / `false` / `30` | same seed |
 | `TZ`, `LOG_LEVEL`, `LOG_FORMAT` | `Europe/Paris`, `info`, `pretty` | |
+| `NO_COLOR` | — | set: logs without ANSI colors |
+| `ENV_FILE` | `./.env` | path of the env file loaded at boot (existing process env wins) |
 | compose only: `STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID` | `127.0.0.1`, `8080`, `latest`, `65532`, `65532` | published port, image tag (`latest` / `X.Y.Z` = releases, `prerelease` = main, `dev` = other branches), container user |
 
 ## 10. Domain implementation notes
@@ -805,3 +815,23 @@ Each user can expose their own data to AI assistants (Claude and others) through
 - `GET /api/admin/mcp/usage` (admin) → `{ quota, tokens[], requests24h, denied24h, updatedAt }`: one `tokens[]` entry per stored token (`prefix`, `userId`, `displayName`, `enabled`, `lastUsedAt`, `used` in the current window, `denied24h`, `requests24h`), joined with `users`.
 - Usage counters are in-memory (like the provider meter): rolling 24 h in 5-minute buckets (288 slots) per token for requests and denials, plus a global denial ring. A 429 is counted for the token when `Resolve` succeeds (the IP limit is hit or the token window is full), globally only for unknown tokens. `used` never exceeds the limit. Stale entries (revoked tokens whose 24 h rolled out) are swept at each snapshot, so the map is bounded by the live token count. Counters reset on restart; `lastUsedAt` (DB) is the durable signal.
 - Frontend: admin tab **MCP** — usage card (24 h totals, per-token table with the current-window load bar) and quota card (four numeric fields, dirty state, save → PUT + toast), both polling every 15 s.
+
+## 17. 4.4.0 — One-time recovery codes, complete and CI-checked `.env.example`
+
+### 17.1 Recovery codes (passkeys-only last resort)
+
+Signing in is passkey-only (WebAuthn discoverable login, no username, no password). Multiple passkeys per account already exist (add/rename/delete, last-one guard 409). The remaining hole: losing **every** device while the passkeys are not backed up at the authenticator (cloud lost, manager wiped) = account lost. One-time **recovery codes** close it (GitHub/Google pattern). See §3.1 for the routes and the full behavioural contract:
+
+- **Codes**: 10 per set, each 10 random bytes → base32 (RFC 4648, no padding) → 16 uppercase chars shown `XXXX-XXXX-XXXX-XXXX` (case and dashes normalized on input). Stored as **SHA-256 of the normalized code only** (`recovery_codes`, migration `00015`, `ON DELETE CASCADE`); the plaintext is shown once at generation and never recoverable.
+- **Single use**: consumption is an atomic `UPDATE … WHERE used_at IS NULL` with an affected-rows guard, so a code can never be replayed even under concurrency.
+- **Regeneration**: `POST /api/me/recovery` atomically voids the remaining set and stores a fresh one (single transaction).
+- **Login**: `POST /api/auth/login/recovery` is public, rate-limited per client IP (10 attempts/min → 429), issues a session like a passkey login. Disabled account → 403 (code still consumed). Unknown/used/malformed → 401.
+- **UI**: login screen gets a discrete « code de récupération » path under the passkey button; Settings gains a **Codes de récupération** section (remaining count, generate/regenerate with a confirmation, the fresh set with per-code copy and a « shown once » warning). i18n FR/EN (mirror test) + mock routes + Playwright recovery-login smoke.
+- The passkeys « last credential » 409 guard is intentionally **unchanged**: a recovery code never modifies the passkey rules.
+
+### 17.2 `.env.example` complete and drift-proofed
+
+`.env.example` had drifted badly from the code (dead vars `APP_AUTH_*`/`PORT`/`DATA_DIR`/`STRIDE_BIND|PORT|VERSION`, wrong compose names, and missing the bulk of the 4.x surface: `STRIDE_METRICS_ADDR`, all `STRIDE_S3_*`, `STRIDE_MASTER_KEY(_PREVIOUS)`, `STRIDE_DATA_DIR`/`STRIDE_DB_PATH`, `STRIDE_VALKEY_URL`, `STRIDE_REGISTRATION`, `STRIDE_SESSION_TTL`, `STRIDE_WEBAUTHN_*`, `STRIDE_SYNC_*`, `STRIDE_GARMIN_BASE_URL`, `STRIDE_STRAVA_*`, `STRIDE_WEATHER`, `STRIDE_ALLOW_PRIVATE_EGRESS`, `NO_COLOR`, `ENV_FILE`).
+
+- **Rewritten**: every variable read by the binary is documented with its default, grouped and commented; the docker-compose block uses the real names read by `compose.yml` (`STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID`).
+- **CI test « toute variable lue est documentée »** (`internal/env`, picked up by the existing backend `go test ./...` job, no `ci.yml` change): parses every non-test `*.go` file for `os.Getenv`/`os.LookupEnv` string literals plus the first-arg `get()`/`decodeKey()` reads in `env.go`, and fails listing any read var missing from `.env.example`. One-directional (compose-only vars stay documentable); test-only vars (`STRIDE_LIVE_ENV`, `live` tag) are out of scope. Adding a new read var without documenting it now turns CI red.

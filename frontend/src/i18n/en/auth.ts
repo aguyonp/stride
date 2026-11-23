@@ -38,6 +38,12 @@ const en: Widen<typeof fr> = {
     createAccount: 'Create an account',
     inviteOnly: 'Invitation-only sign-up: ask the administrator for a link.',
     haveCode: 'I have an invitation code',
+    recoveryToggle: 'Recovery code',
+    recoveryHint: 'Lost every device? Use a one-time code (Settings → Recovery codes).',
+    recoveryLabel: 'Recovery code',
+    recoveryPlaceholder: 'XXXX-XXXX-XXXX-XXXX',
+    recoverySubmit: 'Sign in',
+    recoveryFailed: 'Recovery sign-in failed.',
   },
   register: {
     title: 'Create an account',

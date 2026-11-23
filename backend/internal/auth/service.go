@@ -21,6 +21,7 @@ import (
 	"stride/internal/cache"
 	"stride/internal/env"
 	"stride/internal/httpx"
+	"stride/internal/ratelimit"
 	"stride/internal/store"
 )
 
@@ -54,6 +55,8 @@ type Service struct {
 	now       func() time.Time
 	onCreated func(context.Context, int64, bool) error
 	onDeleted func(context.Context, int64) error
+	// recoveryLim throttles the public recovery-code login (brute force) per client IP.
+	recoveryLim *ratelimit.Limiter
 }
 
 func New(o Options) (*Service, error) {
@@ -85,6 +88,7 @@ func New(o Options) (*Service, error) {
 		onCreated: o.OnUserCreated,
 		onDeleted: o.OnUserDeleted,
 	}
+	s.recoveryLim = ratelimit.New(recoveryLoginLimit, recoveryLoginWindow)
 	if s.log == nil {
 		s.log = slog.Default()
 	}

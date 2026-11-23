@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Fingerprint, KeyRound, Loader2, ShieldAlert, UserPlus } from 'lucide-react'
+import { Fingerprint, KeyRound, Loader2, ShieldAlert, ShieldCheck, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation, useSearch } from 'wouter'
+import { api, ApiError } from '../../api/client'
 import { setMe } from '../../api/queries'
-import type { AuthState } from '../../api/types'
+import type { AuthState, Me } from '../../api/types'
 import { ISSUE_MESSAGE, loginWithPasskey, passkeyErrorMessage, passkeyIssue } from '../../api/webauthn'
 import { InlineError } from '../../components/ui/Misc'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
@@ -17,20 +18,39 @@ export function LoginView({ state }: { state: AuthState }) {
   const search = useSearch()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
+  const [recoveryBusy, setRecoveryBusy] = useState(false)
+  const [code, setCode] = useState('')
+  const [recoveryError, setRecoveryError] = useState<string | null>(null)
   const issue = passkeyIssue()
+
+  const finishLogin = (me: Me) => {
+    setMe(qc, me)
+    const next = new URLSearchParams(search).get('next')
+    navigate(!me.onboardingCompleted ? '/onboarding' : next && next.startsWith('/') && !next.startsWith('//') ? next : '/', { replace: true })
+  }
 
   const login = async () => {
     setBusy(true)
     setError(null)
     try {
-      const me = await loginWithPasskey()
-      setMe(qc, me)
-      const next = new URLSearchParams(search).get('next')
-      navigate(!me.onboardingCompleted ? '/onboarding' : next && next.startsWith('/') && !next.startsWith('//') ? next : '/', { replace: true })
+      finishLogin(await loginWithPasskey())
     } catch (e) {
       setError(passkeyErrorMessage(e, 'login'))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const loginRecovery = async () => {
+    setRecoveryBusy(true)
+    setRecoveryError(null)
+    try {
+      finishLogin(await api.loginRecovery(code))
+    } catch (e) {
+      setRecoveryError(e instanceof ApiError ? e.message : t('auth.login.recoveryFailed'))
+    } finally {
+      setRecoveryBusy(false)
     }
   }
 
@@ -60,12 +80,41 @@ export function LoginView({ state }: { state: AuthState }) {
         )}
 
         {!state.firstUser && (
-          <button type="button" className="btn btn-primary mt-5 h-13 w-full text-base" onClick={() => void login()} disabled={busy || issue !== null}>
-            {busy ? <Loader2 className="size-5 animate-spin" aria-hidden="true" /> : <Fingerprint className="size-5" aria-hidden="true" />}
-            {busy ? t('auth.login.waiting') : t('auth.login.submit')}
-          </button>
+          <>
+            <button type="button" className="btn btn-primary mt-5 h-13 w-full text-base" onClick={() => void login()} disabled={busy || issue !== null}>
+              {busy ? <Loader2 className="size-5 animate-spin" aria-hidden="true" /> : <Fingerprint className="size-5" aria-hidden="true" />}
+              {busy ? t('auth.login.waiting') : t('auth.login.submit')}
+            </button>
+            {error && <InlineError className="mt-3">{error}</InlineError>}
+
+            <div className="mt-3">
+              <button type="button" className="text-sm text-ink-3 underline-offset-2 hover:text-ink hover:underline" onClick={() => { setRecoveryOpen((v) => !v); setRecoveryError(null) }} aria-expanded={recoveryOpen}>
+                {t('auth.login.recoveryToggle')}
+              </button>
+              {recoveryOpen && (
+                <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); if (code.trim()) void loginRecovery() }}>
+                  <p className="text-xs text-ink-3">{t('auth.login.recoveryHint')}</p>
+                  <div className="flex gap-2">
+                    <input
+                      className="field min-h-11 flex-1 font-mono uppercase tracking-wider"
+                      placeholder={t('auth.login.recoveryPlaceholder')}
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      maxLength={20}
+                      aria-label={t('auth.login.recoveryLabel')}
+                      autoFocus
+                    />
+                    <button type="submit" className="btn h-11" disabled={recoveryBusy || !code.trim()}>
+                      {recoveryBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ShieldCheck className="size-4" aria-hidden="true" />}
+                      {t('auth.login.recoverySubmit')}
+                    </button>
+                  </div>
+                  {recoveryError && <InlineError>{recoveryError}</InlineError>}
+                </form>
+              )}
+            </div>
+          </>
         )}
-        {error && <InlineError className="mt-3">{error}</InlineError>}
 
         {!state.firstUser && (
           <div className="mt-6 border-t border-line pt-4 text-sm">

@@ -37,6 +37,7 @@ const PAGE_SIZE = 30
 export const qk = {
   auth: ['auth'] as const,
   passkeys: ['passkeys'] as const,
+  recovery: ['recovery'] as const,
   mcp: ['mcp'] as const,
   integrations: ['integrations'] as const,
   sync: ['sync', 'status'] as const,
@@ -159,6 +160,19 @@ export function usePasskeyMutations() {
   return {
     rename: useMutation({ mutationFn: ({ id, name }: { id: string; name: string }) => api.renamePasskey(id, name), onSuccess: done }),
     remove: useMutation({ mutationFn: (id: string) => api.deletePasskey(id), onSuccess: done }),
+  }
+}
+
+/* ---------------------------------- Recovery codes ---------------------------------- */
+
+export function useRecoveryStatus() {
+  return useQuery({ queryKey: qk.recovery, queryFn: api.recoveryStatus })
+}
+
+export function useRecoveryMutations() {
+  const qc = useQueryClient()
+  return {
+    generate: useMutation({ mutationFn: api.recoveryGenerate, onSuccess: () => void qc.invalidateQueries({ queryKey: qk.recovery }) }),
   }
 }
 

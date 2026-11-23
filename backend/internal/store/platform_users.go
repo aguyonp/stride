@@ -15,6 +15,7 @@ var (
 	ErrLastCredential      = errors.New("store: cannot delete the last credential")
 	ErrInviteRequired      = errors.New("store: invitation required")
 	ErrInviteInvalid       = errors.New("store: invitation invalid, expired or used up")
+	ErrRecoveryCodeInvalid = errors.New("store: recovery code unknown or already used")
 )
 
 const (

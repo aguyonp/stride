@@ -339,6 +339,32 @@ pub('POST', /^\/api\/auth\/logout$/, () => {
   return noContent()
 })
 
+/* --- 4.4 recovery codes (one-time; the mock keeps the clear, the store keeps SHA-256 only) --- */
+
+const recoveryCode = () => {
+  const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let s = ''
+  for (let i = 0; i < 16; i++) s += a[Math.floor(Math.random() * a.length)]
+  return `${s.slice(0, 4)}-${s.slice(4, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}`
+}
+
+pub('POST', /^\/api\/auth\/login\/recovery$/, ({ init }) => {
+  const s = db()
+  const code = (parse<{ code?: string }>(init)?.code ?? '').trim().toUpperCase().replace(/[- ]/g, '')
+  if (!/^[A-Z2-7]{16}$/.test(code)) return err(401, 'UNAUTHORIZED', 'Code de récupération invalide ou déjà utilisé.')
+  for (const u of s.users) {
+    const entry = (u.recovery ?? []).find((r) => r.code.replace(/-/g, '').toUpperCase() === code)
+    if (!entry) continue
+    if (entry.used) return err(401, 'UNAUTHORIZED', 'Code de récupération invalide ou déjà utilisé.')
+    entry.used = true
+    if (u.status === 'disabled') return err(403, 'FORBIDDEN', 'Ce compte est désactivé. Contacte l’administrateur.')
+    u.lastLoginAt = isoNow()
+    s.sessionUserId = u.id
+    return json(toMe(u))
+  }
+  return err(401, 'UNAUTHORIZED', 'Code de récupération invalide ou déjà utilisé.')
+})
+
 /* --- platform: me & passkeys --- */
 
 route('GET', /^\/api\/me$/, ({ me }) => json(toMe(me)))
@@ -385,6 +411,12 @@ route('DELETE', /^\/api\/me\/passkeys\/([^/]+)$/, ({ me, params }) => {
   if (me.passkeys.length <= 1) return err(409, 'CONFLICT', 'Impossible de supprimer ta dernière passkey : ajoutes-en une autre d’abord.')
   me.passkeys = me.passkeys.filter((p) => p.id !== id)
   return noContent()
+})
+
+route('GET', /^\/api\/me\/recovery$/, ({ me }) => json({ remaining: (me.recovery ?? []).filter((r) => !r.used).length }))
+route('POST', /^\/api\/me\/recovery$/, ({ me }) => {
+  me.recovery = Array.from({ length: 10 }, () => ({ code: recoveryCode(), used: false }))
+  return json({ codes: me.recovery.map((r) => r.code) })
 })
 
 /* --- platform: MCP server (4.3, per-user) --- */
