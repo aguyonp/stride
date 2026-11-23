@@ -17,6 +17,7 @@ const (
 	CategoryRequest = "request"
 	CategoryAction  = "user_action"
 	LevelInfo       = "info"
+	LevelWarn       = "warn"
 	LevelError      = "error"
 
 	Retention = 14 * 24 * time.Hour

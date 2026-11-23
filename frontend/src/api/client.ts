@@ -110,6 +110,7 @@ import type {
   McpToken,
   McpQuota,
   McpUsage,
+  McpJournal,
 } from './types'
 import { getLang } from '../i18n/lang'
 import { t } from '../i18n/t'
@@ -259,6 +260,7 @@ export const api = {
   adminUpdateSettings: (body: AdminSettings) => json<AdminSettings>('/api/admin/settings', { method: 'PUT', body }),
   adminMeter: () => json<MeterSnapshot>('/api/admin/meter'),
   adminMcpUsage: () => json<McpUsage>('/api/admin/mcp/usage'),
+  adminMcpJournal: () => json<McpJournal>('/api/admin/mcp/journal'),
   adminMcpQuota: (q: McpQuota) => json<McpQuota>('/api/admin/mcp/quota', { method: 'PUT', body: q }),
   adminLogs: (f: LogFilter, before?: number) => {
     const q = new URLSearchParams({ category: f.category, level: f.level, limit: '100' })

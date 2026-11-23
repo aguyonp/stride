@@ -243,7 +243,7 @@ func run() error {
 		Cache:  kv,
 		Auth:   authSvc,
 		Domain: dom,
-		MCP:    mcp.New(st, dom, log),
+		MCP:    mcp.New(st, dom, log, logs),
 		Log:    log,
 		Logs:   logs,
 		HTTPS:  cfg.CookieSecure,

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"stride/internal/applog"
@@ -30,18 +31,22 @@ const maxBodyBytes = 16 << 20
 // Server serves the public MCP route. The fr/en tool instances are shared:
 // their handlers resolve the caller from the request context at call time.
 type Server struct {
-	svc  *domain.Services
-	tok  *Service
-	frs  *mcpsdk.Server
-	ens  *mcpsdk.Server
-	hdl  *mcpsdk.StreamableHTTPHandler
-	cors *http.CrossOriginProtection
-	met  *meter
+	svc      *domain.Services
+	tok      *Service
+	frs      *mcpsdk.Server
+	ens      *mcpsdk.Server
+	hdl      *mcpsdk.StreamableHTTPHandler
+	srv      http.Handler // hdl behind the cross-origin protection
+	cors     *http.CrossOriginProtection
+	met      *meter
+	jrn      *journal
+	inFlight atomic.Int64
+	logs     *applog.Log
 }
 
 // New builds the per-user MCP server. The public-route quota is loaded from mcp_quota
 // (defaults when unreadable) so an admin change survives a restart.
-func New(st *store.Store, svc *domain.Services, log *slog.Logger) *Server {
+func New(st *store.Store, svc *domain.Services, log *slog.Logger, logs *applog.Log) *Server {
 	tok := NewService(st, log)
 	q := DefaultQuota
 	if stored, err := tok.GetQuota(context.Background()); err == nil {
@@ -49,7 +54,7 @@ func New(st *store.Store, svc *domain.Services, log *slog.Logger) *Server {
 	} else {
 		log.Warn("⚠️ MCP : quota stockée illisible, valeurs par défaut", "err", err.Error())
 	}
-	s := &Server{svc: svc, tok: tok, met: newMeter(q)}
+	s := &Server{svc: svc, tok: tok, met: newMeter(q), jrn: &journal{}, logs: logs}
 	s.frs = newTools(svc, frfmt.FR).build()
 	s.ens = newTools(svc, frfmt.EN).build()
 	s.hdl = mcpsdk.NewStreamableHTTPHandler(s.serverFor, &mcpsdk.StreamableHTTPOptions{
@@ -57,10 +62,16 @@ func New(st *store.Store, svc *domain.Services, log *slog.Logger) *Server {
 		MaxRequestBodyBytes: maxBodyBytes,
 		// A disconnected client stops the in-flight tool call.
 		PropagateRequestCancellation: true,
+		// SSE keep-alive of the POST answer (issue #135, go-sdk #1155): without it the
+		// response carries no byte until the tool call completes, so any client or proxy
+		// with a first-byte/idle timeout (Claude ≈ 20 s) aborts with DEADLINE_EXCEEDED.
+		// 5 s stays well below that timeout; the SDK default of 30 s would not.
+		StreamKeepAlive: 5 * time.Second,
 		// The SDK's DNS-rebinding (localhost) protection stays enabled.
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	s.cors = http.NewCrossOriginProtection()
+	s.srv = s.cors.Handler(s.hdl)
 	return s
 }
 
@@ -84,6 +95,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, token string) {
 	now := time.Now()
 	if !s.met.limI.Allow(ratelimit.ClientIP(r), now) {
 		s.met.noteDenied(now)
+		s.noteEarly(token, nil, http.StatusTooManyRequests, now)
 		failRateLimited(w)
 		return
 	}
@@ -95,16 +107,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, token string) {
 	key := hex.EncodeToString(hash[:])
 	if !s.met.limT.Allow(key, now) {
 		// Attribute the 429 to the token when it exists; unknown probes are counted globally.
-		if _, _, err := s.tok.Resolve(r.Context(), token); err == nil {
+		var user *auth.User
+		if _, u, err := s.tok.Resolve(r.Context(), token); err == nil {
 			s.met.noteTokenDenied(key, now)
+			user = &u
 		} else {
 			s.met.noteDenied(now)
 		}
+		s.noteEarly(token, user, http.StatusTooManyRequests, now)
 		failRateLimited(w)
 		return
 	}
 	_, user, err := s.tok.Resolve(r.Context(), token)
 	if errors.Is(err, ErrNotFound) {
+		s.noteEarly(token, nil, http.StatusNotFound, now)
 		httpx.Fail(w, http.StatusNotFound, httpx.CodeNotFound, "Ressource introuvable.")
 		return
 	}
@@ -112,10 +128,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, token string) {
 		httpx.Fail(w, http.StatusInternalServerError, httpx.CodeInternal, "Erreur interne du serveur.")
 		return
 	}
-	applog.SetUser(r.Context(), user.ID)
 	s.tok.Touch(r.Context(), user.ID)
 	s.met.noteRequest(key, now)
-	s.cors.Handler(s.hdl).ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), user)))
+	s.serveCall(w, r.WithContext(auth.WithUser(r.Context(), user)), token, user, now)
 }
 
 func failRateLimited(w http.ResponseWriter) {

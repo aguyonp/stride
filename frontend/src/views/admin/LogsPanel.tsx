@@ -31,6 +31,7 @@ export function LogsPanel() {
           onChange={(level) => setF({ ...f, level })}
           options={[
             { value: 'all', label: t('admin.logs.all') },
+          { value: 'warn', label: t('admin.logs.warnings') },
           { value: 'error', label: t('admin.logs.errors') },
           ]}
         />
@@ -90,7 +91,7 @@ export function LogsPanel() {
                     <span className="break-all font-mono text-xs text-ink">{describe(e)}</span>
                     {e.category === 'request' && e.message && <span className="ml-2 text-xs text-ink-3">{e.message}</span>}
                   </td>
-                  <td className={cn('px-1 py-1.5 text-right font-mono text-xs', e.level === 'error' ? 'text-danger' : 'text-ink-2')}>{e.status || '—'}</td>
+                  <td className={cn('px-1 py-1.5 text-right font-mono text-xs', e.level === 'error' ? 'text-danger' : e.level === 'warn' ? 'text-warn' : 'text-ink-2')}>{e.status || '—'}</td>
                   <td className="px-1 py-1.5 text-right text-xs text-ink-3">{e.durationMs ? `${fmtNumber(e.durationMs)} ms` : '—'}</td>
                 </tr>
               ))}

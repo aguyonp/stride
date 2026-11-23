@@ -6,7 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/klauspost/compress v1.20.4
-	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/modelcontextprotocol/go-sdk v1.9.0-pre.1
 	github.com/muktihari/fit v0.28.6
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/prometheus/client_golang v1.25.0

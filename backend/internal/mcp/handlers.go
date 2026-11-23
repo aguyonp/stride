@@ -97,6 +97,11 @@ func RegisterAPI(mux *http.ServeMux, d Deps) {
 		httpx.JSON(w, http.StatusOK, u)
 	})
 
+	// Journal (issue #135): the in-memory ring of the last public-route calls, most recent first.
+	admin("GET /api/admin/mcp/journal", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, http.StatusOK, d.Srv.Journal())
+	})
+
 	// Quota is clamped server-side (Sanitize): out-of-bounds values are corrected, not rejected.
 	admin("PUT /api/admin/mcp/quota", func(w http.ResponseWriter, r *http.Request) {
 		var q Quota
