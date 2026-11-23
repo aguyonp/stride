@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/aguyonp/stride?sort=semver&display_name=tag)](https://github.com/aguyonp/stride/releases)
 [![Image](https://img.shields.io/badge/ghcr.io-aguyonp%2Fstride-blue?logo=docker)](https://github.com/aguyonp/stride/pkgs/container/stride)
 [![Go](https://img.shields.io/github/go-mod/go-version/aguyonp/stride?filename=backend%2Fgo.mod)](backend/go.mod)
+[![License](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
 
 Stride merges your Garmin and Strava telemetry, computes biomechanics, aerobic efficiency, cumulative impact, ACWR load and readiness, structures Macro/Méso/Micro training cycles, correlates localized musculoskeletal stress with shoe wear and terrain, and streams AI-coach analyses in real time. Plans export to `.FIT`, clinical views share via revocable read-only links, and authentication uses WebAuthn passkeys only.
 
@@ -99,6 +100,12 @@ make test           # Go race tests + frontend Vitest suite
 make test-e2e       # Playwright browser smoke against the mock build (Chromium, issue #91)
 make docker-up      # Build locally and start docker compose (stride + valkey)
 ```
+
+## License
+
+Stride is free and open source, released under the **GNU Affero General Public License v3.0** (see [LICENSE](LICENSE)).
+
+The AGPL's network clause means: anyone who modifies Stride and offers it as a network service (SaaS, hosted deployment for third parties) must publish the complete source of their modified version. Self-hosting and private use are unrestricted.
 
 ## Star history
 
