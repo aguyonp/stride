@@ -72,6 +72,8 @@ import type {
   MultiExportResponse,
   Passkey,
   PasskeyBegin,
+  RecoverySet,
+  RecoveryStatus,
   PlannedSession,
   PlannedSessionInput,
   RestoreResult,
@@ -233,6 +235,7 @@ export const api = {
   registerFinish: (credential: unknown) => json<Me>('/api/auth/register/finish', { method: 'POST', body: credential }),
   loginBegin: () => json<PasskeyBegin<unknown>>('/api/auth/login/begin', { method: 'POST', body: {} }),
   loginFinish: (credential: unknown) => json<Me>('/api/auth/login/finish', { method: 'POST', body: credential }),
+  loginRecovery: (code: string) => json<Me>('/api/auth/login/recovery', { method: 'POST', body: { code } }),
   logout: () => json<void>('/api/auth/logout', { method: 'POST' }),
 
   me: () => json<Me>('/api/me'),
@@ -243,6 +246,8 @@ export const api = {
   passkeyFinish: (credential: unknown) => json<Passkey>('/api/me/passkeys/finish', { method: 'POST', body: credential }),
   renamePasskey: (id: string, name: string) => json<Passkey>(`/api/me/passkeys/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name } }),
   deletePasskey: (id: string) => json<void>(`/api/me/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  recoveryStatus: () => json<RecoveryStatus>('/api/me/recovery'),
+  recoveryGenerate: () => json<RecoverySet>('/api/me/recovery', { method: 'POST', body: {} }),
 
   adminUsers: () => json<AdminUser[]>('/api/admin/users'),
   adminUpdateUser: (id: number, body: { status?: AdminUser['status']; role?: AdminUser['role'] }) => json<AdminUser>(`/api/admin/users/${id}`, { method: 'PATCH', body }),

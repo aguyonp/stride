@@ -35,6 +35,8 @@ export interface MockUser {
   lastLoginAt: string | null
   onboardingCompleted: boolean
   passkeys: Passkey[]
+  /** 4.4 recovery codes (mock keeps the clear; the real store keeps SHA-256 only). */
+  recovery?: { code: string; used: boolean }[]
 }
 
 /** Per-user MCP server state (mock of the mcp_access table). The plaintext token is mock-only. */

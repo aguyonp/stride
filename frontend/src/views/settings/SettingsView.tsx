@@ -1,4 +1,4 @@
-import { Bell, Bot, CircleUser, DatabaseBackup, FileUp, Footprints, KeyRound, Monitor, Moon, Palette, Plug, Sun, UserRound, Webhook, type LucideIcon } from 'lucide-react'
+import { Bell, Bot, CircleUser, DatabaseBackup, FileUp, Footprints, KeyRound, Monitor, Moon, Palette, Plug, ShieldCheck, Sun, UserRound, Webhook, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Me } from '../../api/types'
 import { consumeStravaResult } from '../../components/profile/StravaConnect'
@@ -17,13 +17,14 @@ import { McpSection } from './McpSection'
 import { NotificationsSection } from './NotificationsSection'
 import { PasskeysSection } from './PasskeysSection'
 import { ProfileSection } from './ProfileSection'
+import { RecoverySection } from './RecoverySection'
 import { Section } from './Section'
 import { ShoesSection } from './ShoesSection'
 import { VersionFooter } from './VersionFooter'
 import { t } from '../../i18n'
 import { useLanguageSwitch, type LanguagePref } from '../../i18n/useLanguage'
 
-type SectionId = 'profil' | 'apparence' | 'integrations' | 'ia' | 'notifications' | 'chaussures' | 'passkeys' | 'mcp' | 'sauvegarde' | 'import' | 'compte'
+type SectionId = 'profil' | 'apparence' | 'integrations' | 'ia' | 'notifications' | 'chaussures' | 'passkeys' | 'recovery' | 'mcp' | 'sauvegarde' | 'import' | 'compte'
 const SECTIONS: { id: SectionId; icon: LucideIcon; readonly label: string }[] = (
   [
     ['profil', UserRound],
@@ -33,6 +34,7 @@ const SECTIONS: { id: SectionId; icon: LucideIcon; readonly label: string }[] = 
     ['notifications', Bell],
     ['chaussures', Footprints],
     ['passkeys', KeyRound],
+    ['recovery', ShieldCheck],
     ['mcp', Webhook],
     ['sauvegarde', DatabaseBackup],
     ['import', FileUp],
@@ -170,6 +172,7 @@ export default function SettingsView({ me }: { me: Me }) {
           <NotificationsSection />
           <ShoesSection />
           <PasskeysSection />
+          <RecoverySection />
           <McpSection />
           <BackupSection />
           <ImportSection />

@@ -8,7 +8,7 @@ Stride is a self-hosted, multi-user training platform: one statically linked Go 
 
 | Component | Technology | Responsibility |
 | --- | --- | --- |
-| API + SPA | Go (`net/http`), embedded Vite bundle | passkey auth, CSRF / CSP headers, REST JSON API, SSE `/api/events/stream`, public `/version`, `/share/:token` and per-user MCP `POST /mcp/{token}`, in-process jobs |
+| API + SPA | Go (`net/http`), embedded Vite bundle | passkey auth + one-time recovery codes, CSRF / CSP headers, REST JSON API, SSE `/api/events/stream`, public `/version`, `/share/:token` and per-user MCP `POST /mcp/{token}`, in-process jobs |
 | Storage | SQLite (`modernc.org/sqlite`, WAL, `foreign_keys = ON`) | users, passkeys, sealed credentials, activity bundles, cycles, body map, share links and portal notes, job statuses |
 | Backups | `internal/backup`, local volume + optional S3-compatible bucket | atomic snapshots (`<STRIDE_DATA_DIR>/backups`), SHA-256 sidecars, SigV4 uploads through the egress guard |
 | Cache & Pub/Sub | Valkey 9 (`valkey-go`), optional | TTL cache (`stride:cache:*`, public share views), WebAuthn / OAuth ceremonies, SSE fan-out between instances |
@@ -20,7 +20,7 @@ Without `STRIDE_VALKEY_URL` an in-memory cache is used (single instance).
 
 ## 2. Migrations (`internal/database`)
 
-- `pressly/goose/v3`, embedded `.up.sql` / `.down.sql` pairs (`00001_platform` .. `00013_mcp_access`), additive only; applied files are never edited. A table is rebuilt (rows copied as is) only when SQLite cannot alter it (CHECK change, column used by a foreign key in a down migration).
+- `pressly/goose/v3`, embedded `.up.sql` / `.down.sql` pairs (`00001_platform` .. `00015_recovery_codes`), additive only; applied files are never edited. A table is rebuilt (rows copied as is) only when SQLite cannot alter it (CHECK change, column used by a foreign key in a down migration).
 - Before pending migrations are applied to a non-empty database, boot takes a `pre_migration` snapshot (see §7); a failed snapshot stops the boot.
 - 3.x databases: rows of the legacy `schema_migrations` table are bridged into `goose_db_version` before the newer migrations run.
 - Boot asserts the expected tables and columns (fast) and logs orphan rows as warnings in the background; `stride doctor` runs the full `integrity_check` and `foreign_key_check`.
@@ -56,6 +56,8 @@ One authenticated stream, outside gzip, write deadline cleared, `connected` even
 ## 6. Security
 
 Credentials, webhook URLs, bot tokens, share URLs and the S3 secret key are sealed with AES-256-GCM (`secret.Sealer`, AAD `<scope>:<uid>:<field>`, `backup:0:s3_secret_key`), never logged or returned. User ids come only from the session; any id received in a body or query must belong to the caller, otherwise 404.
+
+Recovery codes (4.4, SPEC §17.1) are the last-resort way in for the passkey-only flow: a set of 10 one-time codes (10 random bytes each, base32, shown `XXXX-XXXX-XXXX-XXXX`), of which only the **SHA-256 of the normalized code** is stored (`recovery_codes`); the plaintext is displayed once and never recoverable. Each code is strictly single-use (atomic `UPDATE … WHERE used_at IS NULL`) and regeneration atomically voids the remaining set. The public login `POST /api/auth/login/recovery` is rate-limited per client IP (10 attempts/min → 429), answers 401 for unknown/used codes and 403 for a disabled account (code still consumed); the passkeys « last credential » 409 guard is intentionally unchanged.
 
 Portal writes have no session: they require the CSRF header and the Stride origin (`Origin` / `Sec-Fetch-Site` against `STRIDE_PUBLIC_URL`), a 16 KB body without unknown fields, sanitized text (control and invisible characters dropped), and pass two limits (30 writes / 10 min per token, 60 per client IP). Logs and the audit trail keep only the token prefix (actions `share.public_*`, actor `share:<prefix>`).
 

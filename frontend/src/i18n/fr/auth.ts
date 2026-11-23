@@ -35,6 +35,12 @@ export default {
     createAccount: 'Créer un compte',
     inviteOnly: 'Inscription sur invitation : demande un lien à l’administrateur.',
     haveCode: 'J’ai un code d’invitation',
+    recoveryToggle: 'Code de récupération',
+    recoveryHint: 'Perdu tous tes appareils ? Utilise un code one-time (Réglages → Codes de récupération).',
+    recoveryLabel: 'Code de récupération',
+    recoveryPlaceholder: 'XXXX-XXXX-XXXX-XXXX',
+    recoverySubmit: 'Se connecter',
+    recoveryFailed: 'Connexion au code impossible.',
   },
   register: {
     title: 'Créer un compte',

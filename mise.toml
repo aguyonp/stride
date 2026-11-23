@@ -1,5 +1,7 @@
 [tools]
 go = "1.26"
 node = "26"
+python = "3.12"
+uv = "latest"
 "npm:chrome-devtools-mcp" = "1"
 playwright = "1"

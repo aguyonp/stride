@@ -47,6 +47,14 @@ export interface Passkey {
   lastUsedAt: string | null
   backedUp: boolean
 }
+/** GET /api/me/recovery: how many one-time codes are still usable. */
+export interface RecoveryStatus {
+  remaining: number
+}
+/** POST /api/me/recovery: a fresh set, shown once and never stored in the clear. */
+export interface RecoverySet {
+  codes: string[]
+}
 export type AdminIntegration = 'garmin' | 'strava' | 'llm'
 export interface AdminUser {
   id: number
