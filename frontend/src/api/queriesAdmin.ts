@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import { ADMIN_METER_POLL_MS } from './polling'
-import type { AdminJobFilter, FeedbackCategory, FeedbackInput, FeedbackStatus, McpJournal, McpQuota, McpUsage } from './types'
+import type { AdminJobFilter, FeedbackCategory, FeedbackInput, FeedbackStatus, McpQuota, McpUsage } from './types'
 
 /** Active jobs move fast: poll them more often than the overview. */
 export const ADMIN_JOBS_POLL_MS = 5_000

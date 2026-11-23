@@ -13,10 +13,11 @@ test('shows the MCP usage and saves the quota from the admin tab', async ({ page
   await expect(page.getByRole('button', { name: 'MCP', exact: true })).toHaveAttribute('aria-current', 'page')
 
   // Usage card: the 24 h totals and the per-token rows (mock users 1 and 2, 14 + id * 9 requests).
-  // The per-token list is rendered twice (desktop table + mobile cards): scope the prefix
-  // assertions to the table so the strict-mode locator stays unambiguous.
+  // The per-token list is rendered twice (desktop table + mobile cards), and 4.5.0 added a
+  // second table (the call journal): scope by the caption so the strict-mode locator stays
+  // unambiguous.
   await expect(page.getByRole('heading', { name: 'MCP usage' })).toBeVisible()
-  const table = page.getByRole('table')
+  const table = page.getByRole('table', { name: 'MCP usage per token' })
   await expect(table.getByText('sm4_m1ab')).toBeVisible()
   await expect(table.getByText('sm4_m2ab')).toBeVisible()
   await expect(page.getByText('429 · 24 h').first()).toBeVisible()

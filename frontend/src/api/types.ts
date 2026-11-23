@@ -1003,7 +1003,7 @@ export interface LogEntry {
   id: number
   at: string
   category: LogCategory
-  level: 'info' | 'error'
+  level: 'info' | 'warn' | 'error'
   userId: number | null
   userName: string | null
   method: string
