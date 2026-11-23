@@ -122,9 +122,17 @@ func (t *tools) planning(ctx context.Context, _ *mcpsdk.CallToolRequest, in plan
 	if err != nil {
 		return nil, nil, err
 	}
-	date := ""
+	raw := ""
 	if in.Date != nil {
-		date = *in.Date
+		raw = *in.Date
+	}
+	p, err := t.svc.Profile(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	date, err := resolveDate(t.svc.Now(), p.Timezone, raw, t.fr)
+	if err != nil {
+		return nil, nil, err
 	}
 	wp, err := t.svc.WeekPlan(ctx, id, date)
 	if err != nil {
@@ -144,9 +152,17 @@ func (t *tools) day(ctx context.Context, _ *mcpsdk.CallToolRequest, in dayIn) (*
 	if err != nil {
 		return nil, nil, err
 	}
-	date := ""
+	raw := ""
 	if in.Date != nil {
-		date = *in.Date
+		raw = *in.Date
+	}
+	p, err := t.svc.Profile(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	date, err := resolveDate(t.svc.Now(), p.Timezone, raw, t.fr)
+	if err != nil {
+		return nil, nil, err
 	}
 	dv, err := t.svc.DayView(ctx, id, date)
 	if err != nil {
