@@ -50,7 +50,7 @@ describe('McpSection', () => {
 
   it('shows the disabled state and generates a one-time token', async () => {
     const state: McpState = {
-      status: { enabled: false, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null },
+      status: { enabled: false, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null, quota: { tokenLimit: 100, tokenWindow: 10, ipLimit: 200, ipWindow: 10 } },
       calls: [],
     }
     stubApi(state)
@@ -58,6 +58,8 @@ describe('McpSection', () => {
 
     await waitFor(() => expect(mounted!.container.textContent).toContain('Désactivé'))
     expect(mounted!.container.textContent).toContain('Serveur MCP')
+    // 4.5.0 (issue #136): the card quotes the real quota from the status, not a hardcoded sentence.
+    expect(mounted!.container.textContent).toContain('limités à 100 requêtes par 10 minutes')
 
     // Toggle → PUT /api/mcp
     await clickEl(mounted!.container.querySelector('[role="switch"]'))
@@ -77,7 +79,7 @@ describe('McpSection', () => {
 
   it('offers regenerate/revoke once a token exists and revokes through the dialog', async () => {
     const state: McpState = {
-      status: { enabled: true, hasToken: true, tokenPrefix: TOKEN.slice(0, 8), createdAt: '2026-11-01T08:00:00Z', lastUsedAt: '2026-11-20T18:00:00Z' },
+      status: { enabled: true, hasToken: true, tokenPrefix: TOKEN.slice(0, 8), createdAt: '2026-11-01T08:00:00Z', lastUsedAt: '2026-11-20T18:00:00Z', quota: { tokenLimit: 10000, tokenWindow: 10, ipLimit: 200, ipWindow: 10 } },
       calls: [],
     }
     stubApi(state)
@@ -100,7 +102,7 @@ describe('McpSection', () => {
 
   it('lists the 13 functions and offers a paste-ready setup message with the real endpoint', async () => {
     const state: McpState = {
-      status: { enabled: true, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null },
+      status: { enabled: true, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null, quota: { tokenLimit: 100, tokenWindow: 10, ipLimit: 200, ipWindow: 10 } },
       calls: [],
     }
     stubApi(state)

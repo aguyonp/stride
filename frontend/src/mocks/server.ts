@@ -431,6 +431,8 @@ const mcpStatusOf = (s: MockMcpState) => ({
   tokenPrefix: s.token ? s.token.slice(0, 8) : '',
   createdAt: s.token ? s.createdAt : null,
   lastUsedAt: s.token ? s.lastUsedAt : null,
+  // 4.5.0 (issue #136): the effective quota (seed values, like the real mcp_quota row).
+  quota: { tokenLimit: 100, tokenWindow: 10, ipLimit: 200, ipWindow: 10 },
 })
 route('GET', /^\/api\/mcp$/, ({ data }) => json(mcpStatusOf(mcpOf(data))))
 route('PUT', /^\/api\/mcp$/, ({ data, init }) => {

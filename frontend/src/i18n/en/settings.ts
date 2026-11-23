@@ -335,7 +335,10 @@ const en: Widen<typeof fr> = {
     used: 'used {when}',
     neverUsed: 'never used',
     error: 'Action failed',
-    hint: 'The server only answers POST /mcp/{token}, limited to 100 requests per 10 minutes. Each tool only sees your own data.',
+    hint: {
+      one: 'The server only answers POST /mcp/{token}, limited to {limit} request per {window} minute. Each tool only sees your own data.',
+      other: 'The server only answers POST /mcp/{token}, limited to {limit} requests per {window} minutes. Each tool only sees your own data.',
+    },
   },
   backup: {
     downloaded: 'Backup downloaded',

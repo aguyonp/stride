@@ -1746,6 +1746,8 @@ export interface McpStatus {
   tokenPrefix: string
   createdAt: string | null
   lastUsedAt: string | null
+  /** 4.5.0 (issue #136): the effective public-route quota, so the card can quote the real limits. */
+  quota: McpQuota
 }
 
 export interface McpToken {

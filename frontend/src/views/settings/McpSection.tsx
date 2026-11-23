@@ -9,7 +9,7 @@ import { useToast } from '../../components/ui/Toast'
 import { fmtDay } from '../../components/profile/download'
 import { copyText } from '../../lib/clipboard'
 import { cn } from '../../lib/cn'
-import { fmtWhen } from '../../lib/format'
+import { fmtNumber, fmtWhen } from '../../lib/format'
 import { t, tDyn } from '../../i18n'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
@@ -181,7 +181,10 @@ export function McpSection() {
               </button>
             </div>
           )}
-          <p className="text-xs text-ink-3">{t('settings.mcp.hint')}</p>
+          {/* 4.5.0 (issue #136): the limits come from the server, not from a hardcoded sentence. */}
+          <p className="text-xs text-ink-3">
+            {t('settings.mcp.hint', { count: s.quota.tokenWindow, limit: fmtNumber(s.quota.tokenLimit), window: fmtNumber(s.quota.tokenWindow) })}
+          </p>
         </div>
       ) : null}
       <ConfirmDialog

@@ -13,10 +13,12 @@ const setup = () => {
 }
 
 describe('4.3 mocks: MCP server', () => {
+  const QUOTA = { tokenLimit: 100, tokenWindow: 10, ipLimit: 200, ipWindow: 10 }
+
   it('starts disabled, without a token', async () => {
     setup()
     const st = (await (await call('GET', '/api/mcp')).json()) as McpStatus
-    expect(st).toEqual({ enabled: false, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null })
+    expect(st).toEqual({ enabled: false, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null, quota: QUOTA })
   })
 
   it('toggles, generates a 47-char token shown once, and revokes it', async () => {
@@ -41,7 +43,7 @@ describe('4.3 mocks: MCP server', () => {
     const rev = await call('DELETE', '/api/mcp/token')
     expect(rev.status).toBe(204)
     const st2 = (await (await call('GET', '/api/mcp')).json()) as McpStatus
-    expect(st2).toEqual({ enabled: true, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null })
+    expect(st2).toEqual({ enabled: true, hasToken: false, tokenPrefix: '', createdAt: null, lastUsedAt: null, quota: QUOTA })
 
     expect((await call('PUT', '/api/mcp', { enabled: false })).status).toBe(204)
     expect(((await (await call('GET', '/api/mcp')).json()) as McpStatus).enabled).toBe(false)
