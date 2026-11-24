@@ -33,6 +33,9 @@ type Status struct {
 	TokenPrefix string     `json:"tokenPrefix"`
 	CreatedAt   *time.Time `json:"createdAt"`
 	LastUsedAt  *time.Time `json:"lastUsedAt"`
+	// The effective public-route quota, so the account card quotes the real limits instead
+	// of a hardcoded sentence (issue #136).
+	Quota Quota `json:"quota"`
 }
 
 func NewService(st *store.Store, log *slog.Logger) *Service {
@@ -47,14 +50,19 @@ func (s *Service) GetQuota(ctx context.Context) (Quota, error) {
 	return mcpGetQuota(ctx, s.read)
 }
 
-// Status returns the MCP access state of a user.
+// Status returns the MCP access state of a user, with the effective public-route quota
+// (defaults when the row is unreadable, like Server.New).
 func (s *Service) Status(ctx context.Context, uid int64) (Status, error) {
 	a, err := mcpGet(ctx, s.read, uid)
 	if err != nil {
 		return Status{}, err
 	}
+	q, qerr := s.GetQuota(ctx)
+	if qerr != nil {
+		q = DefaultQuota
+	}
 	return Status{Enabled: a.Enabled, HasToken: a.TokenHash != nil, TokenPrefix: a.TokenPrefix,
-		CreatedAt: a.CreatedAt, LastUsedAt: a.LastUsedAt}, nil
+		CreatedAt: a.CreatedAt, LastUsedAt: a.LastUsedAt, Quota: q}, nil
 }
 
 // SetEnabled turns the MCP access on or off. Disabling keeps the token: re-enabling reuses it.

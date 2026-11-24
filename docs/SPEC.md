@@ -90,7 +90,8 @@ interface AuthState { authenticated: boolean; user: Me | null; registrationMode:
 interface Me { id: number; displayName: string; role: "user" | "admin"; createdAt: string; onboardingCompleted: boolean }
 interface Passkey { id: string; name: string; createdAt: string; lastUsedAt: string | null; backedUp: boolean }
 interface RecoveryStatus { remaining: number }
-interface McpStatus { enabled: boolean; hasToken: boolean; tokenPrefix: string; createdAt: string | null; lastUsedAt: string | null }
+interface McpStatus { enabled: boolean; hasToken: boolean; tokenPrefix: string; createdAt: string | null; lastUsedAt: string | null; quota: McpQuota (4.5.0, §16.4) }
+interface McpQuota { tokenLimit: number; tokenWindow: number; ipLimit: number; ipWindow: number } // windows in minutes
 interface AdminUser { id: number; displayName: string; role: "user" | "admin"; status: "active" | "disabled"; createdAt: string; lastLoginAt: string | null; passkeys: number }
 interface Invitation { id: number; label: string; codePrefix: string; createdAt: string; expiresAt: string | null; maxUses: number; uses: number; revoked: boolean }
 ```
@@ -799,6 +800,7 @@ Each user can expose their own data to AI assistants (Claude and others) through
 ### 16.2 Tokens & account API
 - Token = 256 bits from `crypto/rand`, `sm4_` + base64url (47 chars). Only the SHA-256 is stored (`mcp_access`); the plaintext exists exactly once, in the answer of `POST /api/mcp/token`. `tokenPrefix` = `sm4_` + 4 chars is the only part shown again (account screen, logs, audit).
 - `PUT /api/mcp {enabled}` toggles access; **disabling keeps the token** (re-enabling reuses it). Generating a new token **revokes** the previous one immediately. `lastUsedAt` is refreshed with a 5-min minimum interval.
+- **Effective quota in the status (4.5.0, issue #136)**: `GET /api/mcp` also returns `quota` — the effective public-route quota of §16.4 (defaults when the row is unreadable), read on every request. The account card's footnote quotes the real limits instead of a hardcoded sentence (« limités à {tokenLimit} requêtes par {tokenWindow} minutes », singular/plural on the minutes, `fmtNumber` grouping for large values), so a quota change in the admin panel is picked up on the next fetch. The card subtitle typo « Exposes tes données » → « Expose tes données » is fixed in the same pass.
 - Audit: public action `mcp.request` (actor `mcp:<prefix>`, no user id — the token is the actor) and session actions `mcp.toggle`, `mcp.token_generate`, `mcp.token_revoke`. Logs redact the token to its prefix.
 
 ### 16.3 Tools (v1, 13)

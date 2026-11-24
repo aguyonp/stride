@@ -278,7 +278,7 @@ export default {
   },
   mcp: {
     title: 'Serveur MCP',
-    description: 'Exposes tes données aux assistants IA (Claude et autres) via le Model Context Protocol, sans mot de passe.',
+    description: 'Expose tes données aux assistants IA (Claude et autres) via le Model Context Protocol, sans mot de passe.',
     on: 'Activé',
     off: 'Désactivé',
     enableLabel: 'Activer le serveur MCP',
@@ -332,7 +332,10 @@ export default {
     used: 'utilisé {when}',
     neverUsed: 'jamais utilisé',
     error: 'Action impossible',
-    hint: 'Le serveur ne répond qu’aux POST /mcp/{token}, limités à 100 requêtes par 10 minutes. Chaque outil ne voit que tes données.',
+    hint: {
+      one: 'Le serveur ne répond qu’aux POST /mcp/{token}, limités à {limit} requête par {window} minute. Chaque outil ne voit que tes données.',
+      other: 'Le serveur ne répond qu’aux POST /mcp/{token}, limités à {limit} requêtes par {window} minutes. Chaque outil ne voit que tes données.',
+    },
   },
   backup: {
     downloaded: 'Sauvegarde téléchargée',
