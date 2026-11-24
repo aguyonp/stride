@@ -421,8 +421,44 @@ export function registerAdmin(route: RouteFn, meter: () => MeterSnapshot) {
       tokens,
       requests24h: tokens.reduce((n, x) => n + x.requests24h, 0),
       denied24h: tokens.reduce((n, x) => n + x.denied24h, 0) + 1,
+      errors24h: mcpJournalEntries().filter((e) => e.status >= 400 || e.rpcErrorCode !== 0 || e.clientCanceled).length,
       updatedAt: new Date().toISOString(),
     }
+  }
+  // In-memory, static journal for the mock (issue #135): a mix of success, 404, RPC error
+  // and slow calls so the admin filters have something to chew on.
+  const mcpJournalEntries = () => {
+    const users = db().users
+    const alice = users.find((u) => u.id === 2) ?? users[0]
+    const bob = users.find((u) => u.id === 1) ?? users[0]
+    return [
+      {
+        at: ago(90_000), tokenPrefix: 'sm4_m2ab2m', userId: alice.id, userName: alice.displayName,
+        method: 'tools/call', tool: 'plan_create', argsSummary: '{"date":"2026-11-24","sport":"run","title":"Intervalle 8x800"}',
+        status: 200, rpcErrorCode: 0, rpcError: '', durationMs: 480, inFlight: 1, clientCanceled: false,
+      },
+      {
+        at: ago(12 * MIN), tokenPrefix: 'sm4_m1ab1m', userId: bob.id, userName: bob.displayName,
+        method: 'tools/call', tool: 'plan_create', argsSummary: '{"date":"2026-11-23","sport":"bike","title":"Rythme"}',
+        status: 200, rpcErrorCode: 0, rpcError: '', durationMs: 2600, inFlight: 2, clientCanceled: false,
+      },
+      {
+        at: ago(31 * MIN), tokenPrefix: 'sm4_m1ab1m', userId: bob.id, userName: bob.displayName,
+        method: 'tools/call', tool: 'activity', argsSummary: '{"id":412}',
+        status: 200, rpcErrorCode: -32602, rpcError: 'id inconnu', durationMs: 38, inFlight: 1, clientCanceled: false,
+      },
+      {
+        // Unknown token: the body is not read, so method and tool stay empty (like in prod).
+        at: ago(52 * MIN), tokenPrefix: 'sm4_unkno0', userId: 0, userName: '',
+        method: '', tool: '', argsSummary: '',
+        status: 404, rpcErrorCode: 0, rpcError: '', durationMs: 2, inFlight: 0, clientCanceled: false,
+      },
+      {
+        at: ago(74 * MIN), tokenPrefix: 'sm4_m2ab2m', userId: alice.id, userName: alice.displayName,
+        method: 'tools/call', tool: 'activities', argsSummary: '{"limit":50}',
+        status: 200, rpcErrorCode: 0, rpcError: '', durationMs: 120, inFlight: 1, clientCanceled: true,
+      },
+    ] as const
   }
   const clampQuota = (v: unknown, lo: number, hi: number) => {
     const n = typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : lo
@@ -440,4 +476,5 @@ export function registerAdmin(route: RouteFn, meter: () => MeterSnapshot) {
     Object.assign(mcpQuota, q)
     return json(q)
   })
+  route('GET', /^\/api\/admin\/mcp\/journal$/, () => json({ inFlight: 0, entries: mcpJournalEntries() }))
 }

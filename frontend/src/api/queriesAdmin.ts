@@ -14,6 +14,7 @@ export const qkAdmin = {
   shares: (state: 'active' | 'all') => ['admin', 'shares', state] as const,
   feedback: (status: FeedbackStatus | 'all', category: FeedbackCategory | 'all') => ['admin', 'feedback', status, category] as const,
   mcpUsage: ['admin', 'mcp', 'usage'] as const,
+  mcpJournal: ['admin', 'mcp', 'journal'] as const,
 }
 
 /** Instance health at a glance, refreshed every 15 s while the page is visible. */
@@ -45,6 +46,11 @@ export function useSendFeedback() {
 /** MCP usage on the public route: the counters move fast, poll them like the meter. */
 export function useAdminMcpUsage() {
   return useQuery({ queryKey: qkAdmin.mcpUsage, queryFn: api.adminMcpUsage, refetchInterval: ADMIN_METER_POLL_MS })
+}
+
+/** MCP call journal (4.5.0, issue #135): the in-memory ring of the last public-route calls. */
+export function useAdminMcpJournal() {
+  return useQuery({ queryKey: qkAdmin.mcpJournal, queryFn: api.adminMcpJournal, refetchInterval: ADMIN_METER_POLL_MS })
 }
 
 /** Control center actions; each one refreshes every admin view (counts live in the overview). */

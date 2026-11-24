@@ -87,7 +87,7 @@ var actions = map[string]string{
 	"GET /api/admin/backups/{name}/download": "admin.backup_download",
 	"PUT /api/admin/backups/s3":              "admin.backup_s3_update",
 	"POST /api/admin/backups/s3/test":        "admin.backup_s3_test",
-	// 4.3.0 per-user MCP server (public calls are recorded as mcp.request by withAudit).
+	// 4.3.0 per-user MCP server (public calls are journaled by the mcp package, issue #135).
 	"PUT /api/mcp":             "mcp.toggle",
 	"POST /api/mcp/token":      "mcp.token_generate",
 	"DELETE /api/mcp/token":    "mcp.token_revoke",
@@ -117,7 +117,7 @@ func withAudit(l *applog.Log, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/mcp/") {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -133,12 +133,6 @@ func withAudit(l *applog.Log, next http.Handler) http.Handler {
 		level := applog.LevelInfo
 		if status >= 400 {
 			level = applog.LevelError
-		}
-		if strings.HasPrefix(r.URL.Path, "/mcp/") {
-			// Public MCP: no session, the actor is the token (mcp:<prefix>), like the share portal.
-			l.Add(applog.Entry{Category: applog.CategoryAction, Level: level, Method: r.Method, Target: redactPath(r.URL.Path),
-				Status: status, Action: "mcp.request", Message: mcpActor(r.URL.Path), DurationMs: time.Since(start).Milliseconds()})
-			return
 		}
 		uid := meta.UserID()
 		l.Add(applog.Entry{Category: applog.CategoryRequest, Level: level, UserID: uid, Method: r.Method, Target: redactPath(r.URL.Path),
@@ -189,8 +183,10 @@ func adminLogs(l *applog.Log) http.HandlerFunc {
 		case "", "all":
 		case "error":
 			f.Level = applog.LevelError
+		case "warn":
+			f.Level = applog.LevelWarn
 		default:
-			httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, "Sévérité inconnue (all, error).")
+			httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, "Sévérité inconnue (all, warn, error).")
 			return
 		}
 		f.UserID, _ = strconv.ParseInt(q.Get("userId"), 10, 64)

@@ -79,9 +79,9 @@ func TestLoggingRedactsShareTokens(t *testing.T) {
 	}
 }
 
-// Public MCP calls are audited without a session: the actor is mcp:<prefix>, the target keeps
-// only the token prefix, and the management API is audited like the other user actions.
-func TestAuditMCPRequestsRedactToken(t *testing.T) {
+// Public MCP calls are journaled by the mcp package (issue #135), so withAudit must not record
+// them (no duplicate entry); the management API keeps the mcp.token_* user actions.
+func TestAuditSkipsPublicMCP(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "a.db"))
 	if err != nil {
@@ -102,22 +102,18 @@ func TestAuditMCPRequestsRedactToken(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/mcp/sm4_SECRETtokenValue", nil))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/mcp/token", nil))
 	l.Close()
-	acts, _ := l.Query(ctx, applog.Filter{Category: applog.CategoryAction})
-	if len(acts.Items) != 3 {
-		t.Fatalf("actions: %+v", acts.Items)
+	all, _ := l.Query(ctx, applog.Filter{})
+	if len(all.Items) != 2 { // the management request entry + its action, nothing for /mcp/
+		t.Fatalf("entries: %+v", all.Items)
 	}
-	// Newest first.
-	gen, get, pub := acts.Items[0], acts.Items[1], acts.Items[2]
-	if gen.Action != "mcp.token_generate" || gen.UserID == nil || *gen.UserID != 3 {
+	// Newest first: the action, then the request entry.
+	gen, req := all.Items[0], all.Items[1]
+	if gen.Category != applog.CategoryAction || gen.Action != "mcp.token_generate" || gen.UserID == nil || *gen.UserID != 3 {
 		t.Fatalf("generate: %+v", gen)
 	}
-	if pub.Action != "mcp.request" || pub.Message != "mcp:sm4_SECR" || pub.UserID != nil || pub.Target != "/mcp/sm4_SECR…" {
-		t.Fatalf("post: %+v", pub)
+	if req.Category != applog.CategoryRequest || req.Target != "/api/mcp/token" {
+		t.Fatalf("request: %+v", req)
 	}
-	if get.Action != "mcp.request" || get.Level != applog.LevelError {
-		t.Fatalf("get: %+v", get)
-	}
-	all, _ := l.Query(ctx, applog.Filter{})
 	for _, it := range all.Items {
 		if strings.Contains(it.Target, "SECRET") || strings.Contains(it.Message, "SECRET") {
 			t.Fatalf("token stored: %+v", it)

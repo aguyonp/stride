@@ -168,12 +168,14 @@ type TokenUsage struct {
 }
 
 // Usage is the admin view of the public MCP route: the active quota, the rolling counters
-// per token and the global 429 count of the last 24 h.
+// per token, the global 429 count of the last 24 h and the failed-call count (errors,
+// timeouts and client cancellations) of the last 24 h.
 type Usage struct {
 	Quota       Quota        `json:"quota"`
 	Tokens      []TokenUsage `json:"tokens"`
 	Requests24h int          `json:"requests24h"`
 	Denied24h   int          `json:"denied24h"`
+	Errors24h   int          `json:"errors24h"`
 	UpdatedAt   time.Time    `json:"updatedAt"`
 }
 
@@ -190,7 +192,7 @@ func (s *Server) Usage(ctx context.Context) (Usage, error) {
 
 	now := time.Now()
 	q, counters, denied := s.met.snapshot()
-	u := Usage{Quota: q, Tokens: []TokenUsage{}, Denied24h: denied, UpdatedAt: now.UTC()}
+	u := Usage{Quota: q, Tokens: []TokenUsage{}, Denied24h: denied, Errors24h: s.jrn.errors24h(), UpdatedAt: now.UTC()}
 	for rows.Next() {
 		var (
 			hash   []byte

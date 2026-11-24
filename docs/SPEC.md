@@ -835,3 +835,30 @@ Signing in is passkey-only (WebAuthn discoverable login, no username, no passwor
 
 - **Rewritten**: every variable read by the binary is documented with its default, grouped and commented; the docker-compose block uses the real names read by `compose.yml` (`STRIDE_HOST_BIND`, `STRIDE_HOST_PORT`, `STRIDE_TAG`, `STRIDE_UID`, `STRIDE_GID`).
 - **CI test « toute variable lue est documentée »** (`internal/env`, picked up by the existing backend `go test ./...` job, no `ci.yml` change): parses every non-test `*.go` file for `os.Getenv`/`os.LookupEnv` string literals plus the first-arg `get()`/`decodeKey()` reads in `env.go`, and fails listing any read var missing from `.env.example`. One-directional (compose-only vars stay documentable); test-only vars (`STRIDE_LIVE_ENV`, `live` tag) are out of scope. Adding a new read var without documenting it now turns CI red.
+
+## 18. 4.5.0 — MCP call journal, structured log and the `DEADLINE_EXCEEDED` fix
+
+### 18.1 Fix of the concurrent `DEADLINE_EXCEEDED` (issue #135)
+
+Root cause: with `modelcontextprotocol/go-sdk` **v1.8.0**, the answer of a **stateless POST** on the Streamable HTTP transport is an SSE stream that writes **no byte until the tool call completes** — the early `: ok` flush only fires for the standalone GET stream, and v1.8.0 has no keep-alive on the POST path at all. Any client or proxy enforcing a first-byte or idle timeout (Claude ≈ 20 s) then aborts the connection and the client reports `DEADLINE_EXCEEDED` with nothing received. A slow tool (Garmin sync, LLM report) is enough to cross the timeout; concurrent calls on the same connection make it systematic.
+
+Fix — the two parts are both needed:
+- **SDK bump `v1.8.0` → `v1.9.0-pre.1`** (2026-11-17), the only release fixing upstream **go-sdk#1155** — v1.8.0 is still `@latest`, so the pre-release is pinned exactly. Protocol version list and every other `StreamableHTTPOptions` field Stride uses are identical between the two versions.
+- **`StreamableHTTPOptions.StreamKeepAlive = 5 * time.Second`** (Go constant, no new env var): the SDK's 30 s default is *longer* than the 20 s client timeout, so it must be set explicitly. The keep-alive emits an SSE comment line; on a POST stream the first comment (which commits the headers) goes out after at most one silent interval, so the client sees bytes well before it gives up. Semantics: `0` = SDK default (30 s), negative = disabled; a failed keep-alive write closes the stream.
+- The local concurrency regression (`TestConcurrentPlanCreatesComplete`) already passed on v1.8.0: the bug needs a client/proxy that actually enforces a first-byte timeout, which the test harness is not. The test guards the SDK's batch answer envelope and the journal instead.
+
+### 18.2 Call journal (issue #135)
+
+In-memory journal of the public route's calls — the admin panel's « Journal des appels ». `internal/mcp/journal.go`; in-memory by design (no extra SQLite load on the public path; resets on restart, like the usage counters of §16.4).
+
+- **Ring of 300 calls** (spec: 200–500), mutex-guarded, most recent first. Every call of `POST /mcp/{token}` is recorded: JSON-RPC ones (method, tool, sanitized arguments, request id) and the refusals answered before the SDK handler — 429 per IP and per token (the token is resolved when possible, for attribution), 404 unknown token, 400 / 413 body errors. Non-POST 405s are not recorded.
+- **One `Call` =**: `at`, `tokenPrefix` (never the full token — the request body is never stored, only the sanitized summary), `userId` / `userName` (0 / "" for an unknown token), `method`, `tool`, `argsSummary` (string values truncated at 120 chars, whole summary capped at 1024 bytes), `status`, `rpcErrorCode` / `rpcError` (capped at 500; parsed from the answer — JSON, JSON array, or the SSE `data:` lines — a `result` embedding `"error":null` is not an error), `durationMs`, `inFlight` (concurrent calls when the call started), `clientCanceled` (the request context died mid-call).
+- **Panic = clean error, never a hung connection**: the SDK handler runs under a dedicated `recover()` (re-throwing only `http.ErrAbortHandler`); the in-flight call id gets a JSON-RPC `-32603 internal error` — SSE event when the stream already committed, JSON otherwise — and the call is journaled as an error.
+- **Admin route** `GET /api/admin/mcp/journal` (admin, like usage/quota) → `{ inFlight, entries[] }`: the live concurrency gauge plus the ring, most recent first.
+- **Rolling 24 h failed-call counter** (same 5-minute-bucket pattern as the usage meter): a call is a failure when its status is ≥ 400, or it carried an RPC error, or it panicked, or the client cancelled it. Exposed as `errors24h` in `GET /api/admin/mcp/usage` — the « Erreurs / Timeouts · 24 h » KPI of the admin panel.
+
+### 18.3 Structured log & admin panel (issue #135)
+
+- **One structured log line per call**: `applog` entry, category `user_action`, action `mcp.request`, target `/mcp/<prefix>…` (token redacted to its prefix), message `mcp:<prefix> · <method> [tool] · <detail>` (FR). Level: `info` for a normal call, **`warn`** for a 429, a client cancellation or a call slower than 2 s, **`error`** for a panic, an HTTP ≥ 500, an RPC error or any other 4xx. New `applog.LevelWarn` constant (`app_logs.level` is already TEXT — no migration); the admin Logs view and its severity filter now accept `warn`.
+- **Audit**: the `/mcp/` branch of `withAudit` is removed — a public call is no longer double-written to the audit trail: the journal entry + the structured line replace it. The session actions (`mcp.toggle`, `mcp.token_generate`, `mcp.token_revoke`, `mcp.quota_update`) are unchanged.
+- **Frontend**: the admin MCP tab gains a **Journal des appels** card — the 300 last calls (time, user + token prefix, method + tool, truncated arguments, status with the RPC error, duration in warn color above 2 s, concurrency) with client-side filters (tool, failed/slow, free text over user/token/method/arguments/error) and the « Erreurs / Timeouts · 24 h » KPI tile in the usage card; both poll every 15 s. i18n FR/EN (mirror test) + mock routes.

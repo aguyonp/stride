@@ -1003,7 +1003,7 @@ export interface LogEntry {
   id: number
   at: string
   category: LogCategory
-  level: 'info' | 'error'
+  level: 'info' | 'warn' | 'error'
   userId: number | null
   userName: string | null
   method: string
@@ -1021,7 +1021,7 @@ export interface LogPage {
 }
 export interface LogFilter {
   category: 'all' | LogCategory
-  level: 'all' | 'error'
+  level: 'all' | 'error' | 'warn'
   userId: number | null
 }
 
@@ -1775,5 +1775,29 @@ export interface McpUsage {
   tokens: McpTokenUsage[]
   requests24h: number
   denied24h: number
+  /** 4.5.0 (issue #135): failed calls of the last 24 h (errors, timeouts, cancellations). */
+  errors24h: number
   updatedAt: string
+}
+
+/* 4.5.0 MCP call journal (issue #135) */
+
+export interface McpJournalCall {
+  at: string
+  tokenPrefix: string
+  userId: number
+  userName: string
+  method: string
+  tool: string
+  argsSummary: string
+  status: number
+  rpcErrorCode: number
+  rpcError: string
+  durationMs: number
+  inFlight: number
+  clientCanceled: boolean
+}
+export interface McpJournal {
+  inFlight: number
+  entries: McpJournalCall[]
 }

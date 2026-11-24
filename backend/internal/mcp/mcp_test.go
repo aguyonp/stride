@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"stride/internal/applog"
 	"stride/internal/auth"
 	"stride/internal/cache"
 	"stride/internal/domain"
@@ -35,10 +36,11 @@ const initMsg = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protoc
 	`"capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`
 
 type harn struct {
-	t   *testing.T
-	srv *httptest.Server
-	st  *store.Store
-	dom *domain.Services
+	t    *testing.T
+	srv  *httptest.Server
+	st   *store.Store
+	dom  *domain.Services
+	logs *applog.Log
 }
 
 // newHarness builds a real SQLite store, domain services (no providers) and the MCP routes,
@@ -64,6 +66,8 @@ func newHarness(t *testing.T) *harn {
 	_, _ = rand.Read(key)
 	sealer, _ := secret.New(key, nil)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logs := applog.New(st.DB, log)
+	t.Cleanup(func() { logs.Close() })
 	dom, err := domain.New(domain.Deps{
 		Env:   env.Config{Timezone: "Europe/Paris", PublicURL: "http://localhost:8080"},
 		Store: st, Cache: cache.NewMemory(), Sealer: sealer, Log: log,
@@ -98,13 +102,13 @@ func newHarness(t *testing.T) *harn {
 			next.ServeHTTP(w, r)
 		}))
 	}
-	api := mcp.New(st, dom, log)
+	api := mcp.New(st, dom, log, logs)
 	mux := http.NewServeMux()
 	mcp.RegisterAPI(mux, mcp.Deps{Store: st, RequireUser: requireUser, RequireAdmin: requireAdmin, Srv: api})
 	mux.Handle("/mcp/", api.PublicHandler())
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	return &harn{t: t, srv: ts, st: st, dom: dom}
+	return &harn{t: t, srv: ts, st: st, dom: dom, logs: logs}
 }
 
 // do sends a request to the harness; user 0 means unauthenticated.

@@ -16,7 +16,25 @@ const usage: McpUsage = {
   ],
   requests24h: 41,
   denied24h: 3,
+  errors24h: 2,
   updatedAt: '2026-11-22T10:00:00Z',
+}
+
+// 4.5.0 (issue #135): the call journal — one clean tools/call and one unknown-token 404.
+const journal = {
+  inFlight: 1,
+  entries: [
+    {
+      at: '2026-11-22T09:41:12Z', tokenPrefix: 'sm4_ab12', userId: 2, userName: 'Alice',
+      method: 'tools/call', tool: 'plan_create', argsSummary: '{"date":"2026-11-24","sport":"run"}',
+      status: 200, rpcErrorCode: 0, rpcError: '', durationMs: 480, inFlight: 1, clientCanceled: false,
+    },
+    {
+      at: '2026-11-22T08:15:03Z', tokenPrefix: 'sm4_unkno0', userId: 0, userName: '',
+      method: '', tool: '', argsSummary: '',
+      status: 404, rpcErrorCode: 0, rpcError: '', durationMs: 2, inFlight: 0, clientCanceled: false,
+    },
+  ],
 }
 
 const numInputs = () => Array.from(document.querySelectorAll('input[type="number"]')) as HTMLInputElement[]
@@ -33,6 +51,7 @@ describe('McpAdminPanel', () => {
       vi.fn(async (url: string, init?: RequestInit) => {
         const ok = (v: unknown) => new Response(JSON.stringify(v), { headers: { 'Content-Type': 'application/json' } })
         if (url === '/api/admin/mcp/usage') return ok(usage)
+        if (url === '/api/admin/mcp/journal') return ok(journal)
         if (url === '/api/admin/mcp/quota' && init?.method === 'PUT') {
           putBody = JSON.parse(String(init.body)) as Record<string, number>
           return ok(putBody) // the server returns the stored (clamped) quota
@@ -92,5 +111,27 @@ describe('McpAdminPanel', () => {
     await setInputValue(numInputs()[0], '0')
     await waitFor(() => expect(saveBtn()?.disabled).toBe(true))
     expect(mounted!.container.textContent).toContain('Valeur entière entre 1 et')
+  })
+
+  it('shows the call journal, the 24 h errors KPI and the failed-only filter', async () => {
+    mounted = await mountWithProviders(<McpAdminPanel />)
+
+    // The card titles render before the card bodies (the usage KPIs and the journal rows come from
+    // two independent fetches): wait on the rendered state each assertion targets.
+    const kpiValue = (label: string) =>
+      Array.from(document.querySelectorAll('dt')).find((d) => d.textContent === label)?.nextElementSibling?.textContent ?? ''
+    await waitFor(() => expect(kpiValue('Erreurs / Timeouts · 24 h')).toBe('2'))
+
+    // The journal is the second table of the page (the per-token table comes first); the journal
+    // table only exists once its rows have rendered.
+    await waitFor(() => expect(document.querySelectorAll('table').length).toBe(2))
+    const journalTable = document.querySelectorAll('table')[1]
+    await waitFor(() => expect(journalTable.querySelectorAll('tbody tr').length).toBe(2))
+
+    // Both filters of the journal card are its two selects (the card holds no other).
+    const selects = document.querySelectorAll('select')
+    await setInputValue(selects[selects.length - 1], 'failed')
+    await waitFor(() => expect(journalTable.querySelectorAll('tbody tr').length).toBe(1))
+    expect(journalTable.textContent).toContain('404')
   })
 })

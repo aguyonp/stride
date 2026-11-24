@@ -90,12 +90,6 @@ func redactPath(p string) string {
 	return p
 }
 
-// mcpActor is the audit actor of a public MCP request: mcp:<token prefix>.
-func mcpActor(p string) string {
-	tok, _, _ := strings.Cut(strings.TrimPrefix(p, "/mcp/"), "/")
-	return "mcp:" + tok[:min(len(tok), shareTokenPrefix)]
-}
-
 // shareActor is the audit actor of a portal write: share:<token prefix>.
 func shareActor(p string) string {
 	rest, _ := strings.CutPrefix(p, "/api/public/share/")
