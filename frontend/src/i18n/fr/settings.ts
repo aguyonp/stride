@@ -312,8 +312,8 @@ export default {
         profile: 'Le profil de l’athlète : focus, seuils d’alerte et allures cibles',
       },
       write: {
-        plan_create: 'Planifier une séance (course, vélo, renforcement, mobilité, repos) sur une date',
-        plan_update: 'Modifier une séance planifiée : seuls les champs fournis sont appliqués',
+        plan_create: 'Planifier une séance (course, vélo, renforcement, mobilité, repos) sur une date, structure d’étapes comprise (blocs, répétitions, récupérations, allures)',
+        plan_update: 'Modifier une séance planifiée : seuls les champs fournis sont appliqués, structure d’étapes comprise',
         plan_delete: 'Supprimer une séance planifiée',
         event_create: 'Enregistrer un événement : fatigue, douleur, maladie, indisponibilité, repos forcé',
         event_update: 'Modifier un événement : seuls les champs fournis sont appliqués',

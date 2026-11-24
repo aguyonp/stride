@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"stride/internal/athlete"
 	"stride/internal/auth"
@@ -15,6 +16,7 @@ import (
 	"stride/internal/domain"
 	"stride/internal/frfmt"
 	"stride/internal/view"
+	"stride/internal/workout"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -53,10 +55,12 @@ func (t *tools) build() *mcpsdk.Server {
 			Instructions: t.l(
 				`Serveur Stride d'un athlète : lis son planning et y écris.
 Les dates sont au format AAAA-MM-JJ, les durées en secondes, les distances en mètres.
+Une séance structurée décrit ses blocs dans steps (échauffement, répétitions, récupérations, allures en s/km), pas dans instructions.
 plan_update et event_update n'appliquent que les champs fournis.
 Tu ne peux agir que sur les données du propriétaire du jeton.`,
 				`Stride server for one athlete: read their plan and write to it.
 Dates are YYYY-MM-DD, durations in seconds, distances in metres.
+A structured session describes its blocks in steps (warm-up, repetitions, recoveries, paces in s/km), not in instructions.
 plan_update and event_update apply only the provided fields.
 You can only act on the data of the token owner.`),
 		})
@@ -84,11 +88,13 @@ You can only act on the data of the token owner.`),
 			`The athlete's profile: focus area, alert thresholds, target paces and language.`)}, t.profile)
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{Name: "plan_create",
-		Description: t.l(`Planifie une séance (course, vélo, renforcement, mobilité, repos) sur une date. Retourne la séance créée.`,
-			`Plan a session (run, bike, strength, mobility, rest) on a date. Returns the created session.`)}, t.planCreate)
+		Description: t.l(`Planifie une séance (course, vélo, renforcement, mobilité, repos) sur une date. Les blocs d'effort, les répétitions et les récupérations vont dans steps : ils alimentent la Structure (steps) de la fiche et l'export .FIT ; instructions ne garde que les consignes contextuelles (échauffement ou renfo avant de partir, chaussures, garde-fous, retour au calme). Retourne la séance créée.`,
+			`Plan a session (run, bike, strength, mobility, rest) on a date. Effort blocks, repetitions and recoveries go in steps: they fill the session's Structure (steps) and the .FIT export, while instructions only keeps contextual guidance (warm-up or strength work before leaving, shoes, guardrails, cool-down). Returns the created session.`),
+		InputSchema: planSchema(reflect.TypeFor[planCreateIn]())}, t.planCreate)
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{Name: "plan_update",
-		Description: t.l(`Modifie une séance planifiée : seuls les champs fournis sont appliqués (les autres sont conservés). Retourne la séance mise à jour.`,
-			`Update a planned session: only the provided fields are applied (the others are kept). Returns the updated session.`)}, t.planUpdate)
+		Description: t.l(`Modifie une séance planifiée : seuls les champs fournis sont appliqués (les autres sont conservés). steps remplace la structure d'étapes (omettre le champ la conserve, un tableau vide la supprime) ; instructions reste réservé aux consignes contextuelles. Retourne la séance mise à jour.`,
+			`Update a planned session: only the provided fields are applied (the others are kept). steps replaces the step structure (omit it to keep it, an empty array removes it), while instructions stays reserved for contextual guidance. Returns the updated session.`),
+		InputSchema: planSchema(reflect.TypeFor[planUpdateIn]())}, t.planUpdate)
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{Name: "plan_delete",
 		Description: t.l(`Supprime une séance planifiée.`,
 			`Delete a planned session.`)}, t.planDelete)
@@ -275,15 +281,16 @@ func (t *tools) profile(ctx context.Context, _ *mcpsdk.CallToolRequest, _ emptyI
 
 // planFields are the writable fields of a planned session (domain validation applies).
 type planFields struct {
-	Date                  *string  `json:"date,omitempty" jsonschema:"date of the session, YYYY-MM-DD"`
-	Sport                 *string  `json:"sport,omitempty" jsonschema:"sport: run, bike, strength, mobility, rest, other"`
-	Title                 *string  `json:"title,omitempty" jsonschema:"short title of the session"`
-	TargetDurationS       *float64 `json:"targetDurationS,omitempty" jsonschema:"target duration in seconds"`
-	TargetDistanceM       *float64 `json:"targetDistanceM,omitempty" jsonschema:"target distance in metres"`
-	TargetPaceMinSecPerKm *float64 `json:"targetPaceMinSecPerKm,omitempty" jsonschema:"target min pace in s/km"`
-	TargetPaceMaxSecPerKm *float64 `json:"targetPaceMaxSecPerKm,omitempty" jsonschema:"target max pace in s/km"`
-	TargetCadenceSpm      *float64 `json:"targetCadenceSpm,omitempty" jsonschema:"target cadence in steps per minute"`
-	Instructions          *string  `json:"instructions,omitempty" jsonschema:"coach instructions for the session"`
+	Date                  *string         `json:"date,omitempty" jsonschema:"date of the session, YYYY-MM-DD"`
+	Sport                 *string         `json:"sport,omitempty" jsonschema:"sport: run, bike, strength, mobility, rest, other"`
+	Title                 *string         `json:"title,omitempty" jsonschema:"short title of the session"`
+	TargetDurationS       *float64        `json:"targetDurationS,omitempty" jsonschema:"target duration in seconds"`
+	TargetDistanceM       *float64        `json:"targetDistanceM,omitempty" jsonschema:"target distance in metres"`
+	TargetPaceMinSecPerKm *float64        `json:"targetPaceMinSecPerKm,omitempty" jsonschema:"target min pace in s/km"`
+	TargetPaceMaxSecPerKm *float64        `json:"targetPaceMaxSecPerKm,omitempty" jsonschema:"target max pace in s/km"`
+	TargetCadenceSpm      *float64        `json:"targetCadenceSpm,omitempty" jsonschema:"target cadence in steps per minute"`
+	Instructions          *string         `json:"instructions,omitempty" jsonschema:"contextual guidance that cannot be modelled as steps: warm-up or strength work before leaving, shoes, guardrails, cool-down (the effort blocks go in steps)"`
+	Steps                 *[]workout.Step `json:"steps,omitempty" jsonschema:"structured workout: warmup/run/interval/recovery/rest/cooldown steps and repeat blocks of steps, with durations or distances and pace/hr/cadence/power targets; omit it to keep the current structure (plan_update), an empty array clears it (see the step fields of this schema)"`
 }
 
 // planCreateIn is a planned session to create (date and sport required).

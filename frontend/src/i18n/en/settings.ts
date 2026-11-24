@@ -315,8 +315,8 @@ const en: Widen<typeof fr> = {
         profile: 'The athlete profile: focus area, alert thresholds and target paces',
       },
       write: {
-        plan_create: 'Plan a session (run, bike, strength, mobility, rest) on a date',
-        plan_update: 'Update a planned session: only the provided fields are applied',
+        plan_create: 'Plan a session (run, bike, strength, mobility, rest) on a date, structured steps included (blocks, repetitions, recoveries, paces)',
+        plan_update: 'Update a planned session: only the provided fields are applied, structured steps included',
         plan_delete: 'Delete a planned session',
         event_create: 'Record an event: fatigue, pain, illness, unavailability, forced rest',
         event_update: 'Update an event: only the provided fields are applied',
