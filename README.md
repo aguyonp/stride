@@ -26,6 +26,15 @@ open http://localhost:8080
 
 ## Highlights
 
+**4.6.0**
+- MCP write tools `plan_create` / `plan_update` take the structured workout: `steps` with warm-up, effort, recovery, cool-down and `repeat` blocks, durations or distances, pace / HR / cadence / power targets. Assistant-planned sessions land with their native blocks — ready for the Structure editor, the `.FIT` export and the watch push.
+- `steps` is documented in the `tools/list` schema (recursive `$defs/step`, allowed values from the domain enums) and validated by the same domain rules as the REST API, in-band and localized; `instructions` keeps the contextual guidance only.
+- Fix: replacing a `steps` array no longer inherits the sub-steps of the previous blocks (`Patch` now decodes into a fresh value).
+
+**4.5.0**
+- MCP call journal (admin tab) and one structured log line per public call; `DEADLINE_EXCEEDED` fixed (SDK keep-alive).
+- Effective public-route quota quoted in the account card.
+
 **4.3.0**
 - Per-user MCP server: expose your own data to AI assistants (Claude, …) at `POST /mcp/{token}` (Streamable HTTP, official Go SDK), toggled from your account; 13 read/write tools scoped to you.
 

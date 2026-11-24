@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
@@ -319,6 +320,11 @@ var ErrUnknownField = errors.New("champ inconnu")
 
 // Patch overlays the JSON object body onto dst (a pointer to a struct). Keys in readOnly are
 // silently ignored; keys missing from allowed are rejected. A JSON null clears pointer fields.
+//
+// The merged document is decoded into a fresh value: unmarshalling in place would merge the
+// provided values with the current ones (encoding/json reuses slice elements and only
+// overwrites the fields present), so a replaced `steps` array would inherit the sub-steps of
+// the previous blocks, and a nested struct would keep whatever the body omits.
 func Patch(dst any, body []byte, allowed, readOnly []string) error {
 	var patch map[string]json.RawMessage
 	if err := json.Unmarshal(body, &patch); err != nil || patch == nil {
@@ -345,9 +351,15 @@ func Patch(dst any, body []byte, allowed, readOnly []string) error {
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(out, dst); err != nil {
+	rv := reflect.ValueOf(dst)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() || rv.Elem().Kind() != reflect.Struct {
+		return errors.New("destination invalide (pointeur vers une structure attendu)")
+	}
+	fresh := reflect.New(rv.Elem().Type())
+	if err := json.Unmarshal(out, fresh.Interface()); err != nil {
 		return fmt.Errorf("valeur invalide : %v", err)
 	}
+	rv.Elem().Set(fresh.Elem())
 	return nil
 }
 
