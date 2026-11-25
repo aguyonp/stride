@@ -26,6 +26,10 @@ open http://localhost:8080
 
 ## Highlights
 
+**4.6.1**
+- Previous / next session arrows work for a session opened from the calendar, deep in the history: the neighbours are queried exactly (`before` cursor down, listing up) instead of being read only from the loaded page.
+- The session picker's calendar header is translated in English too.
+
 **4.6.0**
 - MCP write tools `plan_create` / `plan_update` take the structured workout: `steps` with warm-up, effort, recovery, cool-down and `repeat` blocks, durations or distances, pace / HR / cadence / power targets. Assistant-planned sessions land with their native blocks — ready for the Structure editor, the `.FIT` export and the watch push.
 - `steps` is documented in the `tools/list` schema (recursive `$defs/step`, allowed values from the domain enums) and validated by the same domain rules as the REST API, in-band and localized; `instructions` keeps the contextual guidance only.

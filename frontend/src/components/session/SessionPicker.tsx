@@ -167,7 +167,7 @@ export function SessionPicker({ open, onClose, selectedId, selectedDate, today, 
         <div className="grid grid-cols-[minmax(0,300px)_minmax(0,1fr)] gap-6">
           <div>
             <p className="label-caps mb-2 flex items-center gap-1.5">
-              <CalendarDays className="size-3.5" aria-hidden="true" /> Calendrier
+              <CalendarDays className="size-3.5" aria-hidden="true" /> {t('session.picker.calendar')}
             </p>
             {calendar}
           </div>

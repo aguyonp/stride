@@ -1,7 +1,7 @@
 import { Activity, BarChart3, CalendarCheck, ChevronDown, CloudSun, Flame, Gauge, History, Link2, Map as MapIcon, Moon, PenLine, Plus, Target, Timer } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'wouter'
-import { useActivities, useActivityView, useDayView, useProfile } from '../../api/queries'
+import { useActivities, useActivitiesInRange, useActivityView, useDayView, useOlderActivity, useProfile } from '../../api/queries'
 import { useLlmConfig } from '../../api/queriesV3'
 import { useRecords, useStandalone } from '../../api/queriesV31'
 import type { ActivitySummary, ActivityView, AthleteProfile, Me } from '../../api/types'
@@ -35,6 +35,7 @@ import { cn } from '../../lib/cn'
 import { fmtNumber, isNum, todayISO } from '../../lib/format'
 import { ui } from '../../state/ui'
 import { ErrorView, LoadingView } from '../StateViews'
+import { neighboursOf, outsideNeighbours } from './navigation'
 import { t } from '../../i18n'
 
 const AnalysisDrawer = lazy(() => import('../../components/ai/AnalysisDrawer').then((m) => ({ default: m.AnalysisDrawer })))
@@ -191,6 +192,27 @@ function SessionSections({ v, profile, sections }: { v: ActivityView; profile: A
   )
 }
 
+function useSessionNeighbours(selectedId: number | null, items: ActivitySummary[], session: ActivitySummary | null, today: string) {
+  const inList = selectedId === null ? -1 : items.findIndex((a) => a.id === selectedId)
+  // The list only holds the pages scrolled so far: a session opened from the calendar is older
+  // than all of them, so its neighbours are queried around its date instead of its index (#21).
+  const outside = selectedId !== null && inList < 0 && session !== null
+  const date = outside && session ? session.date : ''
+  const olderQ = useOlderActivity(date, outside && session ? session.startLocal : '', outside)
+  const sinceQ = useActivitiesInRange(date, today, outside)
+  const nav = useMemo(() => {
+    if (!outside) return neighboursOf(items, selectedId)
+    // The range keeps the previous window as placeholder: it belongs to another session, so the
+    // arrows stay disabled until the listings of this one are in (never point at a wrong session).
+    const since = sinceQ.isPlaceholderData ? undefined : sinceQ.data
+    const older = olderQ.data?.items[0] ?? null
+    // An incomplete listing cannot prove which session comes next: keep that arrow disabled
+    // rather than jumping over sessions.
+    return outsideNeighbours(selectedId, older, since?.items ?? [], since !== undefined && !since.hasMore)
+  }, [outside, items, selectedId, olderQ.data, sinceQ.data, sinceQ.isPlaceholderData])
+  return nav
+}
+
 /** Light dashboard: readiness, compact session hero, top alerts, ressenti, AI actions; details folded. */
 export function DashboardView({ me, routeActivityId = null }: { me: Me; routeActivityId?: number | null }) {
   const profile = useProfile()
@@ -265,9 +287,11 @@ export function DashboardView({ me, routeActivityId = null }: { me: Me; routeAct
       return next
     })
   }
-  const idx = selectedId === null ? -1 : items.findIndex((a) => a.id === selectedId)
-  const older = idx >= 0 && idx < items.length - 1 ? items[idx + 1] : null
-  const newer = idx > 0 ? items[idx - 1] : null
+  // The selected session once known: from the list, the picker row, or the loaded view.
+  const anchor = summary ?? (v && v.activity.id === selectedId ? v.activity : null)
+  const nav = useSessionNeighbours(selectedId, items, anchor, today)
+  const older = nav.older
+  const newer = nav.newer
 
   const noActivities = list.isSuccess && items.length === 0 && sParam === null && routeActivityId === null
   const th = profile.data?.thresholds ?? null
