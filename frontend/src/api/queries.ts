@@ -43,6 +43,7 @@ export const qk = {
   sync: ['sync', 'status'] as const,
   activities: (p: ListActivitiesParams = {}) => ['activities', 'list', p] as const,
   activitiesRange: (from: string, to: string) => ['activities', 'range', from, to] as const,
+  activityOlder: (date: string, before: string) => ['activities', 'older', date, before] as const,
   activity: (id: number) => ['activity', id] as const,
   report: (kind: 'activity' | 'day', ref: number | string, include: string) => ['report', kind, ref, include] as const,
   day: (date: string) => ['day', date] as const,
@@ -290,6 +291,18 @@ export function useActivityView(id: number | null) {
     enabled: id !== null,
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * The session immediately older than `before` (a `start_local` cursor on `date`): the list pages
+ * newest-first only, so this is the only exact way to step back from an arbitrary session.
+ */
+export function useOlderActivity(date: string, before: string, enabled = true) {
+  return useQuery({
+    queryKey: qk.activityOlder(date, before),
+    queryFn: () => api.activities({ to: date, before, limit: 1 }),
+    enabled: enabled && date !== '' && before !== '',
   })
 }
 
