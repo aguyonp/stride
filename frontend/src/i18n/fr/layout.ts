@@ -94,6 +94,8 @@ export default {
     stravaScopes: 'Strava : autorisations incomplètes, activités et kudos non lus.',
     reconnect: 'Reconnecter',
     lastLive: 'Dernier appel live : {when}',
+    noSource: 'Aucune source connectée : la synchronisation lira tes activités dès qu’une intégration sera configurée.',
+    connectSource: 'Configurer une intégration',
     syncNow: 'Synchroniser maintenant',
   },
   updates: {

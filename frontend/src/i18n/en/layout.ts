@@ -97,6 +97,8 @@ const en: Widen<typeof fr> = {
     stravaScopes: 'Strava: incomplete permissions, activities and kudos not read.',
     reconnect: 'Reconnect',
     lastLive: 'Last live call: {when}',
+    noSource: 'No source connected: the sync will read your activities once an integration is configured.',
+    connectSource: 'Set up an integration',
     syncNow: 'Sync now',
   },
   updates: {
