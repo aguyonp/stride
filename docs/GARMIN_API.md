@@ -33,7 +33,7 @@ Reference for `backend/internal/garmin` and `backend/internal/fitdata`. Addition
 
 ### Pont expérimental (API web, non officielle) — §23
 
-`/workout-service/*` n'existe pas sur le palier Personal (404/403). L'envoi de séances passe donc par un gateway isolé et désactivé par défaut (`internal/garminbridge`) qui parle à l'API *web* (`connectapi.garmin.com`) comme l'application officielle : SSO `sso.garmin.com`, ticket de service, échange OAuth1 → OAuth2, puis `POST /workout-service/workout`, `PUT /workout-service/workout/{id}` et `POST /workout-service/schedule/{id}`. Rien de tout cela n'est vérifié contractuellement par Garmin : le paquet est jetable, l'interrupteur est double (env + réglage admin) et le repli `.FIT` (import Garmin Connect Web) reste la voie supportée.
+`/workout-service/*` n'existe pas sur le palier Personal (404/403). L'envoi de séances passe donc par un gateway isolé et désactivé par défaut (`internal/garminbridge`) qui parle à l'API *web* (`connectapi.garmin.com`) comme l'application officielle : SSO `sso.garmin.com`, ticket de service, échange OAuth1 → OAuth2, puis `POST /workout-service/workout`, `PUT /workout-service/workout/{id}` et `POST /workout-service/schedule/{id}`. Rien de tout cela n'est vérifié contractuellement par Garmin : le paquet est jetable, l'interrupteur est un réglage admin (`garminBridgeEnabled`, Admin › Instance, désactivé par défaut) et le repli `.FIT` (import Garmin Connect Web) reste la voie supportée.
 
 ### Endpoints en 404 (non exposés par la Personal API — ne pas utiliser)
 `/activity-service/activity/{id}/splits|typedsplits|split_summaries|hrTimeInZones|powerTimeInZones|laps`, `/metrics-service/*` (training status/readiness/maxmet), exports TCX/GPX, `/wellness-service/wellness/floorsChartData/*`.

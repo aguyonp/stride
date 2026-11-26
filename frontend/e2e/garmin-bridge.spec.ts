@@ -8,6 +8,14 @@ import { assertNoConsoleErrors, trackConsoleErrors } from './helpers'
 test('connects the bridge with a code and sends the sessions of the day', async ({ page }) => {
   const errors = trackConsoleErrors(page)
 
+  // The bridge is off by default: an administrator opens it in Admin › Instance (not in the
+  // invitations tab, where those settings used to be buried).
+  await page.goto('/admin?tab=system')
+  const bridgeSwitch = page.getByRole('switch', { name: 'Allow the Garmin bridge' })
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'false')
+  await bridgeSwitch.click()
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'true')
+
   await page.goto('/settings?tab=integrations')
   // The warning is the first thing read, before any field exists.
   await expect(page.getByText('Workout push (experimental)')).toBeVisible()

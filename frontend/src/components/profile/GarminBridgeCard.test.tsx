@@ -23,6 +23,9 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     installDomPolyfills()
     setFlags([])
     resetDb()
+    // The bridge is off by default in the demo: these tests exercise the flow once an
+    // administrator has opened it (the « hidden » test turns it off again).
+    db().garminBridgeEnabled = true
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string, init?: RequestInit) => {
@@ -39,10 +42,10 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     resetDb()
   })
 
-  it('shows nothing when the instance does not build the gateway', async () => {
+  it('shows nothing when the administrator has not opened the bridge', async () => {
     db().garminBridgeEnabled = false
     mounted = await mountWithProviders(<GarminBridgeCard />)
-    // The 404 lands asynchronously: wait for the card to disappear rather than for the request.
+    // The answer lands asynchronously: wait for the card to stay empty rather than for the request.
     await waitFor(() => expect(requests.some((r) => r.includes('/api/garmin/bridge'))).toBe(true))
     await waitFor(() => expect(text()).toBe(''))
   })

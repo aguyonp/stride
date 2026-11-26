@@ -168,7 +168,9 @@ func TestBridgeKillSwitch(t *testing.T) {
 	if s.BridgeAvailable(ctx) {
 		t.Fatal("bridge reported available with the setting off")
 	}
-	if st := s.BridgeStatus(ctx, 1); st.State != garminbridge.StateDisconnected || st.Message != "disabled" {
+	// Not available, but the tokens are still there: switching the bridge off hides it, it does not
+	// disconnect anyone. The card is hidden, the state stays readable.
+	if st := s.BridgeStatus(ctx, 1); st.State != garminbridge.StateDisconnected || st.Available {
 		t.Fatalf("status: %+v", st)
 	}
 	if _, err := s.BridgeLogin(ctx, 1, "a@b.c", "pw"); err != garminbridge.ErrDisabled {
@@ -181,6 +183,24 @@ func TestBridgeKillSwitch(t *testing.T) {
 	}
 	if n := f.count("GET workouts"); n != 0 {
 		t.Fatalf("the gateway was called with the bridge off: %d", n)
+	}
+}
+
+// Available is the flag the settings card reads: false keeps it hidden, true offers the flow.
+func TestBridgeAvailability(t *testing.T) {
+	s, _, _ := bridgeDomain(t)
+	ctx := context.Background()
+	enableBridge(t, s, true)
+	if st := s.BridgeStatus(ctx, 1); !st.Available || st.State != garminbridge.StateDisconnected {
+		t.Fatalf("available: %+v", st)
+	}
+	connectBridge(t, s, 1)
+	if st := s.BridgeStatus(ctx, 1); !st.Available || st.State != garminbridge.StateConnected {
+		t.Fatalf("connected: %+v", st)
+	}
+	enableBridge(t, s, false)
+	if st := s.BridgeStatus(ctx, 1); st.Available {
+		t.Fatalf("hidden: %+v", st)
 	}
 }
 

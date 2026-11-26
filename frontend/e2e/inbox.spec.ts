@@ -43,10 +43,10 @@ test('opens the notification centre, navigates an entry and marks everything rea
   assertNoConsoleErrors(errors)
 })
 
-test('shows the retention settings in the admin invitations panel', async ({ page }) => {
+test('shows the retention settings in the admin instance tab', async ({ page }) => {
   const errors = trackConsoleErrors(page)
 
-  await page.goto('/admin?tab=invitations')
+  await page.goto('/admin?tab=system')
   const card = page.getByRole('heading', { name: 'Notification centre' })
   await expect(card).toBeVisible()
   const nums = page.locator('input[type="number"]')

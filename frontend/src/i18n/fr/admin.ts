@@ -1,6 +1,6 @@
 export default {
   common: {
-    tabs: { overview: 'Vue d’ensemble', users: 'Utilisateurs', jobs: 'Tâches', shares: 'Partages', feedback: 'Avis', invitations: 'Invitations', providers: 'Fournisseurs', mcp: 'MCP', logs: 'Journaux', maintenance: 'Maintenance', backups: 'Backups & S3' },
+    tabs: { overview: 'Vue d’ensemble', users: 'Utilisateurs', jobs: 'Tâches', shares: 'Partages', feedback: 'Avis', invitations: 'Invitations', providers: 'Fournisseurs', mcp: 'MCP', logs: 'Journaux', maintenance: 'Maintenance', backups: 'Backups & S3', system: 'Instance' },
     countAccounts: 'comptes',
     countActiveJobs: 'tâches actives',
     countFailures: 'échecs sur 24 h',
@@ -282,7 +282,7 @@ export default {
     card: 'Pont Garmin (expérimental)',
     hint: 'Envoi des séances vers l’API web de Garmin Connect. Non officiel : risque de blocage ou de suspension du compte, assumé par chaque utilisateur.',
     toggle: 'Autoriser le pont Garmin',
-    on: 'Les utilisateurs peuvent activer le pont et se connecter à leur compte ; variable d’environnement STRIDE_GARMIN_BRIDGE requise.',
+    on: 'Les utilisateurs peuvent activer le pont et se connecter à leur compte. Réglage unique : rien à modifier dans .env.',
     off: 'Aucune route du pont n’est servie : le .FIT (import Garmin Connect Web) reste la seule voie.',
   },
   updates: {

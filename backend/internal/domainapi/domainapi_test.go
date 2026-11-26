@@ -227,7 +227,7 @@ type env2 struct {
 func setup(t *testing.T) *env2 { return setupWith(t, nil, nil) }
 
 // bridgeFactory lets the Garmin bridge tests install a gateway on the domain before the routes are
-// registered (§23). Nil keeps the routes unmounted, as in production without STRIDE_GARMIN_BRIDGE.
+// registered (§23). Nil leaves the domain without a gateway: the routes answer available:false.
 var bridgeFactory func(*domain.Services) *garminbridge.Service
 
 // setupWith lets V3 tests add Garmin routes and adjust the domain dependencies.

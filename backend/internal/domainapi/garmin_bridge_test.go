@@ -75,19 +75,16 @@ func setBridgeSetting(t *testing.T, e *env2, on bool) {
 	}
 }
 
-func TestBridgeRoutesKillSwitch(t *testing.T) {
-	// No gateway: the routes are not mounted at all.
-	e := setup(t)
-	if code, body := e.do(1, "GET", "/api/garmin/bridge", nil, nil); code != http.StatusNotFound {
-		t.Fatalf("status without the gateway: %d %s", code, body)
+// Without a gateway at all (a build that removed the package), the routes answer a plain 200 with
+// `available:false`: nothing to offer, no error to explain.
+func TestBridgeRoutesWithoutGateway(t *testing.T) {
+	e := setup(t) // no bridgeFactory: the domain has no gateway
+	var st garminbridge.Status
+	if code, body := e.do(1, "GET", "/api/garmin/bridge", nil, &st); code != http.StatusOK || st.Available || st.State != "disconnected" {
+		t.Fatalf("status: %d %+v %s", code, st, body)
 	}
-	// `POST /api/plan/push-today` is not mounted either: the mux falls back on the `{id}` patterns
-	// of the plan and answers « method not allowed » rather than running anything.
-	if code, body := e.do(1, "POST", "/api/plan/push-today", m{"date": "2026-11-26"}, nil); code != http.StatusMethodNotAllowed && code != http.StatusNotFound {
-		t.Fatalf("push-today without the gateway: %d %s", code, body)
-	}
-	if code, _ := e.do(1, "POST", "/api/garmin/bridge/login", m{"email": "a@b.c", "password": "x"}, nil); code != http.StatusNotFound {
-		t.Fatalf("login without the gateway: %d", code)
+	if code, _ := e.do(1, "POST", "/api/garmin/bridge/login", m{"email": "a@b.c", "password": "x"}, nil); code != http.StatusConflict {
+		t.Fatalf("login without a gateway: %d", code)
 	}
 }
 
@@ -108,13 +105,13 @@ func TestBridgeRoutesStatusAndSetting(t *testing.T) {
 		}
 		return out
 	}
-	if st := status(); st.State != garminbridge.StateDisconnected || st.Message != "disabled" {
+	if st := status(); st.State != garminbridge.StateDisconnected || st.Available {
 		t.Fatalf("setting off: %+v", st)
 	}
 
 	// Admin switch on: the login flow becomes reachable.
 	setBridgeSetting(t, e, true)
-	if st := status(); st.State != garminbridge.StateDisconnected || st.Message != "" {
+	if st := status(); st.State != garminbridge.StateDisconnected || !st.Available {
 		t.Fatalf("setting on: %+v", st)
 	}
 	// Wrong password: a plain 400, nothing stored.

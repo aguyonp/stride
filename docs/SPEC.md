@@ -920,7 +920,7 @@ Writes happen **in the domain**, next to the toast, so the history exists with n
 
 ### 21.3 Retention
 
-`GET /api/admin/settings` gains `inboxRetentionDays` (default 10, clamped 1..365) and `inboxRetentionMax` (default 50, clamped 1..200). `PUT /api/admin/settings` clamps them instead of rejecting, treats a missing field as « keep the current value » (so the panel that owns one setting never resets the others) and purges the surplus immediately; `PurgeInbox` also runs on the daily maintenance pass. The admin panel exposes it in Admin › Invitations (Registration card, then Notification centre).
+`GET /api/admin/settings` gains `inboxRetentionDays` (default 10, clamped 1..365) and `inboxRetentionMax` (default 50, clamped 1..200). `PUT /api/admin/settings` clamps them instead of rejecting, treats a missing field as « keep the current value » (so the panel that owns one setting never resets the others) and purges the surplus immediately; `PurgeInbox` also runs on the daily maintenance pass. The admin panel exposes it in **Admin › Instance** (the « Centre de notifications » card), not in Invitations: it has nothing to do with who may join.
 
 ### 21.4 Interface
 
@@ -957,7 +957,7 @@ When a release is newer, the route also **writes the notice for every active adm
 
 ### 22.3 The admin switch
 
-`updateCheckEnabled` (default `true`) in `GET/PUT /api/admin/settings`, next to the registration mode, with its card in Admin › Invitations. Disabled: no request, no notice, no banner — the route answers `{current, available: false, disabled: true}` without touching the network. No environment variable was added, so `.env.example` is unchanged (§17.2 stays green).
+`updateCheckEnabled` (default `true`) in `GET/PUT /api/admin/settings`, with its card in **Admin › Instance**, alongside the retention and the bridge: the Invitations tab keeps registration and invitations only. Disabled: no request, no notice, no banner — the route answers `{current, available: false, disabled: true}` without touching the network. No environment variable was added, so `.env.example` is unchanged (§17.2 stays green).
 
 ### 22.4 Interface
 
@@ -976,9 +976,13 @@ A banner in `AppShell`, under the header and above the content, only for `role =
 
 The Personal API (§11.3) is read-only: `/workout-service/*` answers 404/403, so a session could only reach the watch with a cable. 4.7.0 removes the cable without pretending the problem is solved: the **.FIT import through Garmin Connect Web** becomes the documented path, and an **experimental, off by default, isolated gateway** to Garmin's *web* API (the one the official app uses) can push a workout directly for the users who accept the risk.
 
-### 23.1 Two switches, one kill
+### 23.1 One switch, in the admin panel
 
-`STRIDE_GARMIN_BRIDGE` (env, default `false`) is the master: without it the gateway is never built, its routes are not mounted (`404`), no client exists and no request leaves the server. The admin setting `garminBridgeEnabled` (default `false`, Admin › Invitations) is the second half: with the env on and the setting off, the routes answer `409` and the card is not offered. Deleting `internal/garminbridge/`, its five routes and its token rows is the whole decommission.
+`garminBridgeEnabled` (default `false`, **Admin › Instance**) is the only switch. There is no environment variable: an operator who can reach the admin panel does not need a second, hidden switch that requires an edit of `.env` and a restart — and a variable missing from a deployment used to hide the whole feature from the interface, silently.
+
+Off means off: the routes answer `409` (`CONFLICT`, « désactivé par l'administrateur »), `/api/garmin/bridge` answers `{available: false}`, no caller may build a request and the settings card is not rendered. On: the card appears for every user, whether or not they configured the Personal API key — the bridge signs in with their own Garmin account, it does not depend on that key.
+
+Decommissioning remains a code change: delete `internal/garminbridge/`, its five routes and the `garmin_web` rows.
 
 ### 23.2 The gateway (`internal/garminbridge`)
 
@@ -1009,7 +1013,7 @@ Expired session, blocked login and refused push write an entry in the notificati
 
 ### 23.5 Interface
 
-- **Settings › Integrations › Garmin** gains a card « Envoi de séances (expérimental) »: the warning is readable **before** any field exists; « Activer le pont » opens a consent block (unofficial API, suspension risk, one-shot password, .FIT fallback), then the e-mail/password form, then the code step, then the state (`disconnected | mfa | connected | expired | blocked`, plus « en pause » when the breaker is open) and « Déconnecter ». The card is not rendered at all when the instance does not build the gateway.
+- **Settings › Integrations › Garmin** gains a card « Envoi de séances (expérimental) », rendered **whether or not the Personal API key is configured** — the bridge signs in with the user's own Garmin account and does not depend on that key. The warning is readable **before** any field exists; « Activer le pont » opens a consent block (unofficial API, suspension risk, one-shot password, .FIT fallback), then the e-mail/password form, then the code step, then the state (`disconnected | mfa | connected | expired | blocked`, plus « en pause » when the breaker is open) and « Déconnecter ». The card is not rendered when the administrator has not opened the bridge (`available: false`).
 - **Planning**: « Envoyer les séances du jour » appears only with a connected bridge (the Personal API cannot push), asks for confirmation, sends and lists the result per session.
 - **.FIT, without a cable**: the session drawer replaces the USB instructions with the three steps (download, import in Garmin Connect Web › Training › Import then « Send to Device », sync the watch) and an « Ouvrir Garmin Connect » link; the file is named `stride-YYYY-MM-DD-<sport>.fit`. This path works with the bridge off, expired or decommissioned.
 

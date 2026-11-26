@@ -9,10 +9,9 @@ import (
 
 // Experimental Garmin Connect bridge (§23, issue #147).
 //
-// Two switches govern these routes: STRIDE_GARMIN_BRIDGE (env, master) and the admin setting
-// `garminBridgeEnabled`. Without the env variable the gateway is not even built and the routes are
-// not mounted — a decommission is « delete the package, its routes and its tokens ». With the env on
-// but the setting off, the answer is 409: the feature exists, it is switched off.
+// One switch governs these routes: the admin setting `garminBridgeEnabled` (Admin › Instance).
+// Off, the answers are 409 and `available: false` — the feature exists, it is disabled. A
+// decommission is « delete the package, its routes and its tokens ».
 
 // registerGarminBridge mounts the bridge routes. Called only when the gateway exists.
 func registerGarminBridge(mux *http.ServeMux, user func(string, http.HandlerFunc), a *api) {

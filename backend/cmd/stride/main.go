@@ -229,14 +229,10 @@ func run() error {
 		log.Warn("⚠️ Dédoublonnage des activités en échec", "err", err.Error())
 	}
 	dom.SeedFirstAdmin(ctx)
-	// Experimental Garmin Connect bridge (§23, issue #147). Without STRIDE_GARMIN_BRIDGE the gateway
-	// is never built: no client, no routes, no network call.
-	var garminBridge *garminbridge.Service
-	if cfg.GarminBridge {
-		garminBridge = garminbridge.New(garminbridge.Options{Store: dom.BridgeTokenStore(), Log: log})
-		dom.SetGarminBridge(garminBridge)
-		log.Info("🔗 Pont Garmin expérimental activé (API web non officielle, risque de suspension du compte)")
-	}
+	// Experimental Garmin Connect bridge (§23, issue #147). The gateway is always built; the admin
+	// setting is the switch, and it is off by default: no route call, no client use, no network.
+	garminBridge := garminbridge.New(garminbridge.Options{Store: dom.BridgeTokenStore(), Log: log})
+	dom.SetGarminBridge(garminBridge)
 	backups := backup.New(backup.Options{Store: st, Sealer: sealer, DataDir: cfg.DataDir, Version: buildinfo.Version, Env: cfg,
 		Metrics: metrics, Log: log, Location: loc})
 	backups.Register(dom.Jobs())

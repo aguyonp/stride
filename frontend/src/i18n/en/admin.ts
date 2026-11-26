@@ -3,7 +3,7 @@ import type { Widen } from '../t'
 
 const en: Widen<typeof fr> = {
   common: {
-    tabs: { overview: 'Overview', users: 'Users', jobs: 'Jobs', shares: 'Shares', feedback: 'Feedback', invitations: 'Invitations', providers: 'Providers', mcp: 'MCP', logs: 'Logs', maintenance: 'Maintenance', backups: 'Backups & S3' },
+    tabs: { overview: 'Overview', users: 'Users', jobs: 'Jobs', shares: 'Shares', feedback: 'Feedback', invitations: 'Invitations', providers: 'Providers', mcp: 'MCP', logs: 'Logs', maintenance: 'Maintenance', backups: 'Backups & S3', system: 'Instance' },
     countAccounts: 'accounts',
     countActiveJobs: 'active jobs',
     countFailures: 'failures in 24 h',
@@ -285,7 +285,7 @@ const en: Widen<typeof fr> = {
     card: 'Garmin bridge (experimental)',
     hint: 'Session push through Garmin Connect’s web API. Unofficial: the risk of a block or an account suspension is each user’s to accept.',
     toggle: 'Allow the Garmin bridge',
-    on: 'Users can enable the bridge and sign in with their own account; the STRIDE_GARMIN_BRIDGE environment variable is required.',
+    on: 'Users can enable the bridge and sign in with their own account. Single switch: nothing to change in .env.',
     off: 'No bridge route is served: the .FIT (Garmin Connect Web import) stays the only path.',
   },
   updates: {

@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Unplug } from 'lucide-react'
 import { useState } from 'react'
-import { ApiError, isApiError } from '../../api/client'
+import { isApiError } from '../../api/client'
 import { useGarminBridge, useGarminBridgeMutations } from '../../api/queries'
 import { cn } from '../../lib/cn'
 import { fmtDateTime } from '../../lib/format'
@@ -26,9 +26,9 @@ export function GarminBridgeCard() {
   const [form, setForm] = useState({ email: '', password: '' })
   const [mfa, setMfa] = useState('')
 
-  // The gateway is not built on this instance: nothing to show, not even a hint. The status is
-  // checked, not the error code, so a route-level 404 from any layer behaves the same.
-  if (bridge.isError && bridge.error instanceof ApiError && bridge.error.status === 404) return null
+  // Nothing is rendered until the instance answers, and nothing is offered when the administrator
+  // has not opened the bridge: `available` is the instance's word, not a guess from an HTTP status.
+  if (!bridge.data?.available) return null
   const st = bridge.data
   const state = st?.state ?? 'disconnected'
   const busy = m.login.isPending || m.mfa.isPending

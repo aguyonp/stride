@@ -551,8 +551,9 @@ const setBridge = (state: { state: string; displayName?: string; since?: string;
 route('GET', /^\/api\/garmin\/bridge$/, () => {
   const me = currentUser()
   if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
-  if (!db().garminBridgeEnabled) return err(404, 'NOT_FOUND', 'Route inconnue.')
-  return json(bridgeState() ?? { state: 'disconnected' })
+  // The administrator has not opened the bridge: nothing to offer, and no error either.
+  if (!db().garminBridgeEnabled) return json({ state: 'disconnected', available: false })
+  return json({ available: true, ...(bridgeState() ?? { state: 'disconnected' }) })
 })
 route('POST', /^\/api\/garmin\/bridge\/login$/, ({ init }) => {
   const me = currentUser()

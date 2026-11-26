@@ -4,7 +4,7 @@
 // It exists because the Personal API (§11.3, docs/GARMIN_API.md) is read-only: `/workout-service/*`
 // answers 404/403 there. This bridge is experimental by design: an unofficial API, a real risk of
 // account suspension, and a flow that can break without notice. It is disabled by default, behind
-// two switches (STRIDE_GARMIN_BRIDGE and the admin setting), and it is isolated on purpose:
+// one admin switch, and it is isolated on purpose:
 //
 //   - no import of `domain`, `store` or `workout` — the caller converts a session into the Garmin
 //     workout JSON, this package only speaks HTTP and OAuth;
@@ -80,6 +80,9 @@ type Status struct {
 	Message     string `json:"message,omitempty"`
 	// Locked is the domain's circuit breaker: repeated failures pause the bridge for a while.
 	Locked bool `json:"locked,omitempty"`
+	// Available says whether the instance allows the bridge at all (the administrator switched it
+	// on). False keeps the settings card hidden: nothing to offer, nothing to explain.
+	Available bool `json:"available"`
 }
 
 // PushRequest is one workout to send. Payload is the Garmin workout JSON, built by the caller with

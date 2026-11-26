@@ -24,8 +24,7 @@ import (
 // boundary: token storage (encrypted, own provider row), the publisher the domain talks to, the
 // per-user lock, the circuit breaker and the notifications.
 //
-// The whole feature is gated by two switches that must both be true: STRIDE_GARMIN_BRIDGE and the
-// admin setting `garminBridgeEnabled`.
+// The whole feature is gated by one switch, the admin setting `garminBridgeEnabled`.
 
 const (
 	// bridgeProvider is the provider_connections row holding the sealed tokens: never the same row
@@ -71,28 +70,29 @@ func (b bridgeTokens) Delete(ctx context.Context, uid int64) error {
 	return b.s.deps.Store.DeleteBridgeTokens(ctx, uid)
 }
 
-// bridgeService returns the gateway, or nil when either switch is off. A nil gateway is the kill
-// switch: no routes, no client, no network call.
+// bridgeService returns the gateway when the admin switch is on. Off means off: no caller may use
+// the client, and the routes answer 409 rather than 404 — the feature exists, it is disabled.
 func (s *Services) bridgeService(ctx context.Context) *garminbridge.Service {
-	if s.bridge == nil || s.deps.Store == nil {
-		return nil
-	}
-	if !s.deps.Store.GarminBridgeEnabled(ctx) {
+	if s.bridge == nil || s.deps.Store == nil || !s.deps.Store.GarminBridgeEnabled(ctx) {
 		return nil
 	}
 	return s.bridge
 }
 
-// BridgeAvailable reports whether the bridge is switched on for this instance.
+// BridgeAvailable reports whether an administrator switched the bridge on for this instance.
 func (s *Services) BridgeAvailable(ctx context.Context) bool { return s.bridgeService(ctx) != nil }
 
 // BridgeStatus is what the settings card displays. The user switch is the presence of tokens.
+// `Available` tells the interface whether the instance allows the bridge at all, so the card can
+// stay hidden instead of guessing from a 404.
 func (s *Services) BridgeStatus(ctx context.Context, uid int64) garminbridge.Status {
 	svc := s.bridgeService(ctx)
 	if svc == nil {
-		return garminbridge.Status{State: garminbridge.StateDisconnected, Message: "disabled"}
+		return garminbridge.Status{State: garminbridge.StateDisconnected, Available: false}
 	}
-	return svc.Status(ctx, uid)
+	st := svc.Status(ctx, uid)
+	st.Available = true
+	return st
 }
 
 // BridgeLogin starts (or completes) the in-app sign-in. The password is passed straight through and

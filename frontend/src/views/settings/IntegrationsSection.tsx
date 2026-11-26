@@ -103,7 +103,6 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
           />
           <LastError message={g.lastError} />
           <p className="mt-3 text-xs text-ink-3">{t('settings.integrations.garminLimits')}</p>
-          <GarminBridgeCard />
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className="btn btn-ghost" onClick={test} disabled={m.testGarmin.isPending}>
               {m.testGarmin.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
@@ -137,6 +136,9 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
           <GarminKeyForm onConnected={() => toast({ title: t('settings.integrations.garminConnected'), description: t('settings.integrations.syncStarting') })} />
         </div>
       )}
+      {/* Independent of the Personal API key: the bridge signs in with the user's own Garmin
+          account, so the setup must be reachable whether or not the key is configured. */}
+      <GarminBridgeCard />
       <ConfirmDialog
         open={confirm}
         onClose={() => setConfirm(false)}
