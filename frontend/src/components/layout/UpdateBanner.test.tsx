@@ -6,6 +6,7 @@ import { mockFetch } from '../../mocks/server'
 import { clickEl, installDomPolyfills, mountWithProviders, waitFor, type MountedApp } from '../../test/domHarness'
 import { setLang } from '../../i18n/lang'
 import type { Me } from '../../api/types'
+import { NotificationBell } from './NotificationBell'
 import { UpdateBanner } from './UpdateBanner'
 
 // These tests assert the French UI copy.
@@ -86,6 +87,26 @@ describe('UpdateBanner (nouvelle version)', () => {
     mounted = await mountWithProviders(<UpdateBanner me={admin} />)
     await waitFor(() => expect(calls.filter((c) => c === 'GET /api/updates').length).toBe(3))
     expect(banner()).not.toContain('Nouvelle version disponible')
+  })
+
+  it('lands in the notification centre as a localized update entry', async () => {
+    mounted = await mountWithProviders(
+      <>
+        <UpdateBanner me={admin} />
+        <NotificationBell />
+      </>,
+    )
+    await waitFor(() => expect(banner()).toContain('Nouvelle version disponible'))
+    // The notice the route wrote is the same one the panel shows, worded from its code.
+    await clickEl(document.querySelector('button[aria-label^="Notifications"]'))
+    await waitFor(() => expect(document.body.textContent).toContain('La version 4.8.0 est publiée sur GitHub.'))
+    expect(document.body.textContent).toContain('Nouvelle version disponible')
+
+    // Reading it from the centre hides the banner at once (§22): the two share the same cache, so
+    // no new /api/updates call is needed.
+    await clickEl([...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Tout marquer comme lu')) ?? null)
+    await waitFor(() => expect(banner()).not.toContain('Stride 4.8.0 est publiée'))
+    expect(calls.filter((c) => c === 'GET /api/updates').length).toBe(1)
   })
 
   it('never shows and never calls the route for a regular user', async () => {

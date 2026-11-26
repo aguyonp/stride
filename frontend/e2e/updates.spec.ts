@@ -1,39 +1,69 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { assertNoConsoleErrors, trackConsoleErrors } from './helpers'
 
 // 4.8.0 release check (§22, issue #143): the banner above the content, its two actions, and the
-// admin switch that silences it. The mock runs 4.7.0 with a 4.8.0 release published.
+// admin switch that silences it. The mock runs 4.7.0 with a 4.8.0 release published, and the
+// notice it writes feeds the notification centre.
 
-test('announces a newer release and postpones it', async ({ page }) => {
-  const errors = trackConsoleErrors(page)
-  // Deterministic « opens a tab »: record window.open instead of reaching GitHub from the test run.
+/** The unread badge of the bell, or null when every entry is read. */
+async function unreadCount(page: Page): Promise<number | null> {
+  const label = (await page.getByRole('button', { name: /^Notifications(, \d+ unread)?$/ }).getAttribute('aria-label')) ?? ''
+  const m = /(\d+) unread/.exec(label)
+  return m ? Number(m[1]) : null
+}
+
+/** « See on GitHub » opens a tab: record window.open instead of reaching GitHub from the runner. */
+async function recordWindowOpen(page: Page) {
   await page.addInitScript(() => {
     ;(window as unknown as { open: (u: string) => null }).open = (u: string) => {
       ;(window as unknown as { __opened?: string }).__opened = u
       return null
     }
   })
+}
+
+const banner = (page: Page) => page.getByRole('region', { name: 'New version available' })
+
+test('announces a newer release and opens the release page', async ({ page }) => {
+  const errors = trackConsoleErrors(page)
+  await recordWindowOpen(page)
 
   await page.goto('/')
-  const banner = page.getByRole('region', { name: 'New version available' })
-  await expect(banner).toBeVisible()
-  await expect(banner.getByText('Stride 4.8.0 is published (you run 4.7.0).')).toBeVisible()
+  await expect(banner(page)).toBeVisible()
+  await expect(banner(page).getByText('Stride 4.8.0 is published (you run 4.7.0).')).toBeVisible()
 
-  // « See on GitHub » targets the constant repository URL, in a new tab.
-  const link = banner.getByRole('button', { name: 'See on GitHub' })
-  await expect(link).toBeVisible()
-  await link.click()
+  // The notice exists in the centre (the badge caught up), and opening the release reads it.
+  await expect.poll(() => unreadCount(page)).toBe(3)
+  await banner(page).getByRole('button', { name: 'See on GitHub' }).click()
   expect(await page.evaluate(() => (window as unknown as { __opened?: string }).__opened)).toBe(
     'https://github.com/aguyonp/stride/releases/tag/4.8.0',
   )
+  await expect.poll(() => unreadCount(page)).toBe(2)
+  // Read means hidden, and it stays hidden after a reload.
+  await expect(banner(page)).toHaveCount(0)
+  await page.reload()
+  await expect(banner(page)).toHaveCount(0)
 
-  // « Later » hides it without marking the notice read: the centre still has it unread.
+  assertNoConsoleErrors(errors)
+})
+
+test('« Later » postpones the banner without reading the notice', async ({ page }) => {
+  const errors = trackConsoleErrors(page)
+
   await page.goto('/')
-  await page.getByRole('region', { name: 'New version available' }).getByRole('button', { name: 'Later' }).click()
-  await expect(page.getByRole('region', { name: 'New version available' })).toHaveCount(0)
-  await page.getByRole('button', { name: /Notifications/ }).click()
-  const panel = page.getByRole('dialog', { name: 'Notifications' })
-  await expect(panel.getByText('New version available')).toBeVisible()
+  await expect(banner(page)).toBeVisible()
+  await expect.poll(() => unreadCount(page)).toBe(3)
+
+  await banner(page).getByRole('button', { name: 'Later' }).click()
+  await expect(banner(page)).toHaveCount(0)
+  // Nothing was read: the notice is still unread, and the history still lists it.
+  expect(await unreadCount(page)).toBe(3)
+  await page.getByRole('button', { name: /^Notifications/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Notifications' }).getByText('New version available')).toBeVisible()
+
+  // Postponed for the visit; a later release would show up again.
+  await page.reload()
+  await expect(banner(page)).toHaveCount(0)
 
   assertNoConsoleErrors(errors)
 })
@@ -50,7 +80,7 @@ test('the admin switch silences the check', async ({ page }) => {
 
   // Reload: the setting survived, and the banner is gone.
   await page.goto('/')
-  await expect(page.getByRole('region', { name: 'New version available' })).toHaveCount(0)
+  await expect(banner(page)).toHaveCount(0)
 
   assertNoConsoleErrors(errors)
 })

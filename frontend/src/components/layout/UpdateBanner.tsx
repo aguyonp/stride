@@ -1,6 +1,7 @@
 import { Download, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useInboxMutations, useUpdates } from '../../api/queries'
+import { useQueryClient } from '@tanstack/react-query'
+import { qk, useInbox, useInboxMutations, useUpdates } from '../../api/queries'
 import type { Me } from '../../api/types'
 import { t } from '../../i18n'
 
@@ -16,6 +17,8 @@ export function UpdateBanner({ me }: { me: Me }) {
   const admin = me.role === 'admin'
   const updates = useUpdates(admin)
   const inbox = useInboxMutations()
+  const inboxPage = useInbox(admin)
+  const qc = useQueryClient()
   const [dismissed, setDismissed] = useState(false)
 
   // A new release must be able to show up after a « Plus tard » on a previous one.
@@ -28,8 +31,19 @@ export function UpdateBanner({ me }: { me: Me }) {
     }
   }, [updates.data?.latest])
 
+  // The check itself writes the notice (§22): the badge must show it even before the SSE event of
+  // a tab that was already open — and on a build without a stream.
+  const noticeID = updates.data?.notificationId
+  useEffect(() => {
+    if (noticeID) void qc.invalidateQueries({ queryKey: qk.inbox })
+  }, [noticeID, qc])
+
   const st = updates.data
-  if (!admin || !st?.available || st.read || dismissed || !st.url) return null
+  // The centre is the source of truth for « read »: reading the notice there — or opening it from
+  // the panel — hides the banner at once, without waiting for the next check.
+  const entry = inboxPage.data?.items.find((e) => e.id === st?.notificationId)
+  const read = !!st?.read || !!entry?.readAt
+  if (!admin || !st?.available || read || dismissed || !st.url) return null
 
   const later = () => {
     setDismissed(true)
