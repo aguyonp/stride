@@ -26,6 +26,13 @@ import (
 // memStore keeps the tokens in memory only: this tool must not leave a session behind.
 type memStore struct{ t *garminbridge.Tokens }
 
+// stdoutLog shows the gateway's warnings — the failing step, the HTTP status and Garmin's own error
+// line. That is the whole point of the tool.
+type stdoutLog struct{}
+
+func (stdoutLog) Info(msg string, args ...any) { fmt.Printf("  · %s %v\n", msg, args) }
+func (stdoutLog) Warn(msg string, args ...any) { fmt.Printf("  ! %s %v\n", msg, args) }
+
 func (m *memStore) Load(context.Context, int64) (*garminbridge.Tokens, error) { return m.t, nil }
 func (m *memStore) Save(_ context.Context, _ int64, t garminbridge.Tokens) error {
 	m.t = &t
@@ -39,7 +46,7 @@ func main() {
 	email := prompt("E-mail Garmin : ")
 	password := promptHidden("Mot de passe     : ")
 
-	svc := garminbridge.New(garminbridge.Options{Store: &memStore{}})
+	svc := garminbridge.New(garminbridge.Options{Store: &memStore{}, Log: stdoutLog{}})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 

@@ -193,7 +193,7 @@ func (s *Service) finishLogin(ctx context.Context, userID int64, sess *session, 
 		return LoginResult{State: stateOfError(err)}, err
 	}
 	s.dropPending(userID)
-	tok, err := s.exchange(ctx, ticket, "connexion")
+	tok, err := s.exchange(ctx, ticket, "connexion", sess)
 	if err != nil {
 		return LoginResult{State: stateOfError(err)}, stepErr(stepTokens, err)
 	}
@@ -253,7 +253,7 @@ func (s *Service) serviceTicket(ctx context.Context, sess *session, res *http.Re
 //
 // A refresh replays the stored OAuth1 token instead of the first hop. Posting the ticket straight to
 // exchange/user/2.0 — what this used to do — is refused now.
-func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, error) {
+func (s *Service) exchange(ctx context.Context, ticket, op string, sess *session) (*Tokens, error) {
 	login := true
 	var key, secret string
 	if strings.HasPrefix(ticket, "oauth:") {
@@ -265,7 +265,7 @@ func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, err
 		login = false
 	} else {
 		var err error
-		key, secret, err = s.preauthorized(ctx, ticket)
+		key, secret, err = s.preauthorized(ctx, ticket, sess)
 		if err != nil {
 			return nil, err
 		}
@@ -285,7 +285,13 @@ func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, err
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", hdr)
 	req.Header.Set("User-Agent", oauthUserAgent)
-	res, err := s.client.Do(req)
+	// The ticket belongs to the SSO session: Garmin binds it to those cookies, so the exchange runs
+	// on the same jar (a bare client gets a 401 on a perfectly valid ticket).
+	cli := s.client
+	if sess != nil {
+		cli = sess.cli
+	}
+	res, err := cli.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -324,14 +330,15 @@ func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, err
 
 // preauthorized trades a service ticket for an OAuth1 token: a consumer-signed GET whose answer is
 // the token pair, form-encoded.
-func (s *Service) preauthorized(ctx context.Context, ticket string) (key, secret string, err error) {
-	params := url.Values{}
-	params.Set("ticket", ticket)
-	// garth's shape: the mobile login URL of the same Garmin domain as the API
-	// (connectapi.garmin.com → mobile.integration.garmin.com/gcm/android).
+func (s *Service) preauthorized(ctx context.Context, ticket string, sess *session) (key, secret string, err error) {
+	// `ticket` + `service` (+ accepts-mfa-tokens), and nothing else: Garmin answers
+	// « 'service' and 'ticket' parameters are both required » without the service, and rejects the
+	// request shape when an unknown parameter (login-url) rides along.
 	domain := strings.TrimPrefix(strings.TrimPrefix(s.opt.APIBase, "https://"), "http://")
 	domain = strings.TrimPrefix(domain, "connectapi.")
-	params.Set("login-url", "https://mobile.integration."+domain+"/gcm/android")
+	params := url.Values{}
+	params.Set("ticket", ticket)
+	params.Set("service", "https://mobile.integration."+domain+"/gcm/android")
 	params.Set("accepts-mfa-tokens", "true")
 	base := s.opt.APIBase + "/oauth-service/oauth/preauthorized"
 	hdr := oauth1Header(http.MethodGet, base, params, s.opt.ConsumerKey, s.opt.ConsumerSecret, "", "", s.opt.Now())
@@ -341,7 +348,13 @@ func (s *Service) preauthorized(ctx context.Context, ticket string) (key, secret
 	}
 	req.Header.Set("Authorization", hdr)
 	req.Header.Set("User-Agent", oauthUserAgent)
-	res, err := s.client.Do(req)
+	// The ticket belongs to the SSO session: Garmin binds it to those cookies, so the exchange runs
+	// on the same jar (a bare client gets a 401 on a perfectly valid ticket).
+	cli := s.client
+	if sess != nil {
+		cli = sess.cli
+	}
+	res, err := cli.Do(req)
 	if err != nil {
 		return "", "", err
 	}
@@ -354,7 +367,8 @@ func (s *Service) preauthorized(ctx context.Context, ticket string) (key, secret
 		return "", "", ErrBlocked
 	}
 	if res.StatusCode != http.StatusOK {
-		s.log().Warn("🔗 Pont Garmin : ticket de service refusé", "status", res.StatusCode)
+		s.log().Warn("🔗 Pont Garmin : ticket de service refusé",
+			"status", res.StatusCode, "reponse", excerpt(body))
 		// The status travels with the error: « 401 » and « 200 but not a token pair » are two
 		// different bugs, and the message is all a field report shows.
 		return "", "", fmt.Errorf("%w (préautorisation HTTP %d)", ErrCredentials, res.StatusCode)
@@ -467,6 +481,16 @@ func (s *Service) requestMFACode(ctx context.Context, userID int64, sess *sessio
 		return
 	}
 	s.log().Info("🔗 Pont Garmin : code demandé à Garmin", "user", userID, "methode", method)
+}
+
+// excerpt keeps the first line of a body that belongs to nobody's account (the OAuth error pages say
+// « invalid signature » or « invalid ticket »), for the log only.
+func excerpt(body []byte) string {
+	s := strings.Join(strings.Fields(string(body)), " ")
+	if len(s) > 160 {
+		s = s[:160] + "…"
+	}
+	return s
 }
 
 // trace writes what Garmin actually answered when a sign-in stops, in booleans and a status: enough

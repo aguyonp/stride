@@ -130,8 +130,13 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 		if strings.Contains(auth, "oauth_token=") {
 			t.Errorf("preauthorized is consumer-signed, no token: %q", auth)
 		}
-		if r.URL.Query().Get("ticket") == "" || r.URL.Query().Get("accepts-mfa-tokens") != "true" {
+		q := r.URL.Query()
+		// Garmin's own words: « 'service' and 'ticket' parameters are both required ».
+		if q.Get("ticket") == "" || q.Get("service") == "" || q.Get("accepts-mfa-tokens") != "true" {
 			t.Errorf("preauthorized query: %q", r.URL.RawQuery)
+		}
+		if q.Get("login-url") != "" {
+			t.Errorf("login-url makes Garmin reject the request: %q", r.URL.RawQuery)
 		}
 		fmt.Fprint(w, `oauth_token=oauth1-token&oauth_token_secret=oauth1-secret`)
 	})
