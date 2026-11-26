@@ -244,6 +244,12 @@ func (s *Service) Status(ctx context.Context, userID int64) Status {
 		return Status{State: StateDisconnected}
 	}
 	if t == nil || t.AccessToken == "" {
+		// The password step was already accepted and the user owes a code: reporting
+		// « disconnected » here made the code step unreachable — the panel redisplayed the password
+		// form while the pending session waited for a code nobody could type.
+		if s.hasPending(userID) {
+			return Status{State: StateMFA}
+		}
 		return Status{State: StateDisconnected}
 	}
 	if !t.ExpiresAt.IsZero() && s.opt.Now().After(t.ExpiresAt) {
@@ -274,6 +280,21 @@ func (s *Service) takePending(userID int64) (*pendingLogin, bool) {
 		return nil, false
 	}
 	return p, true
+}
+
+// hasPending reports a sign-in waiting for its code, and forgets it once stale.
+func (s *Service) hasPending(userID int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.pending[userID]
+	if !ok {
+		return false
+	}
+	if s.opt.Now().Sub(p.at) > s.opt.MFATTL {
+		delete(s.pending, userID)
+		return false
+	}
+	return true
 }
 
 func (s *Service) keepPending(userID int64, p *pendingLogin) {

@@ -25,12 +25,18 @@ export function GarminBridgeCard() {
   const [confirm, setConfirm] = useState(false)
   const [form, setForm] = useState({ email: '', password: '' })
   const [mfa, setMfa] = useState('')
+  // The failure is shown in the card, not only in a toast: a wrong password must say « wrong
+  // password » under the field, and a code step must be reachable the instant Garmin asks for it.
+  const [error, setError] = useState('')
+  const [awaitingCode, setAwaitingCode] = useState(false)
 
   // Nothing is rendered until the instance answers, and nothing is offered when the administrator
   // has not opened the bridge: `available` is the instance's word, not a guess from an HTTP status.
   if (!bridge.data?.available) return null
   const st = bridge.data
-  const state = st?.state ?? 'disconnected'
+  // A 202 says « code required » before the poll comes back: the form must follow the answer, not
+  // wait for the next GET.
+  const state = awaitingCode ? 'mfa' : (st?.state ?? 'disconnected')
   const busy = m.login.isPending || m.mfa.isPending
 
   const login = () => {
@@ -38,12 +44,22 @@ export function GarminBridgeCard() {
       onSuccess: (r) => {
         // The password is dropped as soon as the answer arrives.
         setForm({ email: form.email, password: '' })
+        setError('')
+        if (r.state === 'mfa') {
+          setAwaitingCode(true)
+          toast({ title: t('settings.bridge.codePendingTitle'), description: t('settings.bridge.codePendingBody') })
+          return
+        }
+        setAwaitingCode(false)
         if (r.state === 'connected') toast({ title: t('settings.bridge.connected'), description: r.displayName, tone: 'success' })
       },
       onError: (e) => {
         setForm((f) => ({ ...f, password: '' }))
-        if (isApiError(e, 'RATE_LIMITED')) toast({ title: t('settings.bridge.blockedTitle'), description: e.message, tone: 'error' })
-        else if (!isApiError(e, 'BAD_REQUEST')) toast({ title: t('settings.bridge.failedTitle'), description: e.message, tone: 'error' })
+        // Always in the card: a 400 is the most common answer and used to say nothing at all.
+        setError(bridgeErrorText(e))
+        // The toast keeps the server's own wording: it names the failing step, which is what makes a
+        // report actionable.
+        if (!isApiError(e, 'BAD_REQUEST')) toast({ title: t('settings.bridge.failedTitle'), description: e.message, tone: 'error' })
       },
     })
   }
@@ -52,10 +68,15 @@ export function GarminBridgeCard() {
     m.mfa.mutate(mfa, {
       onSuccess: (r) => {
         setMfa('')
-        if (r.state === 'connected') toast({ title: t('settings.bridge.connected'), description: r.displayName, tone: 'success' })
+        setError('')
+        if (r.state === 'connected') {
+          setAwaitingCode(false)
+          toast({ title: t('settings.bridge.connected'), description: r.displayName, tone: 'success' })
+        }
       },
       onError: (e) => {
         setMfa('')
+        setError(bridgeErrorText(e))
         toast({ title: t('settings.bridge.codeRefused'), description: e.message, tone: 'error' })
       },
     })
@@ -123,14 +144,25 @@ export function GarminBridgeCard() {
               >
                 <Field label={t('settings.bridge.email')}>
                   {(p) => (
-                    <input {...p} className="field" type="email" autoComplete="off" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+                    <input {...p} className="field" type="email" autoComplete="off" value={form.email} onChange={(e) => {
+                      setError('')
+                      setForm((f) => ({ ...f, email: e.target.value }))
+                    }} />
                   )}
                 </Field>
                 <Field label={t('settings.bridge.password')} hint={t('settings.bridge.passwordHint')}>
                   {(p) => (
-                    <input {...p} className="field" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+                    <input {...p} className="field" type="password" autoComplete="new-password" value={form.password} onChange={(e) => {
+                      setError('')
+                      setForm((f) => ({ ...f, password: e.target.value }))
+                    }} />
                   )}
                 </Field>
+                {error && (
+                  <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:col-span-2">
+                    {error}
+                  </p>
+                )}
                 <div className="flex gap-2 sm:col-span-2">
                   <button type="submit" className="btn btn-primary h-9 px-3 text-sm" disabled={busy || !form.email || !form.password}>
                     {m.login.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
@@ -155,9 +187,17 @@ export function GarminBridgeCard() {
               <p className="text-xs text-ink-2">{t('settings.bridge.mfaHint')}</p>
               <Field label={t('settings.bridge.code')}>
                 {(p) => (
-                  <input {...p} className="field num max-w-40" inputMode="numeric" autoComplete="one-time-code" value={mfa} onChange={(e) => setMfa(e.target.value.replace(/\D/g, ''))} />
+                  <input {...p} className="field num max-w-40" inputMode="numeric" autoComplete="one-time-code" value={mfa} onChange={(e) => {
+                      setError('')
+                      setMfa(e.target.value.replace(/\D/g, ''))
+                    }} />
                 )}
               </Field>
+              {error && (
+                <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+                  {error}
+                </p>
+              )}
               <div className="flex gap-2">
                 <button type="submit" className="btn btn-primary h-9 px-3 text-sm" disabled={busy || mfa.length < 4}>
                   {m.mfa.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
@@ -169,6 +209,8 @@ export function GarminBridgeCard() {
                   onClick={() => {
                     setConfirm(true)
                     setMfa('')
+                    setError('')
+                    setAwaitingCode(false)
                   }}
                   disabled={busy}
                 >
@@ -198,6 +240,16 @@ export function GarminBridgeCard() {
       </Dialog>
     </div>
   )
+}
+
+// bridgeErrorText translates the stable HTTP code into a sentence the user can act on. The card
+// owns these words because it knows the domain: the server's message is French, names the failing
+// step, and belongs in the toast and the log.
+function bridgeErrorText(e: unknown): string {
+  if (isApiError(e, 'BAD_REQUEST')) return t('settings.bridge.badCredentials')
+  if (isApiError(e, 'RATE_LIMITED')) return t('settings.bridge.blockedBody')
+  if (isApiError(e, 'PROVIDER_UNAVAILABLE')) return t('settings.bridge.flowFailed')
+  return e instanceof Error ? e.message : t('settings.bridge.failedTitle')
 }
 
 function StateBadge({ state, locked }: { state: string; locked?: boolean }) {

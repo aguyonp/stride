@@ -73,7 +73,9 @@ func (s *Service) Login(ctx context.Context, userID int64, email, password strin
 	// The password only travels in this request body, and is dropped with it.
 	form.Set("username", strings.TrimSpace(email))
 	form.Set("password", password)
-	res, body, err := s.post(ctx, sess, s.opt.SSOBase+"/sso/signin", form)
+	// The widget parameters also ride in the query, as the official apps send them. Only the widget
+	// parameters: the e-mail and the password stay in the body, never in a URL that a proxy logs.
+	res, body, err := s.post(ctx, sess, s.opt.SSOBase+"/sso/signin?"+signinParams(s.opt).Encode(), form)
 	if err != nil {
 		return LoginResult{State: StateDisconnected}, err
 	}
@@ -101,7 +103,7 @@ func (s *Service) LoginMFA(ctx context.Context, userID int64, code string) (Logi
 			form.Set(k, vs[0])
 		}
 	}
-	res, body, err := s.post(ctx, p.sess, s.opt.SSOBase+"/sso/verifyMFA/loginEnterMfaCode", form)
+	res, body, err := s.post(ctx, p.sess, s.opt.SSOBase+"/sso/verifyMFA/loginEnterMfaCode?"+p.params.Encode(), form)
 	if err != nil {
 		// Keep the session: a wrong code is worth another try.
 		s.keepPending(userID, p)

@@ -305,7 +305,9 @@ func TestLoginMFAThenCode(t *testing.T) {
 	if !errors.Is(err, ErrMFARequired) {
 		t.Fatalf("first step: %v", err)
 	}
-	if st := svc.Status(context.Background(), 1); st.State != StateDisconnected {
+	// The panel reads this route: right after the password step it must say « mfa », otherwise the
+	// code form never renders.
+	if st := svc.Status(context.Background(), 1); st.State != StateMFA {
 		t.Fatalf("status after MFA request: %+v", st)
 	}
 	res, err := svc.LoginMFA(context.Background(), 1, "123456")
@@ -321,6 +323,53 @@ func TestLoginMFAThenCode(t *testing.T) {
 	// The pending session is consumed: a second code cannot replay it.
 	if _, err := svc.LoginMFA(context.Background(), 1, "123456"); !errors.Is(err, ErrExpired) {
 		t.Fatalf("replayed code: %v", err)
+	}
+}
+
+// After the password step, the state is « mfa » — not « disconnected ». Reporting disconnected
+// redisplayed the password form and made the code step unreachable (field report, 202 ×2 in the log).
+func TestStatusReportsPendingMFA(t *testing.T) {
+	f, srv := newFake(t)
+	st := newMemStore()
+	svc := service(t, f, srv, st)
+	f.signinBody = `<html><title>GARMIN Authentication Application</title><div id="mfa-code-entry"></div></html>`
+
+	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
+		t.Fatalf("login: %v", err)
+	}
+	if got := svc.Status(context.Background(), 1); got.State != StateMFA {
+		t.Fatalf("a pending code must be visible: %+v", got)
+	}
+	// The panel polls this route: it must keep answering mfa until the code arrives.
+	if got := svc.Status(context.Background(), 1); got.State != StateMFA {
+		t.Fatalf("second read: %+v", got)
+	}
+	if res, err := svc.LoginMFA(context.Background(), 1, "123456"); err != nil || res.State != StateConnected {
+		t.Fatalf("code: %+v %v", res, err)
+	}
+	if got := svc.Status(context.Background(), 1); got.State != StateConnected {
+		t.Fatalf("after the code: %+v", got)
+	}
+}
+
+// A code nobody types does not pin the panel in « mfa » forever.
+func TestPendingMFAExpires(t *testing.T) {
+	f, srv := newFake(t)
+	now := time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC)
+	svc := New(Options{
+		HTTP: srv.Client(), Store: newMemStore(), Now: func() time.Time { return now },
+		SSOBase: srv.URL, APIBase: srv.URL,
+	})
+	f.signinBody = `<html><div id="mfa-code-entry"></div></html>`
+	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
+		t.Fatalf("login: %v", err)
+	}
+	if got := svc.Status(context.Background(), 1); got.State != StateMFA {
+		t.Fatalf("pending: %+v", got)
+	}
+	now = now.Add(10 * time.Minute) // beyond the 5-minute window
+	if got := svc.Status(context.Background(), 1); got.State != StateDisconnected {
+		t.Fatalf("stale pending: %+v", got)
 	}
 }
 

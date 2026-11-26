@@ -53,6 +53,30 @@ test('connects the bridge with a code and sends the sessions of the day', async 
   assertNoConsoleErrors(errors)
 })
 
+test('says a wrong password is wrong, in the card and not only in a toast', async ({ page }) => {
+  const errors = trackConsoleErrors(page)
+
+  await page.goto('/admin?tab=system')
+  const bridgeSwitch = page.getByRole('switch', { name: 'Allow the Garmin bridge' })
+  await bridgeSwitch.click()
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'true')
+
+  await page.goto('/settings?tab=integrations')
+  const card = page.getByRole('group', { name: 'Workout push (experimental)' })
+  await card.getByRole('button', { name: 'Enable the bridge' }).click()
+  await card.getByLabel('Garmin e-mail').fill('antoine@example.com')
+  // The demo only accepts « motdepasse »: anything else is Garmin's refusal.
+  await card.getByLabel('Garmin password').fill('faux')
+  await card.getByRole('button', { name: 'Sign in' }).click()
+
+  // The refusal lands in the card, where the field is; the password is dropped at once.
+  await expect(card.getByRole('alert').last()).toContainText('Garmin refused this e-mail or password.')
+  await expect(card.getByLabel('Garmin password')).toHaveValue('')
+  await expect(card.getByText('Disconnected', { exact: true })).toBeVisible()
+
+  assertNoConsoleErrors(errors)
+})
+
 test('the FIT fallback no longer mentions the USB cable', async ({ page }) => {
   const errors = trackConsoleErrors(page)
 

@@ -13,6 +13,8 @@ setLang('fr', { persist: false })
 const text = () => document.body.textContent ?? ''
 const btn = (label: string) => [...document.querySelectorAll('button')].find((b) => b.textContent?.includes(label)) ?? null
 const inputs = () => Array.from(document.querySelectorAll('input')) as HTMLInputElement[]
+// The consent block is an alert too: join them rather than picking the first.
+const alertText = () => [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent).join(' | ')
 
 describe('GarminBridgeCard (pont expérimental)', () => {
   let mounted: MountedApp | null = null
@@ -66,9 +68,13 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await setInputValue(inputs()[0], 'antoine@example.com')
     await setInputValue(inputs()[1], 'faux')
     await clickEl(btn('Se connecter'))
-    // Refused: the password is dropped at once and the state does not move.
+    // Refused: the password is dropped at once, the state does not move, and the card says why — a
+    // silent 400 is the field report (« ça n'a pas mis d'erreur »).
     await waitFor(() => expect(inputs()[1]?.value).toBe(''))
     expect(text()).toContain('Déconnecté')
+    // The card owns the sentence (the server's own wording is French and lives in the toast): on a
+    // French UI it says exactly what Garmin answered.
+    await waitFor(() => expect(alertText()).toContain('Garmin a refusé cet e-mail ou ce mot de passe.'))
     expect(userData(1).garminBridge).toBeUndefined()
 
     await setInputValue(inputs()[1], 'motdepasse')
@@ -104,6 +110,46 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await setInputValue(inputs()[0], '123456')
     await clickEl(btn('Vérifier'))
     await waitFor(() => expect(text()).toContain('Connecté'))
+  })
+
+  it('shows the code step as soon as a 202 answers, even before the status reloads', async () => {
+    // A status route still answering « disconnected » one moment after the 202: the form must
+    // follow the answer, not wait for the next GET (the field report showed an empty form).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/garmin/bridge') && (init?.method ?? 'GET') === 'GET') {
+          return new Response(JSON.stringify({ state: 'disconnected', available: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        return mockFetch(url, init)
+      }),
+    )
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Déconnecté'))
+    await clickEl(btn('Activer le pont'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+    await setInputValue(inputs()[0], 'mfa@example.com')
+    await setInputValue(inputs()[1], 'motdepasse')
+    await clickEl(btn('Se connecter'))
+
+    await waitFor(() => expect(text()).toContain('Code requis'))
+    expect(text()).toContain('Garmin a envoyé un code')
+    expect(inputs().length).toBe(1)
+  })
+
+  it('keeps the code step after a reload', async () => {
+    // The server keeps the pending sign-in: a reload must land on the code field, not on an empty
+    // password form (Status reported « disconnected », so a pending code was unreachable).
+    userData(1).garminBridge = { state: 'mfa' }
+    db().data['1'] = userData(1)
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Code requis'))
+    expect(inputs().length).toBe(1)
+    expect(btn('Activer le pont')).toBeNull()
   })
 
   it('offers a reconnect when the session expired or Garmin blocks', async () => {
