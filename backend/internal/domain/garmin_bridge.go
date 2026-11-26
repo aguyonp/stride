@@ -189,11 +189,11 @@ func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op s
 		detail = errText(err) + " The .FIT file stays available."
 	}
 	s.writeInbox(ctx, uid, inboxInput{
-		Kind:     InboxKindGarminBridge,
-		Level:    level,
-		Title:    title,
-		Detail:   detail,
-		Code:     code,
+		Kind:   InboxKindGarminBridge,
+		Level:  level,
+		Title:  title,
+		Detail: detail,
+		Code:   code,
 		// Straight to the card that can sign in again: an expired session is fixed there and nowhere
 		// else, and the card opens its flow on that section.
 		URL:      "/settings#integrations",
