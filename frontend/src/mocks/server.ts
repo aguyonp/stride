@@ -55,6 +55,11 @@ const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const origin = () => (typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
 
+/** Admin settings payload: registration mode plus the notification-centre retention. */
+function adminSettings() {
+  return { registrationMode: db().registrationMode, inboxRetentionDays: db().inboxRetention.days, inboxRetentionMax: db().inboxRetention.max }
+}
+
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } })
 }
@@ -506,12 +511,44 @@ route('DELETE', /^\/api\/admin\/invitations\/(\d+)$/, ({ params }) => {
   inv.revoked = true
   return noContent()
 })
-route('GET', /^\/api\/admin\/settings$/, () => json({ registrationMode: db().registrationMode }))
+route('GET', /^\/api\/admin\/settings$/, () => json(adminSettings()))
 route('PUT', /^\/api\/admin\/settings$/, ({ init }) => {
-  const mode = parse<{ registrationMode?: string }>(init)?.registrationMode
+  const body = parse<{ registrationMode?: string; inboxRetentionDays?: number; inboxRetentionMax?: number }>(init)
+  // A field left out keeps its current value (the retention panel never resets the mode).
+  const mode = body?.registrationMode ?? db().registrationMode
   if (mode !== 'open' && mode !== 'invite') return err(400, 'BAD_REQUEST', 'Mode d’inscription invalide.')
   db().registrationMode = mode
-  return json({ registrationMode: mode })
+  // Retention is clamped, not rejected, and a missing field keeps its current value (like the API).
+  const r = db().inboxRetention
+  if (body?.inboxRetentionDays) r.days = Math.min(365, Math.max(1, Math.round(body.inboxRetentionDays)))
+  if (body?.inboxRetentionMax) r.max = Math.min(200, Math.max(1, Math.round(body.inboxRetentionMax)))
+  return json(adminSettings())
+})
+
+/* 4.7.0 notification centre (§21, issue #142). */
+route('GET', /^\/api\/inbox$/, ({ url }) => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))
+  const all = [...(userData(me.id).inbox ?? [])].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  return json({ items: all.slice(0, limit), unread: all.filter((e) => !e.readAt).length, hasMore: all.length > limit })
+})
+route('POST', /^\/api\/inbox\/read$/, ({ init }) => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  const ids = parse<{ ids?: number[] }>(init)?.ids ?? []
+  const now = new Date().toISOString()
+  const data = userData(me.id)
+  data.inbox = (data.inbox ?? []).map((e) => (ids.includes(e.id) && !e.readAt ? { ...e, readAt: now } : e))
+  return json({ unread: data.inbox.filter((e) => !e.readAt).length })
+})
+route('POST', /^\/api\/inbox\/read-all$/, () => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  const now = new Date().toISOString()
+  const data = userData(me.id)
+  data.inbox = (data.inbox ?? []).map((e) => (e.readAt ? e : { ...e, readAt: now }))
+  return json({ unread: 0 })
 })
 route('GET', /^\/api\/admin\/meter$/, () => json(meter()))
 route('GET', /^\/api\/admin\/logs$/, ({ url }) => {

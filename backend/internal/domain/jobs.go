@@ -428,7 +428,7 @@ func mapAlertLevel(l string) string {
 }
 
 func (s *Services) emitAlert(ctx context.Context, uid int64, activityID *int64, date, level, code, title, detail string) {
-	if s.deps.SSE == nil || uid <= 0 || code == "" {
+	if uid <= 0 || code == "" {
 		return
 	}
 	actPart := "day"
@@ -440,6 +440,22 @@ func (s *Services) emitAlert(ctx context.Context, uid int64, activityID *int64, 
 		return
 	}
 	s.cacheSet(ctx, dedupKey, []byte("1"), 6*time.Hour)
+
+	// The centre keeps what the toast forgets (§21, issue #142): one entry per day, session and
+	// code, refreshed when the alert fires again after the 6 h window.
+	var day *string
+	if date != "" {
+		day = &date
+	}
+	s.writeInbox(ctx, uid, inboxInput{
+		Kind:       InboxKindAlert,
+		Level:      alertInboxLevel(level),
+		Title:      title,
+		Detail:     detail,
+		ActivityID: activityID,
+		Date:       day,
+		DedupKey:   alertInboxKey(date, activityID, code),
+	})
 
 	var idBytes [6]byte
 	_, _ = rand.Read(idBytes[:])
@@ -457,9 +473,6 @@ func (s *Services) emitAlert(ctx context.Context, uid int64, activityID *int64, 
 
 // emitPostSyncAlerts inspects post-sync ACWR, HRV/readiness, and newly synced sessions to push live SSE alerts.
 func (s *Services) emitPostSyncAlerts(ctx context.Context, uid int64, today string, newActivityIDs []int64) {
-	if s.deps.SSE == nil {
-		return
-	}
 	if dv, err := s.DayView(ctx, uid, today); err == nil {
 		for _, al := range dv.Alerts {
 			if al.Level == "warn" || al.Level == "danger" {

@@ -26,6 +26,12 @@ open http://localhost:8080
 
 ## Highlights
 
+**4.7.0**
+- Notification centre: a bell in the header keeps a persistent, per-user history of the alerts and the physio/coach messages — unread badge, history grouped by day, mark one or all as read, click to open the session. The toasts stay the immediate signal; this is what survives a reload.
+- Fed in the domain (no tab needed) by the analysis alerts and every portal write (directive, remark, prescribed session, constraint), deduplicated so an edit updates its entry instead of stacking one, and localized from a stable code (French / English).
+- Admin › Invitations gains the retention: days kept and entries per user (clamped, purged on change and by the daily maintenance).
+- Tests: domain (dedup, retention, purge), API (isolation, idempotent reads), admin (clamping), Vitest (bell, panel, admin card) and a Playwright pass on the real UI.
+
 **4.6.1**
 - Previous / next session arrows work for a session opened from the calendar, deep in the history: the neighbours are queried exactly (`before` cursor down, listing up) instead of being read only from the loaded page.
 - The session picker's calendar header is translated in English too.

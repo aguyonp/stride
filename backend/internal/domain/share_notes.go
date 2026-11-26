@@ -303,7 +303,7 @@ func (s *Services) PutShareDirective(ctx context.Context, token string, in Share
 		l.uid, l.id, l.label, author, role, body, restr, until, now, now); err != nil {
 		return nil, err
 	}
-	s.afterPortalWrite(ctx, l, "directive")
+	s.afterPortalWrite(ctx, l, "directive", 0, "")
 	d, _, err := s.linkNotes(ctx, l.uid, l.id)
 	if err == nil && d == nil {
 		err = ErrNotFound
@@ -321,7 +321,7 @@ func (s *Services) DeleteShareDirective(ctx context.Context, token string) error
 	if err := affectedOrNotFound(res, err); err != nil {
 		return err
 	}
-	s.afterPortalWrite(ctx, l, "directive")
+	s.afterPortalWrite(ctx, l, "directive", 0, "")
 	return nil
 }
 
@@ -348,7 +348,8 @@ func (s *Services) PutShareRemark(ctx context.Context, token string, aid int64, 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.portalActivity(ctx, l, aid); err != nil {
+	act, err := s.portalActivity(ctx, l, aid)
+	if err != nil {
 		return nil, err
 	}
 	body, err := noteBody(in.Body, maxRemarkRunes)
@@ -367,7 +368,7 @@ func (s *Services) PutShareRemark(ctx context.Context, token string, aid int64, 
 		l.uid, l.id, l.label, aid, author, role, body, now, now); err != nil {
 		return nil, err
 	}
-	s.afterPortalWrite(ctx, l, "remark")
+	s.afterPortalWrite(ctx, l, "remark", aid, act.LocalDate)
 	_, remarks, err := s.linkNotes(ctx, l.uid, l.id)
 	if err != nil {
 		return nil, err
@@ -385,7 +386,8 @@ func (s *Services) DeleteShareRemark(ctx context.Context, token string, aid int6
 	if err != nil {
 		return err
 	}
-	if _, err := s.portalActivity(ctx, l, aid); err != nil {
+	act, err := s.portalActivity(ctx, l, aid)
+	if err != nil {
 		return err
 	}
 	res, err := s.db().ExecContext(ctx, `DELETE FROM share_notes WHERE user_id = ? AND share_link_id = ? AND kind = 'remark' AND activity_id = ?`,
@@ -393,7 +395,7 @@ func (s *Services) DeleteShareRemark(ctx context.Context, token string, aid int6
 	if err := affectedOrNotFound(res, err); err != nil {
 		return err
 	}
-	s.afterPortalWrite(ctx, l, "remark")
+	s.afterPortalWrite(ctx, l, "remark", aid, act.LocalDate)
 	return nil
 }
 
@@ -414,9 +416,22 @@ func (s *Services) dropOwnerShareCache(ctx context.Context, uid int64) {
 	}
 }
 
-// afterPortalWrite invalidates the public views of the owner and tells them over SSE.
-func (s *Services) afterPortalWrite(ctx context.Context, l shareLinkRow, kind string) {
+// afterPortalWrite invalidates the public views of the owner, tells them over SSE and records the
+// write in their notification centre (§21). activityID/date are the target of a remark (0/"" when
+// the write is not about one session).
+func (s *Services) afterPortalWrite(ctx context.Context, l shareLinkRow, kind string, activityID int64, date string) {
 	s.dropOwnerShareCache(ctx, l.uid)
+	// The panel localizes from `code`; the stored title and detail are the language-neutral parts
+	// (English fallback, then the link label the physio chose).
+	in := inboxInput{Kind: InboxKindShare, Level: "info", Title: shareInboxTitle(kind), Code: kind,
+		Detail: strings.TrimSpace(l.label), DedupKey: shareInboxKey(l.id, activityID, kind)}
+	if activityID > 0 {
+		in.ActivityID = &activityID
+	}
+	if date != "" {
+		in.Date = &date
+	}
+	s.writeInbox(ctx, l.uid, in)
 	if s.deps.SSE != nil {
 		s.deps.SSE.PublishToUser(l.uid, sse.EventShareUpdated, sse.ShareUpdatedEvent{Kind: kind, LinkID: l.id})
 	}

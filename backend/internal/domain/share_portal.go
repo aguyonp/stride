@@ -92,7 +92,7 @@ func (s *Services) CreateSharePlanned(ctx context.Context, token string, body []
 	if err := s.repo().CreatePlanned(ctx, l.uid, &ps); err != nil {
 		return ps, err
 	}
-	s.afterPortalWrite(ctx, l, "plan")
+	s.afterPortalWrite(ctx, l, "plan", 0, "")
 	return s.plannedWithMatch(ctx, l.uid, ps.ID)
 }
 
@@ -124,7 +124,7 @@ func (s *Services) PatchSharePlanned(ctx context.Context, token string, id int64
 	if err := s.repo().UpdatePlanned(ctx, l.uid, &ps); err != nil {
 		return ps, repoErr(err)
 	}
-	s.afterPortalWrite(ctx, l, "plan")
+	s.afterPortalWrite(ctx, l, "plan", 0, "")
 	return s.plannedWithMatch(ctx, l.uid, id)
 }
 
@@ -141,7 +141,7 @@ func (s *Services) DeleteSharePlanned(ctx context.Context, token string, id int6
 	if err := repoErr(s.repo().DeletePlanned(ctx, l.uid, id)); err != nil {
 		return err
 	}
-	s.afterPortalWrite(ctx, l, "plan")
+	s.afterPortalWrite(ctx, l, "plan", 0, "")
 	return nil
 }
 
@@ -165,7 +165,7 @@ func (s *Services) CreateShareEvent(ctx context.Context, token string, body []by
 	if err := s.repo().CreateEvent(ctx, l.uid, &e); err != nil {
 		return e, err
 	}
-	s.afterPortalWrite(ctx, l, "event")
+	s.afterPortalWrite(ctx, l, "event", 0, "")
 	return e, nil
 }
 
@@ -197,7 +197,7 @@ func (s *Services) PatchShareEvent(ctx context.Context, token string, id int64, 
 	if err := repoErr(s.repo().UpdateEvent(ctx, l.uid, &e)); err != nil {
 		return e, err
 	}
-	s.afterPortalWrite(ctx, l, "event")
+	s.afterPortalWrite(ctx, l, "event", 0, "")
 	return s.repo().Event(ctx, l.uid, id)
 }
 
@@ -214,7 +214,7 @@ func (s *Services) DeleteShareEvent(ctx context.Context, token string, id int64)
 	if err := repoErr(s.repo().DeleteEvent(ctx, l.uid, id)); err != nil {
 		return err
 	}
-	s.afterPortalWrite(ctx, l, "event")
+	s.afterPortalWrite(ctx, l, "event", 0, "")
 	return nil
 }
 

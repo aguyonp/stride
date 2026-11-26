@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { IS_MOCK } from '../../api/client'
 import { invalidateDomain, qk, qk4, useJobs } from '../../api/queries'
 import { qk42, SHARE_UPDATE_ROOTS } from '../../api/queriesV42'
-import type { JobListResponse, JobState, StrideStreamEventMap } from '../../api/types'
+import type { InboxPage, JobListResponse, JobState, StrideStreamEventMap } from '../../api/types'
 import { emitStreamEvent, setStreamConnected, subscribeStreamEvent } from '../../state/events'
 import { useToast } from '../ui/Toast'
 import { t } from '../../i18n'
@@ -33,6 +33,8 @@ const STREAM_EVENTS: (keyof StrideStreamEventMap)[] = [
   'llm.token',
   'llm.done',
   'share.updated',
+  'notification.created',
+  'notification.updated',
 ]
 
 const SHARE_KINDS: StrideStreamEventMap['share.updated']['kind'][] = ['directive', 'remark', 'plan', 'event']
@@ -101,6 +103,13 @@ export function EventStreamController({ userId }: { userId: number }) {
         if (SHARE_KINDS.includes(ev.kind))
           toast({ title: t(`layout.stream.share.${ev.kind}`), description: ev.kind === 'plan' || ev.kind === 'event' ? t('layout.stream.visiblePlan') : t('layout.stream.visibleHealth'), tone: 'info' })
       }),
+
+      // The centre (§21) refreshes from the server event: the entry itself, or the new unread count
+      // after a read from another tab. No toast here — `alert.triggered` and `share.updated` own that.
+      subscribeStreamEvent('notification.created', () => void qc.invalidateQueries({ queryKey: qk.inbox })),
+      subscribeStreamEvent('notification.updated', (ev) =>
+        qc.setQueryData<InboxPage>(qk.inbox, (old) => (old ? { ...old, unread: ev.unread } : old)),
+      ),
 
       subscribeStreamEvent('llm.done', (done) => {
         const a = done.analysis

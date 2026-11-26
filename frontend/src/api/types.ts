@@ -88,6 +88,9 @@ export interface InvitationCreated {
 }
 export interface AdminSettings {
   registrationMode: RegistrationMode
+  /** Notification-centre retention (issue #142): days kept, and entries per user. */
+  inboxRetentionDays: number
+  inboxRetentionMax: number
 }
 
 /** WebAuthn options are opaque JSON for the UI; @simplewebauthn/browser consumes them. */
@@ -1173,6 +1176,34 @@ interface StreamShareUpdatedEvent {
   linkId: number
 }
 
+/** Notification centre (§21): the persistent memory of the alerts and portal writes. */
+export type InboxKind = 'alert' | 'share' | 'update'
+export type InboxLevel = 'success' | 'info' | 'warn' | 'error'
+export interface InboxEntry {
+  id: number
+  kind: InboxKind
+  level: InboxLevel
+  /** English fallback: the panel localizes from `code` when it knows it (§15.2). */
+  title: string
+  /** share kind | alert code | release version. */
+  code?: string
+  detail: string
+  activityId?: number
+  date?: string
+  url?: string
+  createdAt: string
+  readAt?: string
+}
+export interface InboxPage {
+  items: InboxEntry[]
+  unread: number
+  hasMore: boolean
+}
+export interface StreamNotificationEvent {
+  entry?: InboxEntry
+  unread: number
+}
+
 export interface StrideStreamEventMap {
   connected: StreamConnectedEvent
   'job.updated': JobStatus
@@ -1181,6 +1212,8 @@ export interface StrideStreamEventMap {
   'llm.token': StreamLLMTokenEvent
   'llm.done': StreamLLMDoneEvent
   'share.updated': StreamShareUpdatedEvent
+  'notification.created': StreamNotificationEvent
+  'notification.updated': StreamNotificationEvent
 }
 
 export type PhaseType = 'foundation' | 'build' | 'threshold' | 'specific' | 'assimilation' | 'taper' | 'recovery'

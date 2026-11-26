@@ -163,9 +163,12 @@ func TestV3ReconciliationAndMetrics(t *testing.T) {
 	if !strings.Contains(rep, "Efficience aérobie (EF) :** ") || !strings.Contains(rep, "Charge d'impact cumulée :** ") {
 		t.Fatalf("report additions missing: %s", rep)
 	}
+	// Two points: the fused session and the second run, which the post-sync alert pass bundles
+	// (`ActivityView` sets `complete`/`final`) — the notification centre (§21) keeps that pass
+	// running without a stream, so the second run is complete here too.
 	var trend m
-	if code, body := e.do(1, "GET", "/api/trends/efficiency?weeks=12", nil, &trend); code != 200 || len(trend["points"].([]any)) != 1 ||
-		len(trend["rollingEfSpeed"].([]any)) != 1 {
+	if code, body := e.do(1, "GET", "/api/trends/efficiency?weeks=12", nil, &trend); code != 200 || len(trend["points"].([]any)) != 2 ||
+		len(trend["rollingEfSpeed"].([]any)) != 2 {
 		t.Fatalf("trend: %d %s", code, body)
 	}
 	if code, _ := e.do(1, "GET", "/api/trends/efficiency?weeks=99", nil, nil); code != 400 {

@@ -7,6 +7,7 @@ import { cn } from '../../lib/cn'
 import { ui } from '../../state/ui'
 import { StrideMark } from '../ui/icons'
 import { isActive, NAV } from './nav'
+import { NotificationBell } from './NotificationBell'
 import { SyncIndicator } from './SyncIndicator'
 import { UserMenu } from './UserMenu'
 import { t } from '../../i18n'
@@ -57,6 +58,7 @@ export function AppHeader({ me }: { me: Me | null }) {
         )}
 
         <div className="col-start-2 flex min-w-0 items-center justify-end gap-1.5 justify-self-end sm:gap-2 lg:col-start-3">
+          {me && <NotificationBell />}
           {me && (
             <button type="button" className="icon-btn" onClick={ui.openCommand} aria-label={t('layout.nav.search')} title={t('layout.nav.searchTitle')}>
               <Search className="size-[1.125rem]" />
