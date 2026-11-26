@@ -194,7 +194,9 @@ func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op s
 		Title:    title,
 		Detail:   detail,
 		Code:     code,
-		URL:      "/settings",
+		// Straight to the card that can sign in again: an expired session is fixed there and nowhere
+		// else, and the card opens its flow on that section.
+		URL:      "/settings#integrations",
 		DedupKey: "garmin_bridge:" + code,
 	})
 }

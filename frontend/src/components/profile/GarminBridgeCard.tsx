@@ -39,11 +39,13 @@ export function GarminBridgeCard() {
   // wait for the next GET.
   const state = awaitingCode ? 'mfa' : (st?.state ?? 'disconnected')
 
-  // A pending code is an unfinished action: reopening the flow on it is what the user came back for.
+  // Two unfinished actions reopen the flow by themselves: a code Garmin already asked for, and an
+  // expired session reached from the notification centre (whose link targets #integrations).
   const pending = st?.state === 'mfa'
+  const expiredFromLink = st?.state === 'expired' && typeof window !== 'undefined' && window.location.hash === '#integrations'
   useEffect(() => {
-    if (pending) setOpen(true)
-  }, [pending])
+    if (pending || expiredFromLink) setOpen(true)
+  }, [pending, expiredFromLink])
 
   // Nothing is rendered until the instance answers, and nothing is offered when the administrator
   // has not opened the bridge: `available` is the instance's word, not a guess from an HTTP status.
@@ -164,8 +166,16 @@ export function GarminBridgeCard() {
         initialFocus={state === 'mfa' ? 'input[inputmode="numeric"]' : 'input[type="email"]'}
       >
         <div className="space-y-3">
+          {/* An expired session is not a first sign-in: the consent was given once, say why the
+              fields are back instead of repeating the warning. */}
+          {state === 'expired' && (
+            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+              {t('settings.bridge.expiredBody')}
+            </p>
+          )}
+
           {/* Consent first: the warning is read before anything can be typed. */}
-          {state !== 'mfa' && (
+          {state !== 'mfa' && state !== 'expired' && (
             <div role="alert" className="rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-xs text-ink-2">
               <p className="font-semibold text-ink">{t('settings.bridge.consentTitle')}</p>
               <ul className="mt-1.5 list-inside list-disc space-y-0.5">

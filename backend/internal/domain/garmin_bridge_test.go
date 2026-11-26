@@ -353,7 +353,7 @@ func TestExpiredBridgeNotifiesAndFallsBackToFIT(t *testing.T) {
 	}
 	found := false
 	for _, e := range page.Items {
-		if e.Kind == InboxKindGarminBridge && e.Code == "GARMIN_BRIDGE_EXPIRED" && e.Level == "warn" && e.URL == "/settings" {
+		if e.Kind == InboxKindGarminBridge && e.Code == "GARMIN_BRIDGE_EXPIRED" && e.Level == "warn" && e.URL == "/settings#integrations" {
 			found = true
 		}
 	}

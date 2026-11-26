@@ -184,6 +184,31 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     expect(password.hasAttribute('data-bwignore')).toBe(true)
   })
 
+  it('reopens the flow on an expired session reached from the notification', async () => {
+    // The notification centre links to /settings#integrations: an expired session must land on the
+    // fields, with the reason, and without repeating the consent the user already gave.
+    userData(1).garminBridge = { state: 'expired' }
+    db().data['1'] = userData(1)
+    // The harness resets the URL, so the hash comes through its own argument.
+    mounted = await mountWithProviders(<GarminBridgeCard />, '/settings#integrations')
+    await waitFor(() => expect(text()).toContain('session Garmin a expiré'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+    expect(text()).toContain('E-mail Garmin')
+    // The reason is stated, and the consent block stays out of a reconnection.
+    expect(document.querySelectorAll('[role="alert"]').length).toBeGreaterThan(0)
+    expect(text()).not.toContain('Avant de continuer')
+  })
+
+  it('keeps the reconnection behind a click when nothing links to it', async () => {
+    userData(1).garminBridge = { state: 'expired' }
+    db().data['1'] = userData(1)
+    mounted = await mountWithProviders(<GarminBridgeCard />, '/settings')
+    await waitFor(() => expect(text()).toContain('Expiré'))
+    expect(inputs().length).toBe(0)
+    await clickEl(btn('Reconnecter'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+  })
+
   it('offers a reconnect when the session expired or Garmin blocks', async () => {
     userData(1).garminBridge = { state: 'expired' }
     db().data['1'] = userData(1)
@@ -191,9 +216,11 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await waitFor(() => expect(text()).toContain('Expiré'))
     expect(text()).toContain('session Garmin a expiré')
     expect(btn('Reconnecter')).not.toBeNull()
-    // The fallback is always stated, in one line in the card and in full in the flow.
+    // The fallback is always stated, in one line in the card.
     expect(text()).toContain('Repli : le fichier .FIT via Garmin Connect Web.')
+    // A reconnection does not replay the consent the user already gave.
     await clickEl(btn('Reconnecter'))
-    await waitFor(() => expect(text()).toContain('importez-le dans Garmin Connect Web'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+    expect(text()).not.toContain('Avant de continuer')
   })
 })

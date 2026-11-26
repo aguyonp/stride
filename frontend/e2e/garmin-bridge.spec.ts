@@ -77,6 +77,38 @@ test('says a wrong password is wrong, in the card and not only in a toast', asyn
   assertNoConsoleErrors(errors)
 })
 
+test('reconnects an expired session from the notification centre', async ({ page }) => {
+  const errors = trackConsoleErrors(page)
+
+  // Open the bridge, then age the session: the mock database is the server's state in this build,
+  // so patching it is how a real 401 on the API would look.
+  await page.goto('/admin?tab=system')
+  const bridgeSwitch = page.getByRole('switch', { name: 'Allow the Garmin bridge' })
+  await bridgeSwitch.click()
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'true')
+  await page.goto('/settings?tab=integrations')
+  await page.evaluate(() => {
+    const raw = window.sessionStorage.getItem('stride.mock.v2')
+    if (!raw) return
+    const db = JSON.parse(raw) as { data?: Record<string, { garminBridge?: unknown }> }
+    const me = db.data?.['1']
+    if (me) me.garminBridge = { state: 'expired' }
+    window.sessionStorage.setItem('stride.mock.v2', JSON.stringify(db))
+  })
+
+  // The notification centre links to the card that can sign in again…
+  await page.goto('/settings#integrations')
+  const card = page.getByRole('group', { name: 'Workout push (experimental)' })
+  await expect(card.getByText('Expired', { exact: true })).toBeVisible()
+  // …and the flow opens there, with the reason, without replaying the consent.
+  await expect(page.getByRole('dialog')).toHaveAttribute('open', '')
+  await expect(page.getByLabel('Garmin e-mail')).toBeVisible()
+  await expect(card.getByText(/The Garmin session expired/).first()).toBeVisible()
+  await expect(page.getByText('Before you continue')).toHaveCount(0)
+
+  assertNoConsoleErrors(errors)
+})
+
 test('the FIT fallback no longer mentions the USB cable', async ({ page }) => {
   const errors = trackConsoleErrors(page)
 
