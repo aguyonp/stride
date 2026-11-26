@@ -99,8 +99,27 @@ export interface UpdateStatus {
   read?: boolean
 }
 
+/** Experimental Garmin Connect bridge (§23, issue #147). */
+export type GarminBridgeState = 'disconnected' | 'connecting' | 'mfa' | 'verifying' | 'connected' | 'expired' | 'blocked'
+export interface GarminBridgeStatus {
+  state: GarminBridgeState
+  displayName?: string
+  since?: string
+  message?: string
+  locked?: boolean
+}
+export interface PushTodayResult {
+  sessionId: number
+  title: string
+  status: 'pushed' | 'unsupported' | 'failed' | 'skipped'
+  workoutId?: number
+  message?: string
+}
+
 export interface AdminSettings {
   registrationMode: RegistrationMode
+  /** Experimental Garmin bridge switch (issue #147), the env variable being the other half. */
+  garminBridgeEnabled: boolean
   /** GitHub release check (issue #143). */
   updateCheckEnabled: boolean
   /** Notification-centre retention (issue #142): days kept, and entries per user. */

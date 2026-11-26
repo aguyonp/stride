@@ -97,6 +97,9 @@ type Settings struct {
 	// UpdateCheckEnabled is the GitHub release check (issue #143). A pointer on input so an absent
 	// field keeps the current value, like the retention pair.
 	UpdateCheckEnabled *bool `json:"updateCheckEnabled,omitempty"`
+	// GarminBridgeEnabled is the admin half of the experimental bridge kill switch (§23, #147); the
+	// env variable STRIDE_GARMIN_BRIDGE is the other half. Two switches, both must be true.
+	GarminBridgeEnabled *bool `json:"garminBridgeEnabled,omitempty"`
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -372,7 +375,9 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	days, max := h.d.Store.InboxRetention(r.Context())
 	enabled := h.d.Store.UpdateCheckEnabled(r.Context())
-	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max, UpdateCheckEnabled: &enabled})
+	bridge := h.d.Store.GarminBridgeEnabled(r.Context())
+	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max,
+		UpdateCheckEnabled: &enabled, GarminBridgeEnabled: &bridge})
 }
 
 // updates answers the release check for an administrator (issue #143). The check is cached on the
@@ -455,6 +460,15 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Experimental Garmin bridge (§23): same « absent keeps the value » rule.
+	bridgeOn := h.d.Store.GarminBridgeEnabled(r.Context())
+	if body.GarminBridgeEnabled != nil {
+		bridgeOn = *body.GarminBridgeEnabled
+		if err := h.d.Store.SetSetting(r.Context(), store.SettingGarminBridgeEnabled, strconv.FormatBool(bridgeOn), h.d.Now()); err != nil {
+			h.internal(w, r, "Mise à jour des réglages", err)
+			return
+		}
+	}
 	if h.d.Domain != nil {
 		if n, err := h.d.Domain.PurgeInbox(r.Context()); err != nil {
 			h.d.Log.Warn("⚠️ Purge du centre de notifications impossible", "err", err.Error())
@@ -463,7 +477,8 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.d.Log.Info("⚙️ Réglages modifiés", "adminId", admin(r).ID, "mode", mode, "inboxDays", days, "inboxMax", max, "updateCheck", enabled)
-	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max, UpdateCheckEnabled: &enabled})
+	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max,
+		UpdateCheckEnabled: &enabled, GarminBridgeEnabled: &bridgeOn})
 }
 
 func (h *Handler) meter(w http.ResponseWriter, _ *http.Request) {

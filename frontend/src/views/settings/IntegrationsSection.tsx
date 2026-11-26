@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { useIntegrationMutations, useIntegrations } from '../../api/queries'
 import type { Integrations } from '../../api/types'
 import { GarminGuide, GarminKeyForm, garminErrorMessage } from '../../components/profile/GarminKeyForm'
+import { GarminBridgeCard } from '../../components/profile/GarminBridgeCard'
 import { ProviderBadge } from '../../components/profile/ProviderBadge'
 import { StravaConnectButton, stravaUnavailable } from '../../components/profile/StravaConnect'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -102,6 +103,7 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
           />
           <LastError message={g.lastError} />
           <p className="mt-3 text-xs text-ink-3">{t('settings.integrations.garminLimits')}</p>
+          <GarminBridgeCard />
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className="btn btn-ghost" onClick={test} disabled={m.testGarmin.isPending}>
               {m.testGarmin.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}

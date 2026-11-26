@@ -199,7 +199,7 @@ func TestSettingsMeterAndCacheFlush(t *testing.T) {
 	_, adminTok := e.user("admin")
 	// The notification-centre retention ships with the defaults (issue #142).
 	if code, body := e.do(adminTok, "GET", "/api/admin/settings", ""); code != 200 ||
-		string(bytes.TrimSpace(body)) != `{"registrationMode":"invite","inboxRetentionDays":10,"inboxRetentionMax":50,"updateCheckEnabled":true}` {
+		string(bytes.TrimSpace(body)) != `{"registrationMode":"invite","inboxRetentionDays":10,"inboxRetentionMax":50,"updateCheckEnabled":true,"garminBridgeEnabled":false}` {
 		t.Fatalf("settings: %d %s", code, body)
 	}
 	if code, _ := e.do(adminTok, "PUT", "/api/admin/settings", `{"registrationMode":"public"}`); code != http.StatusBadRequest {
@@ -224,6 +224,19 @@ func TestSettingsMeterAndCacheFlush(t *testing.T) {
 		!strings.Contains(string(body), `"inboxRetentionDays":3`) || !strings.Contains(string(body), `"registrationMode":"open"`) {
 		t.Fatalf("retention save: %d %s", code, body)
 	}
+	// The experimental bridge switch is off by default and persists false/true like the others.
+	if code, body := e.do(adminTok, "PUT", "/api/admin/settings", `{"garminBridgeEnabled":true}`); code != 200 ||
+		!strings.Contains(string(body), `"garminBridgeEnabled":true`) {
+		t.Fatalf("bridge switch: %d %s", code, body)
+	}
+	if !e.st.GarminBridgeEnabled(context.Background()) {
+		t.Fatal("bridge switch not stored")
+	}
+	if code, body := e.do(adminTok, "PUT", "/api/admin/settings", `{"inboxRetentionDays":4}`); code != 200 ||
+		!strings.Contains(string(body), `"garminBridgeEnabled":true`) {
+		t.Fatalf("bridge switch reset by another field: %d %s", code, body)
+	}
+
 	// A setting left out keeps its value: the retention panel never resets the registration mode.
 	if m, _ := e.st.RegistrationMode(context.Background()); m != "open" {
 		t.Fatalf("retention-only PUT changed the mode: %q", m)

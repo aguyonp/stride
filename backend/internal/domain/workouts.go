@@ -4,16 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
 	"stride/internal/analysis"
-	"stride/internal/apimeter"
 	"stride/internal/athlete"
-	"stride/internal/garmin"
 	"stride/internal/queue"
 	"stride/internal/report"
 	"stride/internal/view"
@@ -25,7 +21,7 @@ const (
 	maxBulkSessions = 120
 	maxBulkPhases   = 12
 	maxCalendarDays = 371
-	unsupportedMsg  = "L'API personnelle Garmin ne permet pas d'envoyer des séances (404) : téléchargez le fichier .FIT de la séance et copiez-le en USB dans GARMIN/NewFiles sur la montre (elle apparaît dans Entraînement › Mes séances)."
+	unsupportedMsg  = "L'API personnelle Garmin ne permet pas d'envoyer des séances (404) : téléchargez le fichier .FIT de la séance, importez-le dans Garmin Connect Web puis « Envoyer vers l'appareil », et synchronisez la montre (la séance apparaît dans Entraînement › Mes séances). Le pont Garmin expérimental, s'il est activé, permet l'envoi direct."
 )
 
 // PushUnsupportedError answers 409 CONFLICT with the session (garmin.status = "unsupported").
@@ -338,76 +334,6 @@ func (s *Services) replacePlan(ctx context.Context, uid int64, removeIds []int64
 
 func capKey(uid int64) string { return userKey(uid, "cap", "garmin_workouts") }
 
-func (s *Services) markUnsupported(ctx context.Context, uid, id int64) error {
-	msg := unsupportedMsg
-	if err := s.repo().SetGarminPush(ctx, uid, id, "unsupported", nil, &msg); err != nil {
-		return repoErr(err)
-	}
-	ps, err := s.plannedWithMatch(ctx, uid, id)
-	if err != nil {
-		return err
-	}
-	return &PushUnsupportedError{Session: ps}
-}
-
-// PushGarmin tries to create the workout in Garmin Connect and schedule it on the session date.
-// The Personal API refusal (404/403) is cached 24 h per user.
-func (s *Services) PushGarmin(ctx context.Context, uid, id int64) (athlete.PlannedSession, error) {
-	r := s.repo()
-	ps, err := r.Planned(ctx, uid, id)
-	if err != nil {
-		return ps, repoErr(err)
-	}
-	if len(ps.Steps) == 0 {
-		return ps, badRequest("Cette séance n'a pas d'étapes structurées à envoyer.")
-	}
-	if ps.Sport != "run" && ps.Sport != "bike" {
-		return ps, badRequest("Seules les séances de course ou de vélo peuvent être envoyées.")
-	}
-	g, err := s.garminClient(ctx, uid)
-	if err != nil {
-		return ps, err
-	}
-	if _, ok := s.cacheGet(ctx, capKey(uid)); ok {
-		return ps, s.markUnsupported(ctx, uid, id)
-	}
-	title := ps.Title
-	if title == "" {
-		title = "Séance Stride " + ps.Date
-	}
-	payload, _ := json.Marshal(workout.GarminWorkout(title, ps.Instructions, ps.Sport, ps.Steps))
-	ctx = apimeter.WithUser(ctx, uid)
-	body, err := g.CreateWorkout(ctx, payload)
-	if st := garmin.Status(err); st == http.StatusNotFound || st == http.StatusForbidden {
-		s.cacheSet(ctx, capKey(uid), []byte("unsupported"), garminCapTTL)
-		s.log.Info("⌚ Envoi de séance refusé par l'API personnelle Garmin (capacité mise en cache 24 h)", "user", uid, "status", st)
-		return ps, s.markUnsupported(ctx, uid, id)
-	}
-	if err != nil {
-		msg := "Échec de l'envoi : " + errText(providerErr(pGarmin, err))
-		_ = r.SetGarminPush(ctx, uid, id, "failed", nil, &msg)
-		return ps, providerErr(pGarmin, err)
-	}
-	var created struct {
-		WorkoutID int64 `json:"workoutId"`
-	}
-	if json.Unmarshal(body, &created) != nil || created.WorkoutID == 0 {
-		msg := "Réponse Garmin inattendue (identifiant de séance absent)."
-		_ = r.SetGarminPush(ctx, uid, id, "failed", nil, &msg)
-		return ps, &ProviderError{Provider: pGarmin, Status: http.StatusOK, Detail: "identifiant de séance absent", Err: errors.New("no workoutId")}
-	}
-	var note *string
-	if _, err := g.ScheduleWorkout(ctx, created.WorkoutID, ps.Date); err != nil {
-		msg := "Séance créée dans Garmin Connect, mais sa planification au " + ps.Date + " a échoué : planifiez-la depuis Garmin Connect."
-		note = &msg
-	}
-	if err := r.SetGarminPush(ctx, uid, id, "pushed", &created.WorkoutID, note); err != nil {
-		return ps, repoErr(err)
-	}
-	s.log.Info("⌚ Séance envoyée vers Garmin Connect", "user", uid)
-	return s.plannedWithMatch(ctx, uid, id)
-}
-
 // WorkoutFIT encodes the planned session as a FIT workout file.
 func (s *Services) WorkoutFIT(ctx context.Context, uid, id int64) ([]byte, string, error) {
 	ps, err := s.repo().Planned(ctx, uid, id)
@@ -425,7 +351,13 @@ func (s *Services) WorkoutFIT(ctx context.Context, uid, id int64) ([]byte, strin
 	if err != nil {
 		return nil, "", err
 	}
-	return b, fmt.Sprintf("stride-%s-%d.fit", ps.Date, ps.ID), nil
+	// The file name carries the day and the sport, as the import checklist says (§23, issue #147):
+	// the session id stays out of it, the watch list only shows a readable name.
+	sport := ps.Sport
+	if sport != "bike" {
+		sport = "run"
+	}
+	return b, fmt.Sprintf("stride-%s-%s.fit", ps.Date, sport), nil
 }
 
 // Calendar returns planned and done sessions and calendar events per day (≤ 371 days).

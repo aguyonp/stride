@@ -23,6 +23,7 @@ import (
 	"stride/internal/domain"
 	"stride/internal/domainapi"
 	"stride/internal/env"
+	"stride/internal/garminbridge"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
 	"stride/internal/secret"
@@ -225,6 +226,10 @@ type env2 struct {
 
 func setup(t *testing.T) *env2 { return setupWith(t, nil, nil) }
 
+// bridgeFactory lets the Garmin bridge tests install a gateway on the domain before the routes are
+// registered (§23). Nil keeps the routes unmounted, as in production without STRIDE_GARMIN_BRIDGE.
+var bridgeFactory func(*domain.Services) *garminbridge.Service
+
 // setupWith lets V3 tests add Garmin routes and adjust the domain dependencies.
 func setupWith(t *testing.T, garminExtra func(*http.ServeMux), deps func(*domain.Deps)) *env2 {
 	t.Helper()
@@ -294,7 +299,12 @@ func setupWith(t *testing.T, garminExtra func(*http.ServeMux), deps func(*domain
 			next.ServeHTTP(w, r)
 		})
 	}
-	domainapi.Register(mux, domainapi.Deps{Services: svc, RequireUser: requireUser, RequireAdmin: requireAdmin, Log: log})
+	var bridge *garminbridge.Service
+	if bridgeFactory != nil {
+		bridge = bridgeFactory(svc)
+		svc.SetGarminBridge(bridge)
+	}
+	domainapi.Register(mux, domainapi.Deps{Services: svc, RequireUser: requireUser, RequireAdmin: requireAdmin, Log: log, Bridge: bridge})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	t.Cleanup(svc.Wait)

@@ -971,3 +971,52 @@ A banner in `AppShell`, under the header and above the content, only for `role =
 - `frontend/src/components/layout/UpdateBanner.test.tsx` — banner and wording for an admin, « See on GitHub » marking read, « Later » hiding without reading, hidden once read or up to date, no call at all for a regular user.
 - `frontend/src/views/admin/InvitationsPanel.test.tsx` — the switch and its two states.
 - `frontend/e2e/updates.spec.ts` — real browser: the banner, the recorded `window.open` URL, « Later », the notice in the centre, and the switch silencing the banner.
+
+## 23. 4.7.0 — Experimental Garmin Connect bridge (issue #147)
+
+The Personal API (§11.3) is read-only: `/workout-service/*` answers 404/403, so a session could only reach the watch with a cable. 4.7.0 removes the cable without pretending the problem is solved: the **.FIT import through Garmin Connect Web** becomes the documented path, and an **experimental, off by default, isolated gateway** to Garmin's *web* API (the one the official app uses) can push a workout directly for the users who accept the risk.
+
+### 23.1 Two switches, one kill
+
+`STRIDE_GARMIN_BRIDGE` (env, default `false`) is the master: without it the gateway is never built, its routes are not mounted (`404`), no client exists and no request leaves the server. The admin setting `garminBridgeEnabled` (default `false`, Admin › Invitations) is the second half: with the env on and the setting off, the routes answer `409` and the card is not offered. Deleting `internal/garminbridge/`, its five routes and its token rows is the whole decommission.
+
+### 23.2 The gateway (`internal/garminbridge`)
+
+A narrow interface — `Login`, `LoginMFA`, `Status`, `Push`, `Disconnect` — and no import of `domain`, `store` or `workout`: the caller converts a planned session into the Garmin workout JSON (`workout.GarminWorkout`, the same payload the Personal API already used), the gateway only speaks HTTP and OAuth.
+
+- **Sign-in**: `sso.garmin.com` form (CSRF field, then `username`/`password`), the service ticket read from the answer or from the redirect that follows, then the OAuth1 → OAuth2 exchange at `connectapi.garmin.com/oauth-service/oauth/exchange/user/2.0` (HMAC-SHA1, the public consumer credentials the open-source Garmin clients ship). Verification is two calls: the social profile and a one-row workout listing.
+- **MFA**: an answer carrying a code challenge (`verifyMFA`, `MFA_REQUIRED`…) returns `ErrMFARequired` and keeps the SSO session **in memory** for five minutes — cookies are never persisted, so a restart during the code simply asks to start over. A wrong code keeps the challenge open; the session is consumed on success.
+- **Blocked**: `429`, `427` and the CAPTCHA pages map to `ErrBlocked`. The gateway never retries in a loop: the UI says so and points at the .FIT.
+- **Tokens**: only the OAuth tokens are persisted, sealed by the caller with the existing per-user AAD (`garmin_web:<uid>:token`), in their own `provider_connections` row — never in the Personal API fields. The password lives for one request: not stored, not logged, not echoed; a test asserts the sealed blob and the answer contain neither.
+- **Refresh**: a `401` replays the exchange with the stored OAuth1 token once; a failure is `ErrExpired`.
+- **Push**: `PUT` when the workout id is known (or when a workout with the deterministic name exists), `POST` otherwise, then the schedule. The name is `«title» · Stride <sessionId> · <date>`, so a second push updates instead of duplicating. A schedule failure is reported, not hidden.
+
+The endpoints, the consumer credentials and the HTTP client are injectable: the whole flow is tested against `httptest` fixtures, and the CI never reaches Garmin. The live HTML is the one thing fixtures cannot prove — hence the experimental label, the off default and the .FIT fallback.
+
+### 23.3 The publisher seam (`domain`)
+
+`WorkoutPublisher` has two implementations: `personal` (the historical path, which keeps `garmin.status = "unsupported"` and its 24 h capability cache) and `web` (the gateway). The domain picks the bridge when it is switched on **and** the user has tokens; otherwise the Personal API, unchanged. Per-user rules:
+
+- one push at a time (`singleflight` on the user), so a double click cannot create two workouts;
+- a breaker: three blocked or expired attempts within ten minutes pause the bridge for fifteen, answering `429` without touching the network; a successful push or a disconnect resets it;
+- the recorded outcome is what answers the API (`pushed`, `unsupported`, `failed`), reloaded after the attempt.
+
+`POST /api/plan/push-today` sends the sessions of a day that have steps and are not pushed yet, serially, under the same lock, and answers one result per session (`pushed`, `skipped` with « déjà envoyée » / « pas d'étapes », `failed`, `unsupported`).
+
+### 23.4 Notifications
+
+Expired session, blocked login and refused push write an entry in the notification centre (§21) with `kind: garmin_bridge`, level `warn`, a stable `code` (`GARMIN_BRIDGE_EXPIRED`, `…_BLOCKED`, `…_PUSH`, `…_MFA`) and a link to the settings. A wrong password or a wrong code stays in the form: it is not history.
+
+### 23.5 Interface
+
+- **Settings › Integrations › Garmin** gains a card « Envoi de séances (expérimental) »: the warning is readable **before** any field exists; « Activer le pont » opens a consent block (unofficial API, suspension risk, one-shot password, .FIT fallback), then the e-mail/password form, then the code step, then the state (`disconnected | mfa | connected | expired | blocked`, plus « en pause » when the breaker is open) and « Déconnecter ». The card is not rendered at all when the instance does not build the gateway.
+- **Planning**: « Envoyer les séances du jour » appears only with a connected bridge (the Personal API cannot push), asks for confirmation, sends and lists the result per session.
+- **.FIT, without a cable**: the session drawer replaces the USB instructions with the three steps (download, import in Garmin Connect Web › Training › Import then « Send to Device », sync the watch) and an « Ouvrir Garmin Connect » link; the file is named `stride-YYYY-MM-DD-<sport>.fit`. This path works with the bridge off, expired or decommissioned.
+
+### 23.6 Tests
+
+- `internal/garminbridge` — OAuth1 against the RFC 5849 vector, percent-encoding, sign-in success (password reaches the SSO, nothing survives in the tokens), MFA then code, replayed code refused, credentials refused, `429`/`427`/CAPTCHA, ticket from the redirect, status states, create then update (no duplicate), lookup by name, recreate after a 404, refresh on `401`, expired without refresh, schedule failure, incomplete request, name identity, disconnect.
+- `internal/domain` — kill switch (no gateway call), publisher choice (personal without tokens), idempotent push through the API, bulk push with skips, breaker after repeated blocks and its reset, expired session → `failed` + notification, disconnect, FIT file name.
+- `internal/domainapi` — routes unmounted without the gateway, `401`/status, wrong password `400`, full login with a fake SSO, sealed blob without the password, disconnect, `409` when the admin switch is off, `push-today` (empty, connected, second run), MFA over HTTP.
+- `internal/store` — token round-trip in the `garmin_web` row, the Personal row untouched, the admin switch defaulting to off.
+- Front — `GarminBridgeCard` (no card without the gateway, warning before the form, wrong password cleared, connect/disconnect, MFA, expired), `PushTodayButton` (hidden without a bridge, per-session summary), `e2e/garmin-bridge.spec.ts` (MFA sign-in, bulk send, disconnect, the .FIT checklist replacing the cable).

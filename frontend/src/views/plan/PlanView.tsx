@@ -24,6 +24,7 @@ import { ratioPct, weekLabel } from '../../components/plan/planFormat'
 import { Card } from '../../components/ui/Card'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { EmptyState, InlineError, PageHeader } from '../../components/ui/Misc'
+import { PushTodayButton } from '../../components/plan/PushTodayButton'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
@@ -293,6 +294,7 @@ export default function PlanView() {
         subtitle={t('plan.view.pageSubtitle')}
         actions={
           <>
+            <PushTodayButton date={today} />
             <button type="button" className="btn btn-ghost" onClick={() => setEventDlg({ date: today, event: null })}>
               <TriangleAlert className="size-4 text-warn" aria-hidden="true" /> {t('plan.view.event')}
             </button>

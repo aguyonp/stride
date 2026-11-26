@@ -35,6 +35,7 @@ import (
 	"stride/internal/egress"
 	"stride/internal/env"
 	"stride/internal/feedback"
+	"stride/internal/garminbridge"
 	"stride/internal/httpapi"
 	"stride/internal/logx"
 	"stride/internal/mcp"
@@ -228,6 +229,14 @@ func run() error {
 		log.Warn("⚠️ Dédoublonnage des activités en échec", "err", err.Error())
 	}
 	dom.SeedFirstAdmin(ctx)
+	// Experimental Garmin Connect bridge (§23, issue #147). Without STRIDE_GARMIN_BRIDGE the gateway
+	// is never built: no client, no routes, no network call.
+	var garminBridge *garminbridge.Service
+	if cfg.GarminBridge {
+		garminBridge = garminbridge.New(garminbridge.Options{Store: dom.BridgeTokenStore(), Log: log})
+		dom.SetGarminBridge(garminBridge)
+		log.Info("🔗 Pont Garmin expérimental activé (API web non officielle, risque de suspension du compte)")
+	}
 	backups := backup.New(backup.Options{Store: st, Sealer: sealer, DataDir: cfg.DataDir, Version: buildinfo.Version, Env: cfg,
 		Metrics: metrics, Log: log, Location: loc})
 	backups.Register(dom.Jobs())
@@ -256,9 +265,10 @@ func run() error {
 			// Release check (§22): one 5 s call per TTL through the egress guard, never the
 			// users' addresses at GitHub.
 			Updates: updates.New(egress.Client(cfg.AllowPrivateEgress, 5*time.Second))}),
-		SSE:      sseHub,
-		Metrics:  metrics,
-		Feedback: feedback.New(feedback.Deps{DB: st.DB, Auth: authSvc, Log: log}),
+		SSE:          sseHub,
+		Metrics:      metrics,
+		Feedback:     feedback.New(feedback.Deps{DB: st.DB, Auth: authSvc, Log: log}),
+		GarminBridge: garminBridge,
 	})
 
 	sched := scheduler.New(scheduler.Options{

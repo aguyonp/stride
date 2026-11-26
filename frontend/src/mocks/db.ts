@@ -78,6 +78,8 @@ export interface UserData {
   mcp?: MockMcpState
   /** 4.7.0 notification centre (§21, issue #142). */
   inbox?: InboxEntry[]
+  /** Experimental Garmin bridge (§23, issue #147): absent = disconnected. */
+  garminBridge?: { state: string; displayName?: string; since?: string; locked?: boolean }
 }
 
 export interface V3Data {
@@ -93,6 +95,8 @@ export interface MockState {
   inboxRetention: { days: number; max: number }
   /** Release check (§22, issue #143): the admin switch and what the fake GitHub answers. */
   updateCheckEnabled: boolean
+  /** Experimental Garmin bridge (§23, issue #147): admin switch + per-user connection state. */
+  garminBridgeEnabled: boolean
   mockRelease: { latest: string; publishedAt: string } | null
   flags: string
   day: string
@@ -350,6 +354,7 @@ function seed(): MockState {
     registrationMode: has('open') ? 'open' : 'invite',
     inboxRetention: { days: 10, max: 50 },
     updateCheckEnabled: true,
+    garminBridgeEnabled: true,
     // The demo runs 4.7.0 with 4.8.0 published: the banner, the notice and « Plus tard » are
     // reachable in the mock build like in a real instance one release behind.
     mockRelease: { latest: '4.8.0', publishedAt: '2026-11-25T10:00:00Z' },

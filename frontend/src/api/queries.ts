@@ -47,6 +47,7 @@ export const qk = {
   activityOlder: (date: string, before: string) => ['activities', 'older', date, before] as const,
   inbox: ['inbox'] as const,
   updates: ['updates'] as const,
+  garminBridge: ['garmin', 'bridge'] as const,
   activity: (id: number) => ['activity', id] as const,
   report: (kind: 'activity' | 'day', ref: number | string, include: string) => ['report', kind, ref, include] as const,
   day: (date: string) => ['day', date] as const,
@@ -315,6 +316,31 @@ export function useOlderActivity(date: string, before: string, enabled = true) {
  */
 export function useUpdates(enabled = true) {
   return useQuery({ queryKey: qk.updates, queryFn: api.updates, enabled, staleTime: 10 * 60_000 })
+}
+
+/** Experimental Garmin bridge (§23, issue #147): state only, no network call server-side. */
+export function useGarminBridge() {
+  // A 404 means the gateway is not built (bridge switched off at the instance level): no retry.
+  return useQuery({
+    queryKey: qk.garminBridge,
+    queryFn: api.garminBridge,
+    staleTime: 30_000,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 2,
+  })
+}
+
+/** Login, MFA and disconnect of the bridge; each refreshes the state and the plan. */
+export function useGarminBridgeMutations() {
+  const qc = useQueryClient()
+  const done = () => {
+    void qc.invalidateQueries({ queryKey: qk.garminBridge })
+    void qc.invalidateQueries({ queryKey: ['plan'] })
+  }
+  return {
+    login: useMutation({ mutationFn: ({ email, password }: { email: string; password: string }) => api.garminBridgeLogin(email, password), onSuccess: done }),
+    mfa: useMutation({ mutationFn: (code: string) => api.garminBridgeMFA(code), onSuccess: done }),
+    disconnect: useMutation({ mutationFn: () => api.garminBridgeDisconnect(), onSuccess: done }),
+  }
 }
 
 /** Notification centre (§21, issue #142): 50 newest entries and the unread badge. */

@@ -109,6 +109,9 @@ import type {
   McpStatus,
   InboxPage,
   UpdateStatus,
+  GarminBridgeStatus,
+  GarminBridgeState,
+  PushTodayResult,
   McpToken,
   McpQuota,
   McpUsage,
@@ -473,6 +476,14 @@ export const api = {
   /* 4.3.0 endpoints (§MCP) */
   mcpStatus: () => json<McpStatus>('/api/mcp'),
   updates: () => json<UpdateStatus>('/api/updates'),
+  garminBridge: () => json<GarminBridgeStatus>('/api/garmin/bridge'),
+  garminBridgeLogin: (email: string, password: string) =>
+    json<{ state: GarminBridgeState; displayName?: string }>('/api/garmin/bridge/login', { method: 'POST', body: { email, password } }),
+  garminBridgeMFA: (code: string) =>
+    json<{ state: GarminBridgeState; displayName?: string }>('/api/garmin/bridge/mfa', { method: 'POST', body: { code } }),
+  garminBridgeDisconnect: () => send('/api/garmin/bridge', { method: 'DELETE' }),
+  pushToday: (date: string) =>
+    json<{ date: string; results: PushTodayResult[] }>('/api/plan/push-today', { method: 'POST', body: { date } }),
   inbox: (limit = 50) => json<InboxPage>(`/api/inbox${qs({ limit })}`),
   markInboxRead: (ids: number[]) => json<{ unread: number }>('/api/inbox/read', { method: 'POST', body: { ids } }),
   markInboxAllRead: () => json<{ unread: number }>('/api/inbox/read-all', { method: 'POST', body: {} }),
