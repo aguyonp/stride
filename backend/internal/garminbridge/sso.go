@@ -245,22 +245,38 @@ func (s *Service) serviceTicket(ctx context.Context, sess *session, res *http.Re
 	return "", stepErr(stepTicket, ErrFlow)
 }
 
-// exchange turns a service ticket into tokens (or replays the stored OAuth1 token to refresh).
+// exchange turns a service ticket into tokens, in the two hops Garmin actually accepts:
+//
+//	GET  oauth-service/oauth/preauthorized?ticket=ST-…  (consumer-signed) → OAuth1 token
+//	POST oauth-service/oauth/exchange/user/2.0          (token-signed)    → OAuth2 access token
+//
+// A refresh replays the stored OAuth1 token instead of the first hop. Posting the ticket straight to
+// exchange/user/2.0 — what this used to do — is refused now.
 func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, error) {
-	base := s.opt.APIBase + "/oauth-service/oauth/exchange/user/2.0"
-	form := url.Values{}
-	form.Set("service_ticket", ticket)
-	secret := ""
+	login := true
+	var key, secret string
 	if strings.HasPrefix(ticket, "oauth:") {
-		// Refresh: the stored OAuth1 token signs its own exchange.
 		parts := strings.SplitN(strings.TrimPrefix(ticket, "oauth:"), ":", 2)
-		if len(parts) == 2 {
-			form = url.Values{}
-			form.Set("oauth_token", parts[0])
-			secret = parts[1]
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return nil, ErrCredentials
+		}
+		key, secret = parts[0], parts[1]
+		login = false
+	} else {
+		var err error
+		key, secret, err = s.preauthorized(ctx, ticket)
+		if err != nil {
+			return nil, err
 		}
 	}
-	hdr := oauth1Header(http.MethodPost, base, form, s.opt.ConsumerKey, s.opt.ConsumerSecret, secret, s.opt.Now())
+
+	base := s.opt.APIBase + "/oauth-service/oauth/exchange/user/2.0"
+	form := url.Values{}
+	if login {
+		// The audience is what makes the answer a Connect token for the mobile API.
+		form.Set("audience", "GARMIN_CONNECT_MOBILE_ANDROID_DI")
+	}
+	hdr := oauth1Header(http.MethodPost, base, form, s.opt.ConsumerKey, s.opt.ConsumerSecret, key, secret, s.opt.Now())
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
@@ -285,43 +301,77 @@ func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, err
 		s.log().Warn("🔗 Pont Garmin : échange du ticket refusé", "op", op, "status", res.StatusCode)
 		return nil, ErrCredentials
 	}
-	// Two shapes are documented by the community clients; accept both.
 	var payload struct {
 		AccessToken string `json:"access_token"`
-		OAuthToken  string `json:"oauth_token"`
-		OAuthSecret string `json:"oauth_token_secret"`
 		ExpiresIn   int64  `json:"expires_in"`
-		OAuth1Token struct {
-			Token  string `json:"oauth_token"`
-			Secret string `json:"oauth_token_secret"`
-		} `json:"oauth1_token"`
-		OAuth2Token struct {
-			AccessToken string `json:"access_token"`
-			ExpiresIn   int64  `json:"expires_in"`
-		} `json:"oauth2_token"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil || payload.AccessToken == "" {
 		return nil, ErrCredentials
 	}
-	at, exp := payload.AccessToken, payload.ExpiresIn
-	rt := payload.OAuthSecret
-	if payload.OAuth2Token.AccessToken != "" {
-		at, exp = payload.OAuth2Token.AccessToken, payload.OAuth2Token.ExpiresIn
-	}
-	if payload.OAuth1Token.Secret != "" {
-		rt = payload.OAuth1Token.Secret
-	}
-	if at == "" {
-		return nil, ErrCredentials
-	}
+	exp := payload.ExpiresIn
 	if exp <= 0 {
-		// Garmin's OAuth2 token lives about a year; keep a conservative default.
 		exp = int64(defaultTokenLifetime / time.Second)
 	}
 	now := s.opt.Now()
-	return &Tokens{AccessToken: at, RefreshToken: rt, CreatedAt: now, ExpiresAt: now.Add(time.Duration(exp) * time.Second)}, nil
+	// The OAuth1 pair is what refreshes the session later: keep both halves.
+	return &Tokens{
+		AccessToken:  payload.AccessToken,
+		RefreshToken: key + ":" + secret,
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(time.Duration(exp) * time.Second),
+	}, nil
 }
 
+// preauthorized trades a service ticket for an OAuth1 token: a consumer-signed GET whose answer is
+// the token pair, form-encoded.
+func (s *Service) preauthorized(ctx context.Context, ticket string) (key, secret string, err error) {
+	params := url.Values{}
+	params.Set("ticket", ticket)
+	// garth's shape: the mobile login URL of the same Garmin domain as the API
+	// (connectapi.garmin.com → mobile.integration.garmin.com/gcm/android).
+	domain := strings.TrimPrefix(strings.TrimPrefix(s.opt.APIBase, "https://"), "http://")
+	domain = strings.TrimPrefix(domain, "connectapi.")
+	params.Set("login-url", "https://mobile.integration."+domain+"/gcm/android")
+	params.Set("accepts-mfa-tokens", "true")
+	base := s.opt.APIBase + "/oauth-service/oauth/preauthorized"
+	hdr := oauth1Header(http.MethodGet, base, params, s.opt.ConsumerKey, s.opt.ConsumerSecret, "", "", s.opt.Now())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+params.Encode(), nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", hdr)
+	req.Header.Set("DI-Backend", "connectapi.garmin.com")
+	s.headers(req)
+	res, err := s.client.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() { _ = res.Body.Close() }()
+	body, err := readBody(res)
+	if err != nil {
+		return "", "", err
+	}
+	if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == 427 {
+		return "", "", ErrBlocked
+	}
+	if res.StatusCode != http.StatusOK {
+		s.log().Warn("🔗 Pont Garmin : ticket de service refusé", "status", res.StatusCode)
+		return "", "", ErrCredentials
+	}
+	values, err := url.ParseQuery(strings.TrimSpace(string(body)))
+	if err != nil {
+		return "", "", ErrCredentials
+	}
+	key, secret = values.Get("oauth_token"), values.Get("oauth_token_secret")
+	if key == "" || secret == "" {
+		// A JSON answer means Garmin changed the shape again: say so instead of « wrong password ».
+		s.trace(0, stepTokens, res, body)
+		return "", "", ErrFlow
+	}
+	return key, secret, nil
+}
+
+// defaultTokenLifetime is assumed when Garmin omits expires_in: a year is what the mobile tokens use.
 const defaultTokenLifetime = 300 * 24 * time.Hour
 
 // verify checks the new tokens against the profile endpoint, then a light workout listing: a token

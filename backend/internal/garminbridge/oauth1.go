@@ -19,9 +19,14 @@ import (
 // header parsing.
 
 // oauth1Header builds the `Authorization: OAuth …` value for body/query params.
-func oauth1Header(method, baseURL string, params url.Values, consumerKey, consumerSecret, tokenSecret string, now time.Time) string {
+func oauth1Header(method, baseURL string, params url.Values, consumerKey, consumerSecret, tokenKey, tokenSecret string, now time.Time) string {
 	oauth := url.Values{}
 	oauth.Set("oauth_consumer_key", consumerKey)
+	if tokenKey != "" {
+		// The resource-owner token: absent on the consumer-signed hops (preauthorized), present on
+		// the user-signed ones (exchange and refresh).
+		oauth.Set("oauth_token", tokenKey)
+	}
 	oauth.Set("oauth_signature_method", "HMAC-SHA1")
 	oauth.Set("oauth_timestamp", strconv.FormatInt(now.Unix(), 10))
 	oauth.Set("oauth_nonce", nonce())

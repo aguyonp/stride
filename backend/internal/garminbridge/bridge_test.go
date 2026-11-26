@@ -50,6 +50,7 @@ type fakeGarmin struct {
 	codeRequestQ       string
 	codeRequestBody    []byte
 	codeRequestReferer string
+	lastAudience       string
 }
 
 func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
@@ -60,7 +61,7 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 		signinCode: 200,
 		mfaBody:    `<!DOCTYPE html><script>var response_url = "https:\/\/sso.garmin.com\/sso\/redirect?ticket=ST-9f8e7d6c5b4a"</script>`,
 		mfaCode:    200,
-		exchange:   `{"oauth_token":"oauth1-token","oauth_token_secret":"oauth1-secret","oauth2_token":{"access_token":"bearer-1","expires_in":31536000}}`,
+		exchange:   `{"access_token":"bearer-1","expires_in":31536000}`,
 		profile:    `{"displayName":"Antoine","userName":"aguyon","profileId":42}`,
 		workouts:   `[]`,
 		createBody: `{"workoutId":4242,"workoutName":"x"}`,
@@ -119,13 +120,32 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 		f.record("GET modern")
 		fmt.Fprint(w, `<html>connect</html>`)
 	})
+	// The ticket is traded for an OAuth1 token first, consumer-signed, form-encoded answer.
+	mux.HandleFunc("GET /oauth-service/oauth/preauthorized", func(w http.ResponseWriter, r *http.Request) {
+		f.record("GET preauthorized")
+		auth := r.Header.Get("Authorization")
+		if strings.Contains(auth, "oauth_token=") {
+			t.Errorf("preauthorized is consumer-signed, no token: %q", auth)
+		}
+		if r.URL.Query().Get("ticket") == "" || r.URL.Query().Get("accepts-mfa-tokens") != "true" {
+			t.Errorf("preauthorized query: %q", r.URL.RawQuery)
+		}
+		fmt.Fprint(w, `oauth_token=oauth1-token&oauth_token_secret=oauth1-secret`)
+	})
 	mux.HandleFunc("POST /oauth-service/oauth/exchange/user/2.0", func(w http.ResponseWriter, r *http.Request) {
 		f.record("POST exchange")
-		// The exchange must be OAuth1-signed with the consumer key.
+		_ = r.ParseForm()
+		// The exchange is signed with the resource-owner token from the hop above.
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "OAuth ") || !strings.Contains(auth, "oauth_consumer_key") || !strings.Contains(auth, "oauth_signature") {
 			t.Errorf("unsigned exchange: %q", auth)
 		}
+		if !strings.Contains(auth, "oauth_token=") {
+			t.Errorf("exchange must carry the OAuth1 token: %q", auth)
+		}
+		f.mu.Lock()
+		f.lastAudience = r.PostFormValue("audience")
+		f.mu.Unlock()
 		f.mu.Lock()
 		f.exchanges++
 		n := f.exchanges
@@ -133,7 +153,7 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 		f.mu.Unlock()
 		if n > 1 && rotated != "" {
 			// The refresh answers a different token, like Garmin does.
-			fmt.Fprintf(w, `{"oauth_token":"oauth1-token","oauth_token_secret":"oauth1-secret","oauth2_token":{"access_token":%q,"expires_in":31536000}}`, rotated)
+			fmt.Fprintf(w, `{"access_token":%q,"expires_in":31536000}`, rotated)
 			return
 		}
 		fmt.Fprint(w, f.exchange)
@@ -312,10 +332,14 @@ func TestLoginSuccess(t *testing.T) {
 		t.Fatalf("password did not reach the SSO form")
 	}
 	tok, _ := st.Load(context.Background(), 1)
-	if tok == nil || tok.AccessToken != "bearer-1" || tok.RefreshToken != "oauth1-secret" || tok.DisplayName != "Antoine" {
+	if tok == nil || tok.AccessToken != "bearer-1" || tok.RefreshToken != "oauth1-token:oauth1-secret" || tok.DisplayName != "Antoine" {
 		t.Fatalf("tokens: %+v", tok)
 	}
 	// The verification really happens: profile, then a workout listing.
+	// The audience is what makes the answer a Connect token: it belongs to the login hop only.
+	if f.lastAudience != "GARMIN_CONNECT_MOBILE_ANDROID_DI" {
+		t.Fatalf("login exchange audience: %q", f.lastAudience)
+	}
 	if !f.has("GET profile") || !f.has("GET workouts") {
 		t.Fatalf("verification calls: %v", f.calls)
 	}
@@ -749,6 +773,13 @@ func TestPushRefreshesOn401(t *testing.T) {
 	tok, _ := st.Load(ctx, 1)
 	if tok.AccessToken == "bearer-1" {
 		t.Fatalf("rotated token not persisted: %+v", tok)
+	}
+	// A refresh replays the stored OAuth1 pair and sends no audience: that is the login hop's mark.
+	if f.lastAudience != "" {
+		t.Fatalf("refresh must not send an audience: %q", f.lastAudience)
+	}
+	if !strings.HasPrefix(tok.RefreshToken, "oauth1-token:") {
+		t.Fatalf("the OAuth1 pair must survive the refresh: %q", tok.RefreshToken)
 	}
 }
 

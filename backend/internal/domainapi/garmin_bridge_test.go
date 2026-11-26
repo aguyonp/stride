@@ -43,8 +43,11 @@ func bridgeFake(t *testing.T) *httptest.Server {
 		}
 		fmt.Fprint(w, `<html><script>var response_url = "/sso/redirect?ticket=ST-4f3e2d1c0b9a"</script></html>`)
 	})
+	mux.HandleFunc("GET /oauth-service/oauth/preauthorized", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `oauth_token=o1&oauth_token_secret=s1`)
+	})
 	mux.HandleFunc("POST /oauth-service/oauth/exchange/user/2.0", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"oauth_token":"o1","oauth_token_secret":"s1","oauth2_token":{"access_token":"bearer-1","expires_in":31536000}}`)
+		fmt.Fprint(w, `{"access_token":"bearer-1","expires_in":31536000}`)
 	})
 	mux.HandleFunc("GET /userprofile-service/socialProfile", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"displayName":"Antoine"}`)

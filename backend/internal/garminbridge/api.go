@@ -66,7 +66,7 @@ func (s *Service) refresh(ctx context.Context, t *Tokens) (*Tokens, error) {
 	if t.RefreshToken == "" {
 		return nil, ErrExpired
 	}
-	fresh, err := s.exchange(ctx, "oauth:"+t.AccessToken+":"+t.RefreshToken, "rafraîchissement")
+	fresh, err := s.exchange(ctx, "oauth:"+t.RefreshToken, "rafraîchissement")
 	if err != nil {
 		return nil, ErrExpired
 	}

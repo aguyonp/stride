@@ -62,7 +62,7 @@ var (
 // they exist and when they expire.
 type Tokens struct {
 	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"` // OAuth1 secret, used to sign the refresh
+	RefreshToken string    `json:"refresh_token"` // OAuth1 pair "token:secret", which signs the refresh
 	CreatedAt    time.Time `json:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	DisplayName  string    `json:"display_name,omitempty"`
