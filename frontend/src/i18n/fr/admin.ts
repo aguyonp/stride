@@ -278,6 +278,13 @@ export default {
     done: 'Traité',
     unreadSr: 'Non lu.',
   },
+  updates: {
+    card: 'Mises à jour',
+    hint: 'Détection d’une release GitHub plus récente que la version installée.',
+    check: 'Vérifier les nouvelles versions',
+    on: 'Une requête au plus toutes les six heures ; bannière et notification pour les administrateurs.',
+    off: 'Aucun appel réseau, aucune bannière, aucune notification.',
+  },
   inbox: {
     retention: 'Centre de notifications',
     retentionHint: 'Historique conservé par utilisateur : les entrées plus anciennes, ou au-delà du nombre maximal, sont supprimées automatiquement.',

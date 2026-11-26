@@ -195,8 +195,3 @@ export function NotificationBell() {
     </>
   )
 }
-
-/** First unread entry of a kind — the release banner (#143) uses it for `update`. */
-export function firstUnread(items: InboxEntry[] | undefined, kind: InboxEntry['kind']): InboxEntry | null {
-  return (items ?? []).find((e) => e.kind === kind && !e.readAt) ?? null
-}

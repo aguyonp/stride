@@ -91,6 +91,9 @@ export interface MockState {
   version: 2
   /** Notification-centre retention, editable from the admin panel. */
   inboxRetention: { days: number; max: number }
+  /** Release check (§22, issue #143): the admin switch and what the fake GitHub answers. */
+  updateCheckEnabled: boolean
+  mockRelease: { latest: string; publishedAt: string } | null
   flags: string
   day: string
   seq: number
@@ -346,6 +349,10 @@ function seed(): MockState {
     sessionUserId: loggedOut ? null : has('user') ? 2 : 1,
     registrationMode: has('open') ? 'open' : 'invite',
     inboxRetention: { days: 10, max: 50 },
+    updateCheckEnabled: true,
+    // The demo runs 4.7.0 with 4.8.0 published: the banner, the notice and « Plus tard » are
+    // reachable in the mock build like in a real instance one release behind.
+    mockRelease: { latest: '4.8.0', publishedAt: '2026-11-25T10:00:00Z' },
     invitations,
     data,
     sync: {

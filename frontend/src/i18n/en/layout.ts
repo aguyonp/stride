@@ -99,6 +99,12 @@ const en: Widen<typeof fr> = {
     lastLive: 'Last live call: {when}',
     syncNow: 'Sync now',
   },
+  updates: {
+    title: 'New version available',
+    body: 'Stride {version} is published (you run {current}).',
+    open: 'See on GitHub',
+    later: 'Later',
+  },
   inbox: {
     title: 'Notifications',
     bell: 'Notifications',

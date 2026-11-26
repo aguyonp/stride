@@ -11,7 +11,7 @@ setLang('fr', { persist: false })
 describe('InvitationsPanel — centre de notifications', () => {
   let mounted: MountedApp | null = null
   let putBody: Record<string, unknown> | null = null
-  let stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50 }
+  let stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50, updateCheckEnabled: true }
 
   // The invitation card also has a number field: the retention ones are the first two.
   const numInputs = () => (Array.from(document.querySelectorAll('input[type="number"]')) as HTMLInputElement[]).slice(0, 2)
@@ -20,7 +20,7 @@ describe('InvitationsPanel — centre de notifications', () => {
 
   beforeEach(() => {
     putBody = null
-    stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50 }
+    stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50, updateCheckEnabled: true }
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
@@ -31,6 +31,7 @@ describe('InvitationsPanel — centre de notifications', () => {
           // The server clamps and echoes the stored values.
           stored = {
             registrationMode: String(putBody.registrationMode ?? stored.registrationMode),
+            updateCheckEnabled: putBody.updateCheckEnabled === undefined ? stored.updateCheckEnabled : !!putBody.updateCheckEnabled,
             inboxRetentionDays: Math.min(365, Math.max(1, Number(putBody.inboxRetentionDays ?? stored.inboxRetentionDays))),
             inboxRetentionMax: Math.min(200, Math.max(1, Number(putBody.inboxRetentionMax ?? stored.inboxRetentionMax))),
           }
@@ -61,6 +62,20 @@ describe('InvitationsPanel — centre de notifications', () => {
     expect(putBody).toMatchObject({ inboxRetentionDays: 3, inboxRetentionMax: 80 })
     await waitFor(() => expect(numInputs().map((i) => i.value)).toEqual(['3', '80']))
     expect(cardSave()?.disabled).toBe(true)
+  })
+
+  it('switches the release check off and on', async () => {
+    mounted = await mountWithProviders(<InvitationsPanel />)
+    await waitFor(() => expect(document.querySelector('button[role="switch"]')?.getAttribute('aria-checked')).toBe('true'))
+    expect(document.body.textContent).toContain('Une requête au plus toutes les six heures')
+
+    await clickEl(document.querySelector('button[role="switch"]'))
+    await waitFor(() => expect(putBody).toMatchObject({ updateCheckEnabled: false }))
+    await waitFor(() => expect(document.querySelector('button[role="switch"]')?.getAttribute('aria-checked')).toBe('false'))
+    expect(document.body.textContent).toContain('Aucun appel réseau, aucune bannière, aucune notification.')
+
+    await clickEl(document.querySelector('button[role="switch"]'))
+    await waitFor(() => expect(putBody).toMatchObject({ updateCheckEnabled: true }))
   })
 
   it('refuses out-of-range values before the call', async () => {

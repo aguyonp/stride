@@ -281,6 +281,13 @@ const en: Widen<typeof fr> = {
     done: 'Handled',
     unreadSr: 'Unread.',
   },
+  updates: {
+    card: 'Updates',
+    hint: 'Detects a newer GitHub release than the installed version.',
+    check: 'Check for new versions',
+    on: 'At most one request every six hours; banner and notification for administrators.',
+    off: 'No network call, no banner, no notification.',
+  },
   inbox: {
     retention: 'Notification centre',
     retentionHint: 'History kept per user: older entries, and those past the maximum, are deleted automatically.',
