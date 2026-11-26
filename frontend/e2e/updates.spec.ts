@@ -15,7 +15,7 @@ test('announces a newer release and postpones it', async ({ page }) => {
   })
 
   await page.goto('/')
-  const banner = page.getByRole('status').filter({ hasText: 'New version available' })
+  const banner = page.getByRole('region', { name: 'New version available' })
   await expect(banner).toBeVisible()
   await expect(banner.getByText('Stride 4.8.0 is published (you run 4.7.0).')).toBeVisible()
 
@@ -29,8 +29,8 @@ test('announces a newer release and postpones it', async ({ page }) => {
 
   // « Later » hides it without marking the notice read: the centre still has it unread.
   await page.goto('/')
-  await page.getByRole('status').filter({ hasText: 'New version available' }).getByRole('button', { name: 'Later' }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'New version available' })).toHaveCount(0)
+  await page.getByRole('region', { name: 'New version available' }).getByRole('button', { name: 'Later' }).click()
+  await expect(page.getByRole('region', { name: 'New version available' })).toHaveCount(0)
   await page.getByRole('button', { name: /Notifications/ }).click()
   const panel = page.getByRole('dialog', { name: 'Notifications' })
   await expect(panel.getByText('New version available')).toBeVisible()
@@ -50,7 +50,7 @@ test('the admin switch silences the check', async ({ page }) => {
 
   // Reload: the setting survived, and the banner is gone.
   await page.goto('/')
-  await expect(page.getByRole('status').filter({ hasText: 'New version available' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'New version available' })).toHaveCount(0)
 
   assertNoConsoleErrors(errors)
 })

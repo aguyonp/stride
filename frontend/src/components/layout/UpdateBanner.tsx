@@ -47,8 +47,9 @@ export function UpdateBanner({ me }: { me: Me }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] px-4 pt-3 sm:px-6 lg:px-8" role="status" aria-live="polite">
-      <div className="glass flex flex-wrap items-center gap-3 border-accent/30 p-3 sm:px-4">
+    <div className="mx-auto w-full max-w-[1440px] px-4 pt-3 sm:px-6 lg:px-8">
+      {/* A region, not a live one: the banner shows on load, it is never injected mid-session. */}
+      <section aria-label={t('layout.updates.title')} className="glass flex flex-wrap items-center gap-3 border-accent/30 p-3 sm:px-4">
         <span className="grid size-8 flex-none place-items-center rounded-xl bg-accent/12 text-accent">
           <Download className="size-4" aria-hidden="true" />
         </span>
@@ -64,7 +65,7 @@ export function UpdateBanner({ me }: { me: Me }) {
             <X className="size-4" aria-hidden="true" /> {t('layout.updates.later')}
           </button>
         </div>
-      </div>
+      </section>
     </div>
   )
 }

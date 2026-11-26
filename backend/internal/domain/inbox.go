@@ -284,6 +284,11 @@ func (s *Services) writeInbox(ctx context.Context, uid int64, in inboxInput) *In
 // WriteUpdateInbox records the release notice for one user (SPEC §22, issue #143). The dedup key
 // carries the version: one entry per admin and per version, whatever the number of checks.
 func (s *Services) WriteUpdateInbox(ctx context.Context, uid int64, version, publishedAt, url string) *InboxEntry {
+	// Already announced: a release notice is news once. Re-checking must neither rewrite it (a
+	// write per admin per page load) nor touch its read state — KeepRead below covers the race.
+	if e, err := s.UpdateInboxEntry(ctx, uid, version); err == nil && e != nil {
+		return e
+	}
 	return s.writeInbox(ctx, uid, inboxInput{
 		Kind:     InboxKindUpdate,
 		Level:    "info",
