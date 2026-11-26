@@ -2,6 +2,7 @@ package garminbridge
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,7 +51,10 @@ type fakeGarmin struct {
 	codeRequestQ       string
 	codeRequestBody    []byte
 	codeRequestReferer string
-	lastAudience       string
+	lastTicket         string
+	lastService        string
+	lastClient         string
+	lastRefresh        string
 }
 
 func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
@@ -61,7 +65,7 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 		signinCode: 200,
 		mfaBody:    `<!DOCTYPE html><script>var response_url = "https:\/\/sso.garmin.com\/sso\/redirect?ticket=ST-9f8e7d6c5b4a"</script>`,
 		mfaCode:    200,
-		exchange:   `{"access_token":"bearer-1","expires_in":31536000}`,
+		exchange:   `{"access_token":"bearer-1","refresh_token":"refresh-1","expires_in":31536000}`,
 		profile:    `{"displayName":"Antoine","userName":"aguyon","profileId":42}`,
 		workouts:   `[]`,
 		createBody: `{"workoutId":4242,"workoutName":"x"}`,
@@ -120,57 +124,51 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 		f.record("GET modern")
 		fmt.Fprint(w, `<html>connect</html>`)
 	})
-	// The ticket is traded for an OAuth1 token first, consumer-signed, form-encoded answer.
-	mux.HandleFunc("GET /oauth-service/oauth/preauthorized", func(w http.ResponseWriter, r *http.Request) {
-		f.record("GET preauthorized")
+	// The native DI OAuth2 exchange: Basic auth on the client id, the ticket in the body.
+	mux.HandleFunc("POST /di-oauth2-service/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		f.record("POST di token")
 		if ua := r.Header.Get("User-Agent"); ua != "com.garmin.android.apps.connectmobile" {
-			t.Errorf("preauthorized UA %q", ua)
-		}
-		auth := r.Header.Get("Authorization")
-		if strings.Contains(auth, "oauth_token=") {
-			t.Errorf("preauthorized is consumer-signed, no token: %q", auth)
-		}
-		q := r.URL.Query()
-		// Garmin's own words: « 'service' and 'ticket' parameters are both required ».
-		if q.Get("ticket") == "" || q.Get("service") == "" || q.Get("accepts-mfa-tokens") != "true" {
-			t.Errorf("preauthorized query: %q", r.URL.RawQuery)
-		}
-		if q.Get("login-url") != "" {
-			t.Errorf("login-url makes Garmin reject the request: %q", r.URL.RawQuery)
-		}
-		fmt.Fprint(w, `oauth_token=oauth1-token&oauth_token_secret=oauth1-secret`)
-	})
-	mux.HandleFunc("POST /oauth-service/oauth/exchange/user/2.0", func(w http.ResponseWriter, r *http.Request) {
-		f.record("POST exchange")
-		if ua := r.Header.Get("User-Agent"); ua != "com.garmin.android.apps.connectmobile" {
-			t.Errorf("exchange UA %q", ua)
-		}
-		if r.Header.Get("DI-Backend") != "" {
-			t.Errorf("the OAuth hops carry no DI-Backend: %q", r.Header.Get("DI-Backend"))
+			t.Errorf("token UA %q", ua)
 		}
 		_ = r.ParseForm()
-		// The exchange is signed with the resource-owner token from the hop above.
+		clientID := r.PostFormValue("client_id")
 		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "OAuth ") || !strings.Contains(auth, "oauth_consumer_key") || !strings.Contains(auth, "oauth_signature") {
-			t.Errorf("unsigned exchange: %q", auth)
+		want := "Basic " + base64.StdEncoding.EncodeToString([]byte(clientID+":"))
+		if auth != want {
+			t.Errorf("token Basic auth %q, want the client id only", auth)
 		}
-		if !strings.Contains(auth, "oauth_token=") {
-			t.Errorf("exchange must carry the OAuth1 token: %q", auth)
-		}
-		f.mu.Lock()
-		f.lastAudience = r.PostFormValue("audience")
-		f.mu.Unlock()
-		f.mu.Lock()
-		f.exchanges++
-		n := f.exchanges
-		rotated := f.exchangeTkn
-		f.mu.Unlock()
-		if n > 1 && rotated != "" {
-			// The refresh answers a different token, like Garmin does.
-			fmt.Fprintf(w, `{"access_token":%q,"expires_in":31536000}`, rotated)
+		switch r.PostFormValue("grant_type") {
+		case "refresh_token":
+			f.mu.Lock()
+			f.lastRefresh = r.PostFormValue("refresh_token")
+			f.lastClient = clientID
+			f.exchanges++
+			rotated := f.exchangeTkn
+			f.mu.Unlock()
+			if rotated == "" {
+				rotated = "bearer-1"
+			}
+			fmt.Fprintf(w, `{"access_token":%q,"refresh_token":"refresh-1","expires_in":31536000}`, rotated)
+			return
+		case diGrant:
+			f.mu.Lock()
+			f.lastTicket = r.PostFormValue("service_ticket")
+			f.lastService = r.PostFormValue("service_url")
+			f.exchanges++
+			f.mu.Unlock()
+			// Only the current generation of ids is accepted, like Garmin: the others answer 400.
+			if clientID != diClientIDs[0] {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":"invalid_client"}`)
+				return
+			}
+			f.mu.Lock()
+			f.lastClient = clientID
+			f.mu.Unlock()
+			fmt.Fprint(w, f.exchange)
 			return
 		}
-		fmt.Fprint(w, f.exchange)
+		w.WriteHeader(http.StatusBadRequest)
 	})
 	mux.HandleFunc("GET /userprofile-service/socialProfile", func(w http.ResponseWriter, r *http.Request) {
 		f.record("GET profile")
@@ -287,49 +285,13 @@ func service(t *testing.T, f *fakeGarmin, srv *httptest.Server, st TokenStore) *
 	now := time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC)
 	return New(Options{
 		HTTP: srv.Client(), Store: st, Now: func() time.Time { return now },
-		SSOBase: srv.URL, APIBase: srv.URL,
+		SSOBase: srv.URL, APIBase: srv.URL, DIBase: srv.URL,
 	})
 }
 
 // ---------- OAuth1 ----------
 
 // The signature vector of RFC 5849 §3.4.1.1: it proves the encoder and the base string.
-func TestOAuth1RFCVector(t *testing.T) {
-	params := url.Values{}
-	params.Set("b5", "=%3D")
-	params.Add("a3", "a")
-	params.Add("a3", "2 q")
-	params.Set("c@", "")
-	params.Set("c2", "")
-	params.Set("a2", "r b")
-	oauth := url.Values{}
-	oauth.Set("oauth_consumer_key", "9djdj82h48djs9d2")
-	oauth.Set("oauth_token", "kkk9d7dh3k39sjv7")
-	oauth.Set("oauth_signature_method", "HMAC-SHA1")
-	oauth.Set("oauth_timestamp", "137131201")
-	oauth.Set("oauth_nonce", "7d8f3e4a")
-	got := signHMACSHA1("POST", "http://example.com/request", params, oauth, "j49sk3j29djd", "dh893hdasih9")
-	if got != "r6/TJjbCOr97/+UU0NsvSne7s5g=" {
-		t.Fatalf("signature: %q", got)
-	}
-}
-
-func TestPercentEncode(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"abcXYZ019-._~", "abcXYZ019-._~"},
-		{"a b", "a%20b"},
-		{"100%", "100%25"},
-		{"é", "%C3%A9"},
-		{"+", "%2B"},
-	} {
-		if got := percentEncode(tc.in); got != tc.want {
-			t.Fatalf("percentEncode(%q) = %q", tc.in, got)
-		}
-	}
-}
-
-// ---------- login ----------
-
 func TestLoginSuccess(t *testing.T) {
 	f, srv := newFake(t)
 	st := newMemStore()
@@ -346,13 +308,21 @@ func TestLoginSuccess(t *testing.T) {
 		t.Fatalf("password did not reach the SSO form")
 	}
 	tok, _ := st.Load(context.Background(), 1)
-	if tok == nil || tok.AccessToken != "bearer-1" || tok.RefreshToken != "oauth1-token:oauth1-secret" || tok.DisplayName != "Antoine" {
+	if tok == nil || tok.AccessToken != "bearer-1" || tok.RefreshToken != diClientIDs[0]+"|refresh-1" || tok.DisplayName != "Antoine" {
 		t.Fatalf("tokens: %+v", tok)
 	}
 	// The verification really happens: profile, then a workout listing.
-	// The audience is what makes the answer a Connect token: it belongs to the login hop only.
-	if f.lastAudience != "GARMIN_CONNECT_MOBILE_ANDROID_DI" {
-		t.Fatalf("login exchange audience: %q", f.lastAudience)
+	// The ticket exchange repeats the service the ticket was issued for, and the client id answers
+	// for it: Garmin binds the three together.
+	// It must be the very service the ticket was issued for: the embed page of the SSO.
+	if !strings.HasSuffix(f.lastService, "/sso/embed") {
+		t.Fatalf("service_url %q, want the login service", f.lastService)
+	}
+	if f.lastTicket == "" {
+		t.Fatal("the ticket must reach the token endpoint")
+	}
+	if f.lastClient != diClientIDs[0] {
+		t.Fatalf("client id %q, want the current generation", f.lastClient)
 	}
 	if !f.has("GET profile") || !f.has("GET workouts") {
 		t.Fatalf("verification calls: %v", f.calls)
@@ -427,7 +397,7 @@ func TestPendingMFAExpires(t *testing.T) {
 	now := time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC)
 	svc := New(Options{
 		HTTP: srv.Client(), Store: newMemStore(), Now: func() time.Time { return now },
-		SSOBase: srv.URL, APIBase: srv.URL,
+		SSOBase: srv.URL, APIBase: srv.URL, DIBase: srv.URL,
 	})
 	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><script>var customerGuid = "guid-1"; var mfaMethod = "email"; var locale = "fr-FR"; var clientId = "client-1"; var codeSentTo = "";</script><div id="mfa-code-entry"></div></html>`
 	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
@@ -781,19 +751,19 @@ func TestPushRefreshesOn401(t *testing.T) {
 	if _, err := svc.Push(ctx, 1, PushRequest{Name: "n", Date: "2026-11-26", Payload: json.RawMessage(`{}`)}); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	if !f.has("POST exchange") {
+	if !f.has("POST di token") || f.exchanges < 2 {
 		t.Fatalf("no refresh attempted: %v", f.calls)
 	}
 	tok, _ := st.Load(ctx, 1)
 	if tok.AccessToken == "bearer-1" {
 		t.Fatalf("rotated token not persisted: %+v", tok)
 	}
-	// A refresh replays the stored OAuth1 pair and sends no audience: that is the login hop's mark.
-	if f.lastAudience != "" {
-		t.Fatalf("refresh must not send an audience: %q", f.lastAudience)
+	// The refresh presents the client id that issued the token, with the stored refresh token.
+	if f.lastClient != diClientIDs[0] || f.lastRefresh != "refresh-1" {
+		t.Fatalf("refresh %q with %q", f.lastClient, f.lastRefresh)
 	}
-	if !strings.HasPrefix(tok.RefreshToken, "oauth1-token:") {
-		t.Fatalf("the OAuth1 pair must survive the refresh: %q", tok.RefreshToken)
+	if !strings.HasPrefix(tok.RefreshToken, diClientIDs[0]+"|") {
+		t.Fatalf("the client id must survive the refresh: %q", tok.RefreshToken)
 	}
 }
 

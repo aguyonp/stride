@@ -43,11 +43,8 @@ func bridgeFake(t *testing.T) *httptest.Server {
 		}
 		fmt.Fprint(w, `<html><script>var response_url = "/sso/redirect?ticket=ST-4f3e2d1c0b9a"</script></html>`)
 	})
-	mux.HandleFunc("GET /oauth-service/oauth/preauthorized", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `oauth_token=o1&oauth_token_secret=s1`)
-	})
-	mux.HandleFunc("POST /oauth-service/oauth/exchange/user/2.0", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"access_token":"bearer-1","expires_in":31536000}`)
+	mux.HandleFunc("POST /di-oauth2-service/oauth/token", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"access_token":"bearer-1","refresh_token":"refresh-1","expires_in":31536000}`)
 	})
 	mux.HandleFunc("GET /userprofile-service/socialProfile", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"displayName":"Antoine"}`)
@@ -72,7 +69,7 @@ func withBridge(t *testing.T, fake *httptest.Server) {
 	prev := bridgeFactory
 	bridgeFactory = func(s *domain.Services) *garminbridge.Service {
 		return garminbridge.New(garminbridge.Options{
-			HTTP: fake.Client(), Store: s.BridgeTokenStore(), SSOBase: fake.URL, APIBase: fake.URL,
+			HTTP: fake.Client(), Store: s.BridgeTokenStore(), SSOBase: fake.URL, APIBase: fake.URL, DIBase: fake.URL,
 		})
 	}
 	t.Cleanup(func() { bridgeFactory = prev })

@@ -42,6 +42,8 @@ func (s *Service) call(ctx context.Context, t *Tokens, method, path string, body
 	req.Header.Set("NK", "NT")
 	req.Header.Set("DI-Backend", "connectapi.garmin.com")
 	req.Header.Set("Accept", "application/json")
+	// The native clients announce themselves twice: the short UA above and this one.
+	req.Header.Set("X-Garmin-User-Agent", "com.garmin.android.apps.connectmobile/5.23; ; Google/sdk_gphone64_arm64/google; Android/33; Dalvik/2.1.0")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -61,12 +63,12 @@ func (s *Service) call(ctx context.Context, t *Tokens, method, path string, body
 	return out, res.StatusCode, nil
 }
 
-// refresh replays the OAuth1 → OAuth2 exchange with the stored OAuth1 token.
+// refresh renews the Bearer token through the DI endpoint, with the client id that issued it.
 func (s *Service) refresh(ctx context.Context, t *Tokens) (*Tokens, error) {
 	if t.RefreshToken == "" {
 		return nil, ErrExpired
 	}
-	fresh, err := s.exchange(ctx, "oauth:"+t.RefreshToken, "rafraîchissement", nil)
+	fresh, err := s.exchange(ctx, diRefreshPrefix+t.RefreshToken, "rafraîchissement", nil)
 	if err != nil {
 		return nil, ErrExpired
 	}

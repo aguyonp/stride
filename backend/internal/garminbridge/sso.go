@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -246,144 +245,16 @@ func (s *Service) serviceTicket(ctx context.Context, sess *session, res *http.Re
 	return "", stepErr(stepTicket, ErrFlow)
 }
 
-// exchange turns a service ticket into tokens, in the two hops Garmin actually accepts:
-//
-//	GET  oauth-service/oauth/preauthorized?ticket=ST-…  (consumer-signed) → OAuth1 token
-//	POST oauth-service/oauth/exchange/user/2.0          (token-signed)    → OAuth2 access token
-//
-// A refresh replays the stored OAuth1 token instead of the first hop. Posting the ticket straight to
-// exchange/user/2.0 — what this used to do — is refused now.
+// exchange turns a service ticket into tokens, or renews them, through the DI OAuth2 endpoint the
+// native apps use (see di.go). The OAuth1 preauthorized exchange this used to perform is refused by
+// Garmin now.
 func (s *Service) exchange(ctx context.Context, ticket, op string, sess *session) (*Tokens, error) {
-	login := true
-	var key, secret string
-	if strings.HasPrefix(ticket, "oauth:") {
-		parts := strings.SplitN(strings.TrimPrefix(ticket, "oauth:"), ":", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return nil, ErrCredentials
-		}
-		key, secret = parts[0], parts[1]
-		login = false
-	} else {
-		var err error
-		key, secret, err = s.preauthorized(ctx, ticket, sess)
-		if err != nil {
-			return nil, err
-		}
+	if strings.HasPrefix(ticket, diRefreshPrefix) {
+		return s.refreshDI(ctx, strings.TrimPrefix(ticket, diRefreshPrefix))
 	}
-
-	base := s.opt.APIBase + "/oauth-service/oauth/exchange/user/2.0"
-	form := url.Values{}
-	if login {
-		// The audience is what makes the answer a Connect token for the mobile API.
-		form.Set("audience", "GARMIN_CONNECT_MOBILE_ANDROID_DI")
-	}
-	hdr := oauth1Header(http.MethodPost, base, form, s.opt.ConsumerKey, s.opt.ConsumerSecret, key, secret, s.opt.Now())
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base, strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Authorization", hdr)
-	req.Header.Set("User-Agent", oauthUserAgent)
-	// The ticket belongs to the SSO session: Garmin binds it to those cookies, so the exchange runs
-	// on the same jar (a bare client gets a 401 on a perfectly valid ticket).
-	cli := s.client
-	if sess != nil {
-		cli = sess.cli
-	}
-	res, err := cli.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = res.Body.Close() }()
-	body, err := readBody(res)
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == 427 {
-		return nil, ErrBlocked
-	}
-	if res.StatusCode != http.StatusOK {
-		s.log().Warn("🔗 Pont Garmin : échange du ticket refusé", "op", op, "status", res.StatusCode)
-		return nil, fmt.Errorf("%w (échange HTTP %d)", ErrCredentials, res.StatusCode)
-	}
-	var payload struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int64  `json:"expires_in"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.AccessToken == "" {
-		return nil, fmt.Errorf("%w (échange : réponse inattendue, %d octets)", ErrCredentials, len(body))
-	}
-	exp := payload.ExpiresIn
-	if exp <= 0 {
-		exp = int64(defaultTokenLifetime / time.Second)
-	}
-	now := s.opt.Now()
-	// The OAuth1 pair is what refreshes the session later: keep both halves.
-	return &Tokens{
-		AccessToken:  payload.AccessToken,
-		RefreshToken: key + ":" + secret,
-		CreatedAt:    now,
-		ExpiresAt:    now.Add(time.Duration(exp) * time.Second),
-	}, nil
-}
-
-// preauthorized trades a service ticket for an OAuth1 token: a consumer-signed GET whose answer is
-// the token pair, form-encoded.
-func (s *Service) preauthorized(ctx context.Context, ticket string, sess *session) (key, secret string, err error) {
-	// `ticket` + `service` (+ accepts-mfa-tokens), and nothing else: Garmin answers
-	// « 'service' and 'ticket' parameters are both required » without the service, and rejects the
-	// request shape when an unknown parameter (login-url) rides along.
-	domain := strings.TrimPrefix(strings.TrimPrefix(s.opt.APIBase, "https://"), "http://")
-	domain = strings.TrimPrefix(domain, "connectapi.")
-	params := url.Values{}
-	params.Set("ticket", ticket)
-	params.Set("service", "https://mobile.integration."+domain+"/gcm/android")
-	params.Set("accepts-mfa-tokens", "true")
-	base := s.opt.APIBase + "/oauth-service/oauth/preauthorized"
-	hdr := oauth1Header(http.MethodGet, base, params, s.opt.ConsumerKey, s.opt.ConsumerSecret, "", "", s.opt.Now())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+params.Encode(), nil)
-	if err != nil {
-		return "", "", err
-	}
-	req.Header.Set("Authorization", hdr)
-	req.Header.Set("User-Agent", oauthUserAgent)
-	// The ticket belongs to the SSO session: Garmin binds it to those cookies, so the exchange runs
-	// on the same jar (a bare client gets a 401 on a perfectly valid ticket).
-	cli := s.client
-	if sess != nil {
-		cli = sess.cli
-	}
-	res, err := cli.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer func() { _ = res.Body.Close() }()
-	body, err := readBody(res)
-	if err != nil {
-		return "", "", err
-	}
-	if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == 427 {
-		return "", "", ErrBlocked
-	}
-	if res.StatusCode != http.StatusOK {
-		s.log().Warn("🔗 Pont Garmin : ticket de service refusé",
-			"status", res.StatusCode, "reponse", excerpt(body))
-		// The status travels with the error: « 401 » and « 200 but not a token pair » are two
-		// different bugs, and the message is all a field report shows.
-		return "", "", fmt.Errorf("%w (préautorisation HTTP %d)", ErrCredentials, res.StatusCode)
-	}
-	values, err := url.ParseQuery(strings.TrimSpace(string(body)))
-	if err != nil {
-		return "", "", ErrCredentials
-	}
-	key, secret = values.Get("oauth_token"), values.Get("oauth_token_secret")
-	if key == "" || secret == "" {
-		// A JSON answer means Garmin changed the shape again: say so instead of « wrong password ».
-		s.trace(0, stepTokens, res, body)
-		return "", "", ErrFlow
-	}
-	return key, secret, nil
+	_ = op
+	_ = sess
+	return s.loginDI(ctx, ticket)
 }
 
 // defaultTokenLifetime is assumed when Garmin omits expires_in: a year is what the mobile tokens use.

@@ -122,8 +122,11 @@ type Options struct {
 	// APIBase is the host serving /workout-service and /userprofile-service
 	// (https://connectapi.garmin.com).
 	APIBase string
-	// Service is the SSO service parameter Garmin expects for the Connect app.
+	// Service is the SSO service parameter Garmin expects, and the service_url the ticket exchange
+	// must repeat: Garmin binds a ticket to the service it was issued for.
 	Service string
+	// DIBase is the OAuth2 token host (https://diauth.garmin.com).
+	DIBase string
 	// UserAgent identifies the flow; the mobile one is less challenged than a browser UA.
 	UserAgent string
 	// ConsumerKey / ConsumerSecret sign the OAuth1 exchange. The defaults are the public values the
@@ -153,7 +156,7 @@ const (
 	// the SSO one (GCM-Android…) is not accepted there.
 	oauthUserAgent = "com.garmin.android.apps.connectmobile"
 	// mobileUserAgent is the Garmin Connect Android app: the SSO answers it with the mobile flow.
-	mobileUserAgent = "GCM-Android-5.19; ; 4.4.2; 1.0"
+	mobileUserAgent = "GCM-Android-5.23; ; 4.4.2; 1.0"
 	// serviceURL is where the SSO sends the ticket once the sign-in succeeds.
 	serviceURL = "https://connect.garmin.com/modern/"
 )
@@ -191,7 +194,10 @@ func New(opt Options) *Service {
 		opt.APIBase = "https://connectapi.garmin.com"
 	}
 	if opt.Service == "" {
-		opt.Service = serviceURL
+		opt.Service = embedURL(opt)
+	}
+	if opt.DIBase == "" {
+		opt.DIBase = "https://diauth.garmin.com"
 	}
 	if opt.UserAgent == "" {
 		opt.UserAgent = mobileUserAgent
