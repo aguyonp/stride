@@ -11,6 +11,7 @@ import { copyText } from '../../lib/clipboard'
 import { cn } from '../../lib/cn'
 import { fmtNumber, fmtWhen } from '../../lib/format'
 import { t, tDyn } from '../../i18n'
+import { Toggle } from '../../components/ui/Toggle'
 import { ErrorView } from '../StateViews'
 import { Section } from './Section'
 
@@ -105,27 +106,19 @@ export function McpSection() {
         <div className="space-y-4">
           <ToolsList hidden={!showTools} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <label className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={s.enabled}
-                aria-label={t('settings.mcp.enableLabel')}
-                disabled={m.setEnabled.isPending}
-                onClick={() =>
-                  m.setEnabled.mutate(!s.enabled, {
-                    onError: (e) => toast({ tone: 'error', title: t('settings.mcp.error'), description: e.message }),
-                  })
-                }
-                className={cn('relative h-6 w-11 flex-none rounded-full transition-colors', s.enabled ? 'bg-accent' : 'bg-line')}
-              >
-                <span className={cn('absolute top-0.5 left-0.5 size-5 rounded-full bg-card shadow transition-transform', s.enabled && 'translate-x-5')} />
-              </button>
-              <span className="text-sm">
-                <span className={s.enabled ? 'font-semibold text-ink' : 'text-ink-2'}>{s.enabled ? t('settings.mcp.on') : t('settings.mcp.off')}</span>
-                {m.setEnabled.isPending && <Loader2 className="ml-2 inline size-3.5 animate-spin text-ink-3" aria-hidden="true" />}
-              </span>
-            </label>
+            {/* The same switch as the admin panel: a bare role="switch", never inside a <label>
+                (a label forwards the click twice, which made this one feel broken). */}
+            <Toggle
+              label={t('settings.mcp.enableLabel')}
+              hint={s.enabled ? t('settings.mcp.on') : t('settings.mcp.off')}
+              checked={s.enabled}
+              disabled={m.setEnabled.isPending}
+              onChange={(v) =>
+                m.setEnabled.mutate(v, {
+                  onError: (e) => toast({ tone: 'error', title: t('settings.mcp.error'), description: e.message }),
+                })
+              }
+            />
             {s.hasToken && (
               <p className="num text-xs text-ink-3">
                 <KeyRound className="mr-1 inline size-3.5" aria-hidden="true" />

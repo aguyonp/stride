@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Unplug } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { isApiError } from '../../api/client'
 import { useGarminBridge, useGarminBridgeMutations } from '../../api/queries'
 import { cn } from '../../lib/cn'
@@ -14,30 +14,47 @@ import { useToast } from '../ui/Toast'
 /**
  * Experimental Garmin Connect bridge (§23, issue #147).
  *
- * The card is only rendered when the instance allows the bridge (env switch); the switch itself is
- * the user's own consent, behind a warning nobody can miss. The sign-in happens here — Garmin's SSO,
- * then a code — and the password leaves the form for one request, never stored, never logged.
+ * The card stays a summary: a state, one button, the fallback line. Everything that needs a keyboard
+ * — consent, credentials, the code — happens in a modal, so the settings page keeps its rhythm
+ * instead of growing a module taller than the screen.
+ *
+ * The password leaves the form for one request, is never stored and never logged. The fields opt out
+ * of the password managers: this credential belongs to Garmin, not to Stride, and a « save this
+ * login? » prompt over the card is noise — and a bad idea for a one-shot password.
  */
 export function GarminBridgeCard() {
   const bridge = useGarminBridge()
   const m = useGarminBridgeMutations()
   const { toast } = useToast()
-  const [confirm, setConfirm] = useState(false)
+  const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ email: '', password: '' })
   const [mfa, setMfa] = useState('')
-  // The failure is shown in the card, not only in a toast: a wrong password must say « wrong
-  // password » under the field, and a code step must be reachable the instant Garmin asks for it.
+  // The failure is shown where the field is, not only in a toast: a wrong password must say « wrong
+  // password », and a code step must be reachable the instant Garmin asks for it.
   const [error, setError] = useState('')
   const [awaitingCode, setAwaitingCode] = useState(false)
 
-  // Nothing is rendered until the instance answers, and nothing is offered when the administrator
-  // has not opened the bridge: `available` is the instance's word, not a guess from an HTTP status.
-  if (!bridge.data?.available) return null
   const st = bridge.data
-  // A 202 says « code required » before the poll comes back: the form must follow the answer, not
+  // A 202 says « code required » before the poll comes back: the flow must follow the answer, not
   // wait for the next GET.
   const state = awaitingCode ? 'mfa' : (st?.state ?? 'disconnected')
+
+  // A pending code is an unfinished action: reopening the flow on it is what the user came back for.
+  const pending = st?.state === 'mfa'
+  useEffect(() => {
+    if (pending) setOpen(true)
+  }, [pending])
+
+  // Nothing is rendered until the instance answers, and nothing is offered when the administrator
+  // has not opened the bridge: `available` is the instance's word, not a guess from an HTTP status.
+  if (!st?.available) return null
   const busy = m.login.isPending || m.mfa.isPending
+
+  const close = () => {
+    setOpen(false)
+    setError('')
+    setMfa('')
+  }
 
   const login = () => {
     m.login.mutate(form, {
@@ -51,12 +68,15 @@ export function GarminBridgeCard() {
           return
         }
         setAwaitingCode(false)
-        if (r.state === 'connected') toast({ title: t('settings.bridge.connected'), description: r.displayName, tone: 'success' })
+        if (r.state === 'connected') {
+          close()
+          toast({ title: t('settings.bridge.connected'), description: r.displayName, tone: 'success' })
+        }
       },
       onError: (e) => {
         setForm((f) => ({ ...f, password: '' }))
-        // Always in the card: a 400 is the most common answer and used to say nothing at all.
-        setError(bridgeErrorText(e))
+        // Always in the flow: a 400 is the most common answer and used to say nothing at all.
+        setError(bridgeErrorText(e, 'password'))
         // The toast keeps the server's own wording: it names the failing step, which is what makes a
         // report actionable.
         if (!isApiError(e, 'BAD_REQUEST')) toast({ title: t('settings.bridge.failedTitle'), description: e.message, tone: 'error' })
@@ -71,12 +91,13 @@ export function GarminBridgeCard() {
         setError('')
         if (r.state === 'connected') {
           setAwaitingCode(false)
+          close()
           toast({ title: t('settings.bridge.connected'), description: r.displayName, tone: 'success' })
         }
       },
       onError: (e) => {
         setMfa('')
-        setError(bridgeErrorText(e))
+        setError(bridgeErrorText(e, 'code'))
         toast({ title: t('settings.bridge.codeRefused'), description: e.message, tone: 'error' })
       },
     })
@@ -97,14 +118,14 @@ export function GarminBridgeCard() {
       ) : !st ? (
         <Skeleton className="mt-3 h-9 max-w-sm" />
       ) : (
-        <div className="mt-3">
-          <div className="flex flex-wrap items-center gap-2" role="status">
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-2" role="status">
             <StateBadge state={state} locked={st.locked} />
             {state === 'connected' && st.displayName && <span className="text-xs text-ink-2">{st.displayName}</span>}
             {state === 'connected' && st.since && (
               <span className="text-xs text-ink-3">{t('settings.bridge.since', { date: fmtDateTime(st.since) })}</span>
             )}
-            {state === 'connected' && (
+            {state === 'connected' ? (
               <button
                 type="button"
                 className="btn btn-ghost ml-auto h-8 px-2.5 text-xs"
@@ -113,72 +134,55 @@ export function GarminBridgeCard() {
               >
                 <Unplug className="size-3.5" aria-hidden="true" /> {t('settings.bridge.disconnect')}
               </button>
+            ) : (
+              <button type="button" className="btn btn-ghost ml-auto h-8 px-2.5 text-xs" onClick={() => setOpen(true)}>
+                {state === 'mfa'
+                  ? t('settings.bridge.enterCode')
+                  : state === 'expired' || state === 'blocked'
+                    ? t('settings.bridge.reconnect')
+                    : t('settings.bridge.enable')}
+              </button>
             )}
           </div>
 
-          {/* Consent first: the warning is read before anything can be typed. */}
-          {state === 'disconnected' && !confirm && (
-            <button type="button" className="btn btn-ghost mt-3 h-9 px-3 text-sm" onClick={() => setConfirm(true)}>
-              {t('settings.bridge.enable')}
-            </button>
+          {(state === 'expired' || state === 'blocked') && (
+            <p role="alert" className="mt-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+              {state === 'expired' ? t('settings.bridge.expiredBody') : t('settings.bridge.blockedBody')}
+            </p>
           )}
+        </>
+      )}
 
-          {state === 'disconnected' && confirm && (
-            <div className="mt-3 space-y-3">
-              <div role="alert" className="rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-xs text-ink-2">
-                <p className="font-semibold text-ink">{t('settings.bridge.consentTitle')}</p>
-                <ul className="mt-1.5 list-inside list-disc space-y-0.5">
-                  <li>{t('settings.bridge.consentApi')}</li>
-                  <li>{t('settings.bridge.consentRisk')}</li>
-                  <li>{t('settings.bridge.consentPassword')}</li>
-                  <li>{t('settings.bridge.consentFallback')}</li>
-                </ul>
-              </div>
-              <form
-                className="grid gap-2.5 sm:grid-cols-2"
-                autoComplete="off"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (form.email && form.password) login()
-                }}
-              >
-                <Field label={t('settings.bridge.email')}>
-                  {(p) => (
-                    <input {...p} className="field" type="email" autoComplete="off" value={form.email} onChange={(e) => {
-                      setError('')
-                      setForm((f) => ({ ...f, email: e.target.value }))
-                    }} />
-                  )}
-                </Field>
-                <Field label={t('settings.bridge.password')} hint={t('settings.bridge.passwordHint')}>
-                  {(p) => (
-                    <input {...p} className="field" type="password" autoComplete="new-password" value={form.password} onChange={(e) => {
-                      setError('')
-                      setForm((f) => ({ ...f, password: e.target.value }))
-                    }} />
-                  )}
-                </Field>
-                {error && (
-                  <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:col-span-2">
-                    {error}
-                  </p>
-                )}
-                <div className="flex gap-2 sm:col-span-2">
-                  <button type="submit" className="btn btn-primary h-9 px-3 text-sm" disabled={busy || !form.email || !form.password}>
-                    {m.login.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-                    {t('settings.bridge.signIn')}
-                  </button>
-                  <button type="button" className="btn btn-ghost h-9 px-3 text-sm" onClick={() => setConfirm(false)} disabled={busy}>
-                    {t('common.actions.cancel')}
-                  </button>
-                </div>
-              </form>
+      <p className="mt-3 text-xs text-ink-3">{t('settings.bridge.fallback')}</p>
+
+      <Dialog
+        open={open}
+        onClose={close}
+        title={t('settings.bridge.title')}
+        description={t('settings.bridge.warning')}
+        size="md"
+        // The Field owns the ids: target the control by its type, not by an id we would have to
+        // override (which breaks the label association).
+        initialFocus={state === 'mfa' ? 'input[inputmode="numeric"]' : 'input[type="email"]'}
+      >
+        <div className="space-y-3">
+          {/* Consent first: the warning is read before anything can be typed. */}
+          {state !== 'mfa' && (
+            <div role="alert" className="rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-xs text-ink-2">
+              <p className="font-semibold text-ink">{t('settings.bridge.consentTitle')}</p>
+              <ul className="mt-1.5 list-inside list-disc space-y-0.5">
+                <li>{t('settings.bridge.consentApi')}</li>
+                <li>{t('settings.bridge.consentRisk')}</li>
+                <li>{t('settings.bridge.consentPassword')}</li>
+                <li>{t('settings.bridge.consentFallback')}</li>
+              </ul>
             </div>
           )}
 
-          {state === 'mfa' && (
+          {state === 'mfa' ? (
             <form
-              className="mt-3 space-y-2.5"
+              className="space-y-2.5"
+              autoComplete="off"
               onSubmit={(e) => {
                 e.preventDefault()
                 if (mfa) sendCode()
@@ -187,10 +191,17 @@ export function GarminBridgeCard() {
               <p className="text-xs text-ink-2">{t('settings.bridge.mfaHint')}</p>
               <Field label={t('settings.bridge.code')}>
                 {(p) => (
-                  <input {...p} className="field num max-w-40" inputMode="numeric" autoComplete="one-time-code" value={mfa} onChange={(e) => {
+                  <input
+                    {...p}
+                    className="field num max-w-40"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={mfa}
+                    onChange={(e) => {
                       setError('')
                       setMfa(e.target.value.replace(/\D/g, ''))
-                    }} />
+                    }}
+                  />
                 )}
               </Field>
               {error && (
@@ -207,7 +218,6 @@ export function GarminBridgeCard() {
                   type="button"
                   className="btn btn-ghost h-9 px-3 text-sm"
                   onClick={() => {
-                    setConfirm(true)
                     setMfa('')
                     setError('')
                     setAwaitingCode(false)
@@ -218,37 +228,83 @@ export function GarminBridgeCard() {
                 </button>
               </div>
             </form>
-          )}
-
-          {(state === 'expired' || state === 'blocked') && (
-            <div className="mt-3 space-y-2.5">
-              <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
-                {state === 'expired' ? t('settings.bridge.expiredBody') : t('settings.bridge.blockedBody')}
-              </p>
-              <button type="button" className="btn btn-ghost h-9 px-3 text-sm" onClick={() => setConfirm(true)}>
-                {t('settings.bridge.reconnect')}
-              </button>
-            </div>
+          ) : (
+            <form
+              className="grid gap-2.5 sm:grid-cols-2"
+              autoComplete="off"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (form.email && form.password) login()
+              }}
+            >
+              <Field label={t('settings.bridge.email')}>
+                {(p) => (
+                  <input
+                    {...p}
+                    className="field"
+                    type="email"
+                    autoComplete="off"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-bwignore
+                    value={form.email}
+                    onChange={(e) => {
+                      setError('')
+                      setForm((f) => ({ ...f, email: e.target.value }))
+                    }}
+                  />
+                )}
+              </Field>
+              <Field label={t('settings.bridge.password')} hint={t('settings.bridge.passwordHint')}>
+                {(p) => (
+                  <input
+                    {...p}
+                    className="field"
+                    type="password"
+                    autoComplete="new-password"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-bwignore
+                    value={form.password}
+                    onChange={(e) => {
+                      setError('')
+                      setForm((f) => ({ ...f, password: e.target.value }))
+                    }}
+                  />
+                )}
+              </Field>
+              {error && (
+                <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:col-span-2">
+                  {error}
+                </p>
+              )}
+              <div className="flex gap-2 sm:col-span-2">
+                <button type="submit" className="btn btn-primary h-9 px-3 text-sm" disabled={busy || !form.email || !form.password}>
+                  {m.login.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+                  {t('settings.bridge.signIn')}
+                </button>
+                <button type="button" className="btn btn-ghost h-9 px-3 text-sm" onClick={close} disabled={busy}>
+                  {t('common.actions.cancel')}
+                </button>
+              </div>
+            </form>
           )}
         </div>
-      )}
-
-      <p className="mt-3 text-xs text-ink-3">{t('settings.bridge.fallback')}</p>
-
-      <Dialog open={confirm && state === 'connected'} onClose={() => setConfirm(false)} title={t('settings.bridge.reconnectTitle')} size="md">
-        <p className="text-sm text-ink-2">{t('settings.bridge.reconnectBody')}</p>
       </Dialog>
     </div>
   )
 }
 
-// bridgeErrorText translates the stable HTTP code into a sentence the user can act on. The card
-// owns these words because it knows the domain: the server's message is French, names the failing
-// step, and belongs in the toast and the log.
-function bridgeErrorText(e: unknown): string {
-  if (isApiError(e, 'BAD_REQUEST')) return t('settings.bridge.badCredentials')
+/**
+ * bridgeErrorText translates the stable HTTP code into a sentence the user can act on, at the step
+ * where they stand: a 400 means « wrong password » before the code and « wrong code » after it — the
+ * second field report showed the password sentence under the code field.
+ */
+function bridgeErrorText(e: unknown, step: 'password' | 'code'): string {
+  if (isApiError(e, 'BAD_REQUEST')) return step === 'code' ? t('settings.bridge.codeRefusedBody') : t('settings.bridge.badCredentials')
   if (isApiError(e, 'RATE_LIMITED')) return t('settings.bridge.blockedBody')
   if (isApiError(e, 'PROVIDER_UNAVAILABLE')) return t('settings.bridge.flowFailed')
+  if (isApiError(e, 'UNAUTHORIZED')) return t('settings.bridge.expiredBody')
   return e instanceof Error ? e.message : t('settings.bridge.failedTitle')
 }
 

@@ -152,6 +152,37 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     expect(btn('Activer le pont')).toBeNull()
   })
 
+  it('opens a modal instead of growing the card', async () => {
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Déconnecté'))
+
+    // The card stays a summary: no field until the flow is opened.
+    const card = document.querySelector('[role="group"]') as HTMLElement
+    expect(card.querySelector('input')).toBeNull()
+
+    await clickEl(btn('Activer le pont'))
+    const dialog = document.querySelector('dialog')
+    expect(dialog).not.toBeNull()
+    // The consent and the fields live in the modal, and the card did not grow a module.
+    expect(dialog?.textContent).toContain('Avant de continuer')
+    expect(dialog?.querySelectorAll('input').length).toBe(2)
+    expect(card.querySelectorAll(':scope > form').length).toBe(0)
+  })
+
+  it('keeps the one-shot password away from the password managers', async () => {
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Déconnecté'))
+    await clickEl(btn('Activer le pont'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+
+    const [, password] = inputs()
+    // A « save this login? » prompt over the card is noise, and this credential belongs to Garmin.
+    expect(password.getAttribute('autocomplete')).toBe('new-password')
+    expect(password.hasAttribute('data-1p-ignore')).toBe(true)
+    expect(password.getAttribute('data-lpignore')).toBe('true')
+    expect(password.hasAttribute('data-bwignore')).toBe(true)
+  })
+
   it('offers a reconnect when the session expired or Garmin blocks', async () => {
     userData(1).garminBridge = { state: 'expired' }
     db().data['1'] = userData(1)

@@ -2,10 +2,10 @@ import { BellRing, Download, Loader2, Watch } from 'lucide-react'
 import { useState } from 'react'
 import { useAdminMutations, useAdminSettings } from '../../api/queries'
 import { Card } from '../../components/ui/Card'
+import { Toggle } from '../../components/ui/Toggle'
 import { Field } from '../../components/ui/Field'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
-import { cn } from '../../lib/cn'
 import { ErrorView } from '../StateViews'
 import { t } from '../../i18n'
 
@@ -133,7 +133,7 @@ function UpdatesCard() {
           hint={on ? t('admin.updates.on') : t('admin.updates.off')}
           checked={on}
           disabled={m.updateSettings.isPending}
-          onChange={() => m.updateSettings.mutate({ updateCheckEnabled: !on })}
+          onChange={(v) => m.updateSettings.mutate({ updateCheckEnabled: v })}
         />
       )}
     </Card>
@@ -161,32 +161,10 @@ function BridgeCard() {
           hint={on ? t('admin.bridge.on') : t('admin.bridge.off')}
           checked={on}
           disabled={m.updateSettings.isPending}
-          onChange={() => m.updateSettings.mutate({ garminBridgeEnabled: !on })}
+          onChange={(v) => m.updateSettings.mutate({ garminBridgeEnabled: v })}
         />
       )}
     </Card>
   )
 }
 
-/** One labelled switch, shared by the cards above. */
-function Toggle({ label, hint, checked, disabled, onChange }: { label: string; hint: string; checked: boolean; disabled: boolean; onChange: () => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-ink-3">{hint}</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={onChange}
-        className={cn('relative h-6 w-11 flex-none rounded-full transition-colors', checked ? 'bg-accent' : 'bg-line-strong')}
-      >
-        <span className={cn('absolute top-0.5 size-5 rounded-full bg-surface transition-all', checked ? 'left-[1.375rem]' : 'left-0.5')} />
-      </button>
-    </div>
-  )
-}

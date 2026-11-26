@@ -163,6 +163,7 @@ func (s *Service) finishLogin(ctx context.Context, userID int64, sess *session, 
 		return LoginResult{State: stateOfError(err)}, stepErr(stepLogin, err)
 	}
 	if !isMFA(body) && !ticketRE.Match(body) && !responseURLRE.Match(body) && !ticketRE.MatchString(res.Request.URL.String()) {
+		s.trace(userID, stepLogin, res, body)
 		if !isRefusal(body) && isChallenge(body) {
 			return LoginResult{State: StateBlocked}, stepErr(stepLogin, ErrChallenge)
 		}
@@ -358,6 +359,16 @@ func classify(status int, body []byte) error {
 		return ErrFlow
 	}
 	return nil
+}
+
+// trace writes what Garmin actually answered when a sign-in stops, in booleans and a status: enough
+// to tell a refused code from an unknown page, and nothing that could carry an e-mail, a password or
+// a token. It is the line a field report needs.
+func (s *Service) trace(userID int64, step string, res *http.Response, body []byte) {
+	s.log().Warn("🔗 Pont Garmin : réponse inexploitée",
+		"user", userID, "etape", step, "status", res.StatusCode, "octets", len(body),
+		"ticket", ticketRE.Match(body), "code_requis", isMFA(body), "formulaire", hasSigninForm(body),
+		"captcha", isChallenge(body), "refus", isRefusal(body))
 }
 
 // hasSigninForm reports the page re-rendering the sign-in form, which is how Garmin answers a

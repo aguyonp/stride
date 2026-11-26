@@ -158,6 +158,8 @@ export default {
     codeRefused: 'Code refusé',
     badCredentials: 'Garmin a refusé cet e-mail ou ce mot de passe. Vérifiez-les, puis réessayez.',
     flowFailed: 'Garmin n’a pas répondu comme prévu : le pont doit être mis à jour. Le fichier .FIT reste disponible.',
+    enterCode: 'Saisir le code',
+    codeRefusedBody: 'Garmin a refusé ce code. Vérifiez-le, ou demandez-en un nouveau en recommençant.',
     codePendingTitle: 'Garmin demande un code',
     codePendingBody: 'Le mot de passe est accepté. Saisissez le code de vérification reçu par e-mail ou dans l’application Garmin.',
     statusFailed: 'Impossible de lire l’état du pont.',
