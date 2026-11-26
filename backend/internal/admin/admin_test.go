@@ -183,7 +183,9 @@ func TestInvitations(t *testing.T) {
 func TestSettingsMeterAndCacheFlush(t *testing.T) {
 	e := setup(t)
 	_, adminTok := e.user("admin")
-	if code, body := e.do(adminTok, "GET", "/api/admin/settings", ""); code != 200 || string(bytes.TrimSpace(body)) != `{"registrationMode":"invite"}` {
+	// The notification-centre retention ships with the defaults (issue #142).
+	if code, body := e.do(adminTok, "GET", "/api/admin/settings", ""); code != 200 ||
+		string(bytes.TrimSpace(body)) != `{"registrationMode":"invite","inboxRetentionDays":10,"inboxRetentionMax":50}` {
 		t.Fatalf("settings: %d %s", code, body)
 	}
 	if code, _ := e.do(adminTok, "PUT", "/api/admin/settings", `{"registrationMode":"public"}`); code != http.StatusBadRequest {
@@ -195,7 +197,27 @@ func TestSettingsMeterAndCacheFlush(t *testing.T) {
 	if m, _ := e.st.RegistrationMode(context.Background()); m != "open" {
 		t.Fatalf("mode %q", m)
 	}
-	code, body := e.do(adminTok, "GET", "/api/admin/meter", "")
+
+	// Retention is clamped, not rejected, and a field left out keeps its current value.
+	code, body := e.do(adminTok, "PUT", "/api/admin/settings", `{"registrationMode":"open","inboxRetentionDays":0,"inboxRetentionMax":5000}`)
+	if code != 200 || !strings.Contains(string(body), `"inboxRetentionDays":10`) || !strings.Contains(string(body), `"inboxRetentionMax":200`) {
+		t.Fatalf("retention clamp: %d %s", code, body)
+	}
+	if days, max := e.st.InboxRetention(context.Background()); days != 10 || max != 200 {
+		t.Fatalf("stored retention: %d/%d", days, max)
+	}
+	if code, body := e.do(adminTok, "PUT", "/api/admin/settings", `{"inboxRetentionDays":3,"inboxRetentionMax":2}`); code != 200 ||
+		!strings.Contains(string(body), `"inboxRetentionDays":3`) || !strings.Contains(string(body), `"registrationMode":"open"`) {
+		t.Fatalf("retention save: %d %s", code, body)
+	}
+	// A setting left out keeps its value: the retention panel never resets the registration mode.
+	if m, _ := e.st.RegistrationMode(context.Background()); m != "open" {
+		t.Fatalf("retention-only PUT changed the mode: %q", m)
+	}
+	if code, _ := e.do(adminTok, "PUT", "/api/admin/settings", `{"registrationMode":"nope"}`); code != http.StatusBadRequest {
+		t.Fatalf("invalid mode accepted: %d", code)
+	}
+	code, body = e.do(adminTok, "GET", "/api/admin/meter", "")
 	var snap apimeter.Snapshot
 	_ = json.Unmarshal(body, &snap)
 	if code != 200 || len(snap.Providers) != 3 || snap.RecentErrors == nil {

@@ -87,6 +87,9 @@ type Invitation struct {
 
 type Settings struct {
 	RegistrationMode string `json:"registrationMode"`
+	// Notification centre retention (issue #142): days of history and entries kept per user.
+	InboxRetentionDays int `json:"inboxRetentionDays"`
+	InboxRetentionMax  int `json:"inboxRetentionMax"`
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -359,7 +362,8 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		h.internal(w, r, "Lecture des réglages", err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode})
+	days, max := h.d.Store.InboxRetention(r.Context())
+	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max})
 }
 
 func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
@@ -368,20 +372,58 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, "Corps JSON invalide.")
 		return
 	}
-	if body.RegistrationMode != store.RegistrationOpen && body.RegistrationMode != store.RegistrationInvite {
+	// A field left out keeps its current value, so the panel that owns one setting cannot reset
+	// the others; a wrong value is still rejected.
+	curMode, err := h.d.Store.RegistrationMode(r.Context())
+	if err != nil {
+		h.internal(w, r, "Lecture des réglages", err)
+		return
+	}
+	mode := body.RegistrationMode
+	if mode == "" {
+		mode = curMode
+	}
+	if mode != store.RegistrationOpen && mode != store.RegistrationInvite {
 		httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, "Mode d'inscription invalide (open ou invite).")
 		return
 	}
-	if err := h.d.Store.SetSetting(r.Context(), store.SettingRegistrationMode, body.RegistrationMode, h.d.Now()); err != nil {
+	if err := h.d.Store.SetSetting(r.Context(), store.SettingRegistrationMode, mode, h.d.Now()); err != nil {
 		h.internal(w, r, "Mise à jour des réglages", err)
 		return
 	}
-	h.d.Log.Info("⚙️ Mode d'inscription modifié", "adminId", admin(r).ID, "mode", body.RegistrationMode)
-	httpx.JSON(w, http.StatusOK, body)
+	// Retention is clamped, not rejected; the purge applies the new bounds at once (issue #142).
+	curDays, curMax := h.d.Store.InboxRetention(r.Context())
+	days, max := store.ClampInboxRetention(keepIfZero(body.InboxRetentionDays, curDays), keepIfZero(body.InboxRetentionMax, curMax))
+	for _, kv := range []struct {
+		key   string
+		value int
+	}{{store.SettingInboxRetentionDays, days}, {store.SettingInboxRetentionMax, max}} {
+		if err := h.d.Store.SetSetting(r.Context(), kv.key, strconv.Itoa(kv.value), h.d.Now()); err != nil {
+			h.internal(w, r, "Mise à jour de la rétention", err)
+			return
+		}
+	}
+	if h.d.Domain != nil {
+		if n, err := h.d.Domain.PurgeInbox(r.Context()); err != nil {
+			h.d.Log.Warn("⚠️ Purge du centre de notifications impossible", "err", err.Error())
+		} else if n > 0 {
+			h.d.Log.Info("🧹 Centre de notifications purgé", "adminId", admin(r).ID, "removed", n)
+		}
+	}
+	h.d.Log.Info("⚙️ Réglages modifiés", "adminId", admin(r).ID, "mode", mode, "inboxDays", days, "inboxMax", max)
+	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max})
 }
 
 func (h *Handler) meter(w http.ResponseWriter, _ *http.Request) {
 	httpx.JSON(w, http.StatusOK, h.d.Meter.Snapshot())
+}
+
+// keepIfZero keeps the current value of a settings field the client omitted.
+func keepIfZero(v, cur int) int {
+	if v == 0 {
+		return cur
+	}
+	return v
 }
 
 func (h *Handler) flushCache(w http.ResponseWriter, r *http.Request) {

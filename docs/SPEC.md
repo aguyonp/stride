@@ -892,3 +892,45 @@ Reported in 4.1 and still broken in 4.6.0 (issue #21): a session opened from the
 - **Edges**: a session at either end of the history keeps the missing arrow disabled; two sessions of the same day keep the server order (`start_local DESC, id DESC`); the arrows stay usable while the window loads (disabled until the neighbour is known).
 - **Drive-by**: the picker's desktop calendar header was hardcoded French (« Calendrier ») in the English UI — now `t('session.picker.calendar')`.
 - **Tests**: `navigation.test.ts` (pure neighbour logic: both sides, edges, same-day order, truncated listing), `DashboardView.test.tsx` (a session from `?s=` outside the first page: arrows enabled and jumping to the exact neighbours, oldest session with a single arrow, nominal case with no extra query), `e2e/session-navigation.spec.ts` (picker → April 2025 marathon → next → URL `?s=` and content change → back).
+
+## 21. 4.7.0 — Notification centre
+
+Issue #142. The alerts (biomechanics, load, readiness) and the physio/coach portal writes were only ever toasts: 6 s on screen, gone for good, and two tabs disagreed. A user who came back an hour later had no way to know that the physio had left a directive or that the knee alert had fired. 4.7.0 gives those messages a persistent, per-user history behind a bell in the header.
+
+### 21.1 What feeds it
+
+| Family | Source | Kind / level | Deduplicated on |
+|---|---|---|---|
+| Analysis alert | `emitAlert` (biomechanics, ACWR, readiness, sessions) | `alert` / `info`, `warn` or `error` | activity date + activity + alert code |
+| Physio/coach directive | `PUT /api/public/share/{token}/directive` | `share` / `info`, `code` = `directive` | share link + kind |
+| Session remark | `PUT /api/public/share/{token}/activities/{id}/remark` | `share` / `info`, `code` = `remark` | share link + session + kind |
+| Prescribed session / constraint | portal plan & event writes | `share` / `info`, `code` = `plan` / `event` | share link + session/date + kind |
+| Release available | release checker (§22, issue #143) | `update` / `info`, `code` = version | version |
+
+Writes happen **in the domain**, next to the toast, so the history exists with no tab open. A write on an existing dedup key updates the row and keeps its read state (editing the same directive twice stacks nothing). Deliberately out of scope: synced activities, background jobs, the acknowledgement toasts (« profil enregistré ») — the centre is a notification history, not a log; the log stays in Admin › Logs.
+
+### 21.2 Storage and API
+
+- **Table** `inbox_entries` (migration `00016_inbox`): `user_id`, `kind`, `level`, `title`, `code`, `detail`, `url`, `activity_id`, `date`, `dedup_key`, `created_at`, `read_at`; unique index on `(user_id, dedup_key)` for the upsert, index on `(user_id, created_at DESC, id DESC)` for the list.
+- **Language neutrality**: `title` stores an English fallback and `code` the stable identifier (`directive`, `remark`, `CADENCE_LOW`, `4.7.0`); the interface localizes from the code (§15.2 rule already used by the toasts). Alert texts keep the analysis wording — they are already written in the user's language.
+- **`GET /api/inbox?limit=&before=`** → `{items, unread, hasMore}`; the cursor is the entry id, resolved server-side to `(created_at, id)`, so a page never skips or repeats a row; `limit` is clamped to 1..200 (default 50).
+- **`POST /api/inbox/read {ids}`** and **`POST /api/inbox/read-all`** → `{unread}`. Both are scoped by `user_id`: marking another user's entry is a no-op, not an error (no existence leak), and marking twice is idempotent. There is no delete route — the history is only bounded by retention.
+- **SSE**: `notification.created` (a write happened) and `notification.updated` (the unread count changed), published on the per-user channel like `alert.triggered`. The toast remains the immediate signal; the counter and the panel follow the events.
+- **Separate from `/api/notifications`**, which manages the external Discord / Telegram / webhook targets: distinct route prefix, query key and vocabulary.
+
+### 21.3 Retention
+
+`GET /api/admin/settings` gains `inboxRetentionDays` (default 10, clamped 1..365) and `inboxRetentionMax` (default 50, clamped 1..200). `PUT /api/admin/settings` clamps them instead of rejecting, treats a missing field as « keep the current value » (so the panel that owns one setting never resets the others) and purges the surplus immediately; `PurgeInbox` also runs on the daily maintenance pass. The admin panel exposes it in Admin › Invitations (Registration card, then Notification centre).
+
+### 21.4 Interface
+
+A bell in the header (before the search button) with an unread badge capped at `99+`; the panel is the drawer variant of `Dialog`, grouped by day (« Aujourd'hui », « Hier », then the long date), one line per entry with a level icon, the localized title, the physio label and the session date, and the read/unread styling. Clicking an entry marks it read and opens its session (`/activities/{id}`), the health page for a directive, GitHub for a release. « Mark all as read » empties the badge; the history stays. The empty state explains what will land here.
+
+### 21.5 Tests
+
+- `internal/domain/inbox_test.go` — upsert and dedup keys, read state preserved on update, retention bounds, purge, kind/level mapping, truncation.
+- `internal/domainapi/inbox_test.go` — end to end through the API: portal writes feed the centre with code/target/date, another user sees and marks nothing, read is idempotent, no anonymous access, no delete route. It decodes every list into a fresh value: `json.Unmarshal` reuses the elements of an existing slice, and the `omitempty` pointer fields (`activityId`, `date`, `readAt`) would otherwise keep the previous answer — the same trap as §19.2, on the test side.
+- `internal/admin/admin_test.go` — clamping, persistence, a retention-only `PUT` leaves the registration mode alone.
+- `frontend/src/components/layout/NotificationBell.test.tsx` — badge, grouped history, localized share titles, navigation and read marking, « mark all », empty state.
+- `frontend/src/views/admin/InvitationsPanel.test.tsx` — stored values, range validation before the call, saved values.
+- `frontend/e2e/inbox.spec.ts` — real browser: bell and badge, panel content, entry → session, mark all, admin retention card.

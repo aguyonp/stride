@@ -37,7 +37,16 @@ const (
 	EventLLMDone        = "llm.done"
 	// EventShareUpdated tells the owner that a share link wrote through the portal (4.2.0).
 	EventShareUpdated = "share.updated"
+	// EventNotificationCreated / EventNotificationUpdated feed the notification centre (4.7.0, #142).
+	EventNotificationCreated = "notification.created"
+	EventNotificationUpdated = "notification.updated"
 )
+
+// StreamNotificationEvent carries one new centre entry (created) or the new unread count (updated).
+type StreamNotificationEvent struct {
+	Entry  any `json:"entry,omitempty"`
+	Unread int `json:"unread"`
+}
 
 // ShareUpdatedEvent names what a share link changed: directive | remark | plan | event.
 type ShareUpdatedEvent struct {

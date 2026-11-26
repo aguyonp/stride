@@ -2,6 +2,7 @@
 
 import type {
   HealthStatus,
+  InboxEntry,
   LLMAnalysis,
   LLMConfig,
   NotificationTarget,
@@ -75,6 +76,8 @@ export interface UserData {
   v42?: unknown
   health?: HealthStatus
   mcp?: MockMcpState
+  /** 4.7.0 notification centre (§21, issue #142). */
+  inbox?: InboxEntry[]
 }
 
 export interface V3Data {
@@ -86,6 +89,8 @@ export interface V3Data {
 
 export interface MockState {
   version: 2
+  /** Notification-centre retention, editable from the admin panel. */
+  inboxRetention: { days: number; max: number }
   flags: string
   day: string
   seq: number
@@ -247,6 +252,20 @@ function richData(st: { seq: number }, today: string): UserData {
   addNote(10, { painDuring: 4, painCold: 5, painNextMorning: 4.5, rpe: 8, shoeId: shoes[0].id, tags: [], note: 'Trop de descente technique.' })
   addNote(13, { painDuring: 0.5, painCold: 0, painNextMorning: 0, rpe: 4, shoeId: shoes[1].id, tags: ['metronome'], note: '' })
 
+  // Notification centre: an unread alert, an unread portal directive and an old read remark, so
+  // the badge, the unread styling and the read state are all visible in the demo.
+  const inbox: InboxEntry[] = [
+    { id: next(), kind: 'alert', level: 'warn', title: 'Cadence basse sur la dernière sortie', code: 'CADENCE_LOW',
+      detail: '169 spm sur 20 min, sous ton seuil de 172 spm.', activityId: run(1)?.id, date: addDays(today, -1),
+      createdAt: new Date(Date.now() - 40 * 60_000).toISOString() },
+    { id: next(), kind: 'share', level: 'info', title: 'Physio/coach instruction updated', code: 'directive',
+      detail: 'Kiné Martin', createdAt: new Date(Date.now() - 3 * 3600_000).toISOString() },
+    { id: next(), kind: 'share', level: 'info', title: 'New remark on a session', code: 'remark',
+      detail: 'Kiné Martin', activityId: run(3)?.id, date: addDays(today, -3),
+      createdAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
+      readAt: new Date(Date.now() - 25 * 3600_000).toISOString() },
+  ]
+
   const plan: PlanEntry[] = []
   const add = (daysFromToday: number, p: Omit<PlanEntry, 'id' | 'date' | 'steps' | 'source' | 'garmin'>, steps: WorkoutStep[] = []) =>
     plan.push({ id: next(), date: addDays(today, daysFromToday), steps, source: 'manual', garmin: { status: 'none', workoutId: null, pushedAt: null, error: null }, ...p })
@@ -289,7 +308,7 @@ function richData(st: { seq: number }, today: string): UserData {
     [addDays(today, -3)]: { date: addDays(today, -3), trainingReadiness: 41, readinessStatus: 'Faible', note: 'Mauvaise nuit.', updatedAt: iso(3 * D) },
   }
 
-  return { profile, goals, plan, shoes, notes, checkins, integrations: integrationsFor(true) }
+  return { profile, goals, plan, shoes, notes, checkins, integrations: integrationsFor(true), inbox }
 }
 
 function passkey(name: string, created: number, used: number | null, backedUp = true): Passkey {
@@ -326,6 +345,7 @@ function seed(): MockState {
     users,
     sessionUserId: loggedOut ? null : has('user') ? 2 : 1,
     registrationMode: has('open') ? 'open' : 'invite',
+    inboxRetention: { days: 10, max: 50 },
     invitations,
     data,
     sync: {

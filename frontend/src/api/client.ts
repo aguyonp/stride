@@ -107,6 +107,7 @@ import type {
   ShareNote,
   ShareRemarkInput,
   McpStatus,
+  InboxPage,
   McpToken,
   McpQuota,
   McpUsage,
@@ -257,7 +258,7 @@ export const api = {
   adminCreateInvitation: (body: { label?: string; maxUses?: number; expiresInHours?: number }) => json<InvitationCreated>('/api/admin/invitations', { method: 'POST', body }),
   adminRevokeInvitation: (id: number) => json<void>(`/api/admin/invitations/${id}`, { method: 'DELETE' }),
   adminSettings: () => json<AdminSettings>('/api/admin/settings'),
-  adminUpdateSettings: (body: AdminSettings) => json<AdminSettings>('/api/admin/settings', { method: 'PUT', body }),
+  adminUpdateSettings: (body: Partial<AdminSettings>) => json<AdminSettings>('/api/admin/settings', { method: 'PUT', body }),
   adminMeter: () => json<MeterSnapshot>('/api/admin/meter'),
   adminMcpUsage: () => json<McpUsage>('/api/admin/mcp/usage'),
   adminMcpJournal: () => json<McpJournal>('/api/admin/mcp/journal'),
@@ -470,6 +471,9 @@ export const api = {
 
   /* 4.3.0 endpoints (§MCP) */
   mcpStatus: () => json<McpStatus>('/api/mcp'),
+  inbox: (limit = 50) => json<InboxPage>(`/api/inbox${qs({ limit })}`),
+  markInboxRead: (ids: number[]) => json<{ unread: number }>('/api/inbox/read', { method: 'POST', body: { ids } }),
+  markInboxAllRead: () => json<{ unread: number }>('/api/inbox/read-all', { method: 'POST', body: {} }),
   mcpSetEnabled: (enabled: boolean) => json<void>('/api/mcp', { method: 'PUT', body: { enabled } }),
   mcpGenerateToken: () => json<McpToken>('/api/mcp/token', { method: 'POST' }),
   mcpRevokeToken: () => json<void>('/api/mcp/token', { method: 'DELETE' }),

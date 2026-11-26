@@ -13,6 +13,7 @@ import { api, ApiError, type ListActivitiesParams } from './client'
 import { ADMIN_METER_POLL_MS, fallbackPollInterval } from './polling'
 import { resetEventStore, useHasActiveJob, useStreamConnected } from '../state/events'
 import type {
+  InboxPage,
   LogFilter,
   ActivityListResponse,
   ActivityNotesInput,
@@ -44,6 +45,7 @@ export const qk = {
   activities: (p: ListActivitiesParams = {}) => ['activities', 'list', p] as const,
   activitiesRange: (from: string, to: string) => ['activities', 'range', from, to] as const,
   activityOlder: (date: string, before: string) => ['activities', 'older', date, before] as const,
+  inbox: ['inbox'] as const,
   activity: (id: number) => ['activity', id] as const,
   report: (kind: 'activity' | 'day', ref: number | string, include: string) => ['report', kind, ref, include] as const,
   day: (date: string) => ['day', date] as const,
@@ -306,6 +308,25 @@ export function useOlderActivity(date: string, before: string, enabled = true) {
   })
 }
 
+/** Notification centre (§21, issue #142): 50 newest entries and the unread badge. */
+export function useInbox(enabled = true) {
+  return useQuery({ queryKey: qk.inbox, queryFn: () => api.inbox(50), enabled })
+}
+
+export function useInboxMutations() {
+  const qc = useQueryClient()
+  // The badge follows the answer at once; the list is refetched so the read flags come from the
+  // server (no optimistic drift on a 50-row page).
+  const done = (r: { unread: number }) => {
+    qc.setQueryData<InboxPage>(qk.inbox, (old) => (old ? { ...old, unread: r.unread } : old))
+    void qc.invalidateQueries({ queryKey: qk.inbox })
+  }
+  return {
+    markRead: useMutation({ mutationFn: (ids: number[]) => api.markInboxRead(ids), onSuccess: done }),
+    markAll: useMutation({ mutationFn: () => api.markInboxAllRead(), onSuccess: done }),
+  }
+}
+
 export function useDayView(date: string | null) {
   return useQuery({ queryKey: qk.day(date ?? ''), queryFn: () => api.day(date as string), enabled: date !== null, placeholderData: keepPreviousData })
 }
@@ -454,7 +475,7 @@ export function useAdminMutations() {
     createInvitation: useMutation({ mutationFn: api.adminCreateInvitation, onSuccess: inv(qk.admin.invitations) }),
     revokeInvitation: useMutation({ mutationFn: (id: number) => api.adminRevokeInvitation(id), onSuccess: inv(qk.admin.invitations) }),
     updateSettings: useMutation({
-      mutationFn: (s: AdminSettings) => api.adminUpdateSettings(s),
+      mutationFn: (s: Partial<AdminSettings>) => api.adminUpdateSettings(s),
       onSuccess: (s) => {
         qc.setQueryData(qk.admin.settings, s)
         void qc.invalidateQueries({ queryKey: qk.auth })
