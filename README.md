@@ -26,57 +26,16 @@ open http://localhost:8080
 
 ## Highlights
 
-**4.8.0**
-- Release banner for administrators: a newer GitHub release than the running binary is announced under the header, with « See on GitHub » and « Later », and kept as a notice in the notification centre.
-- The check runs on the server, once per instance (6 h cache, 1 h after a failure), through the egress guard: the users' addresses never reach GitHub, and a failure is silent.
-- SemVer only: pre-releases, `dev` builds and a version ahead of the release announce nothing; the link is built from the constant repository, never from the API payload.
-- Admin › Invitations gains the switch `updateCheckEnabled` (no request, no notice, no banner when off).
-
-**4.7.0**
-- Notification centre: a bell in the header keeps a persistent, per-user history of the alerts and the physio/coach messages — unread badge, history grouped by day, mark one or all as read, click to open the session. The toasts stay the immediate signal; this is what survives a reload.
-- Fed in the domain (no tab needed) by the analysis alerts and every portal write (directive, remark, prescribed session, constraint), deduplicated so an edit updates its entry instead of stacking one, and localized from a stable code (French / English).
-- Admin › Invitations gains the retention: days kept and entries per user (clamped, purged on change and by the daily maintenance).
-- Tests: domain (dedup, retention, purge), API (isolation, idempotent reads), admin (clamping), Vitest (bell, panel, admin card) and a Playwright pass on the real UI.
-
-**4.6.1**
-- Previous / next session arrows work for a session opened from the calendar, deep in the history: the neighbours are queried exactly (`before` cursor down, listing up) instead of being read only from the loaded page.
-- The session picker's calendar header is translated in English too.
-
-**4.6.0**
-- MCP write tools `plan_create` / `plan_update` take the structured workout: `steps` with warm-up, effort, recovery, cool-down and `repeat` blocks, durations or distances, pace / HR / cadence / power targets. Assistant-planned sessions land with their native blocks — ready for the Structure editor, the `.FIT` export and the watch push.
-- `steps` is documented in the `tools/list` schema (recursive `$defs/step`, allowed values from the domain enums) and validated by the same domain rules as the REST API, in-band and localized; `instructions` keeps the contextual guidance only.
-- Fix: replacing a `steps` array no longer inherits the sub-steps of the previous blocks (`Patch` now decodes into a fresh value).
-
-**4.5.0**
-- MCP call journal (admin tab) and one structured log line per public call; `DEADLINE_EXCEEDED` fixed (SDK keep-alive).
-- Effective public-route quota quoted in the account card.
-
-**4.3.0**
-- Per-user MCP server: expose your own data to AI assistants (Claude, …) at `POST /mcp/{token}` (Streamable HTTP, official Go SDK), toggled from your account; 13 read/write tools scoped to you.
-
-**4.2.0**
-- Physio / coach portal on share links: directives with restrictions, session remarks, prescribed sessions and events, per-session detail (each permission opt-in).
-- Coach notes injected first into every AI prompt, plan generation and adaptation (quoted, capped).
-- Smart Workout Morphing: today's or tomorrow's session adapted to pain, load, heat, wind and physio restrictions; refine with AI, apply, revert, `.FIT`.
-- Atomic SQLite backups (daily, before migrations, on demand) with SHA-256, local retention and S3-compatible upload.
-- SQLite split into one writer and a read-only pool.
-- French / English interface and AI prompts, following the browser language by default (switch in Settings, `Cmd+K`, login and share pages).
-
-**4.1.0**
-- Five menus (Tableau de bord, Planning, Santé & forme, Coach IA, Réglages) and a header search button (`Cmd+K`).
-- Health status as the single source of the injury focus; symptoms recorded once, in the body map.
-- Full history import from Garmin and Strava (resumable job) and search over all sessions.
-- Share links scoped by period and sections, with anonymization.
-- Pathology catalog per body zone (ankle, hip, lower back, forefoot…) plus a custom condition.
-- Real shoe mileage from Strava gear; pairs retired or deleted on Strava show as retired.
-- Admin control center (overview, users, jobs, share links, maintenance) and in-app user feedback.
-
-**4.0.0**
-- Macro / méso / micro training cycles with planned vs actual tracking.
-- Body map (6 zones) with correlations computed only from measured data.
-- Revocable read-only share links for a physio or a coach.
-- Real-time updates over SSE (job progress, AI token streaming), in-process background jobs.
-- Goose migrations, `stride doctor`, Prometheus metrics on a private listener.
+- **One dashboard, every session**: Garmin and Strava merged, biomechanics, aerobic efficiency, cumulative impact, ACWR load and readiness, with previous / next navigation through the whole history.
+- **Training cycles and planning**: macro / méso / micro phases with planned vs actual, structured sessions (warm-up, effort, recovery, cool-down, `repeat` blocks, pace / HR / cadence / power targets), Smart Workout Morphing.
+- **Health as a single source**: injury focus, body map, pain and symptoms recorded once, correlations computed from measured data only.
+- **AI coach, streamed**: analyses, plan generation and adaptation over SSE, coach notes from the physio injected first in every prompt.
+- **Notification centre**: a per-user history of the alerts and the physio/coach messages — bell, unread badge, grouped by day, mark read.
+- **Physio / coach portal**: revocable read-only share links with opt-in permissions (directives, remarks, prescribed sessions, events).
+- **Export and sharing**: `.FIT` workout export, Garmin Connect import (and an optional experimental watch push), clinical views by link.
+- **Per-user MCP server**: expose your own data to AI assistants at `POST /mcp/{token}`, 13 tools scoped to you, with a quota and a call journal.
+- **French / English** interface and AI prompts, following the browser language.
+- **Self-hosted and boring to operate**: SQLite (one writer, one reader), atomic backups with S3 upload, WebAuthn passkeys only, Prometheus metrics, in-app admin control center, release notice when a newer version is published.
 
 ## Architecture
 

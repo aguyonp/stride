@@ -534,7 +534,7 @@ route('PUT', /^\/api\/admin\/settings$/, ({ init }) => {
   return json(adminSettings())
 })
 
-/* 4.8.0 release check (§22, issue #143): admin only, cached server-side in the real instance. */
+/* Release check (§22, issue #143): admin only, cached server-side in the real instance. */
 route('GET', /^\/api\/updates$/, () => {
   const me = currentUser()
   if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')

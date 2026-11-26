@@ -893,7 +893,7 @@ Reported in 4.1 and still broken in 4.6.0 (issue #21): a session opened from the
 - **Drive-by**: the picker's desktop calendar header was hardcoded French (« Calendrier ») in the English UI — now `t('session.picker.calendar')`.
 - **Tests**: `navigation.test.ts` (pure neighbour logic: both sides, edges, same-day order, truncated listing), `DashboardView.test.tsx` (a session from `?s=` outside the first page: arrows enabled and jumping to the exact neighbours, oldest session with a single arrow, nominal case with no extra query), `e2e/session-navigation.spec.ts` (picker → April 2025 marathon → next → URL `?s=` and content change → back).
 
-## 21. 4.7.0 — Notification centre
+## 21. 4.7.0 — Notification centre (issue #142)
 
 Issue #142. The alerts (biomechanics, load, readiness) and the physio/coach portal writes were only ever toasts: 6 s on screen, gone for good, and two tabs disagreed. A user who came back an hour later had no way to know that the physio had left a directive or that the knee alert had fired. 4.7.0 gives those messages a persistent, per-user history behind a bell in the header.
 
@@ -935,9 +935,9 @@ A bell in the header (before the search button) with an unread badge capped at `
 - `frontend/src/views/admin/InvitationsPanel.test.tsx` — stored values, range validation before the call, saved values.
 - `frontend/e2e/inbox.spec.ts` — real browser: bell and badge, panel content, entry → session, mark all, admin retention card.
 
-## 22. 4.8.0 — Detecting a new release
+## 22. 4.7.0 — Detecting a new release (issue #143)
 
-Issue #143. A published release was invisible: the version only showed in the admin overview and in `GET /api/version`, so a self-hoster could run a two-month-old binary without knowing. The banner and the notification are for administrators only — they are the ones who deploy.
+Ships in the same release as §21. Issue #143. A published release was invisible: the version only showed in the admin overview and in `GET /api/version`, so a self-hoster could run a two-month-old binary without knowing. The banner and the notification are for administrators only — they are the ones who deploy.
 
 ### 22.1 Server-side check (`internal/updates`)
 

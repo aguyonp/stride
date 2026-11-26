@@ -1,9 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { assertNoConsoleErrors, trackConsoleErrors } from './helpers'
 
-// 4.8.0 release check (§22, issue #143): the banner above the content, its two actions, and the
-// admin switch that silences it. The mock runs 4.7.0 with a 4.8.0 release published, and the
-// notice it writes feeds the notification centre.
+// Release check (§22, issue #143): the banner above the content, its two actions, and the admin
+// switch that silences it. The mock runs the current version with a newer release published, and
+// the notice it writes feeds the notification centre.
 
 /** The unread badge of the bell, or null when every entry is read. */
 async function unreadCount(page: Page): Promise<number | null> {
