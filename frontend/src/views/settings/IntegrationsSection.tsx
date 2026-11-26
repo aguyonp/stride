@@ -95,10 +95,6 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
 
   return (
     <ProviderCard icon={<Watch />} title="Garmin Connect" badge={<ProviderBadge status={g.status} connected={g.connected} />}>
-      {/* The bridge comes first: it is the path that sends sessions to the watch, and it does not
-          depend on the key below. */}
-      <GarminBridgeCard />
-
       <div className="mt-4 border-t border-line pt-3.5">
         <p className="text-sm font-semibold text-ink">{t('settings.integrations.readTitle')}</p>
         {g.connected ? (
@@ -149,6 +145,10 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
           </>
         )}
       </div>
+
+      {/* The experimental path comes last: the stable reading setup first, the experiment after
+          (field report — an experimental feature above the stable one reads backwards). */}
+      <GarminBridgeCard />
 
       {/* The four steps and the field only appear when asked for: the card stays readable. */}
       <Dialog open={keyOpen} onClose={() => setKeyOpen(false)} title={t('settings.integrations.setupKey')} description={t('settings.integrations.readPitch')} size="md">

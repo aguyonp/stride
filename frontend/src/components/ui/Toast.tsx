@@ -1,5 +1,5 @@
 import { CircleCheck, Info, OctagonAlert, X } from 'lucide-react'
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 import { t } from '../../i18n'
 
@@ -26,6 +26,7 @@ export function useToast(): ToastApi {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([])
   const seq = useRef(0)
+  const hostRef = useRef<HTMLDivElement>(null)
 
   const dismiss = useCallback((id: number) => setItems((xs) => xs.filter((x) => x.id !== id)), [])
 
@@ -38,15 +39,36 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss],
   )
 
+  // A native <dialog> opened with showModal() sits in the browser's TOP LAYER, above any z-index:
+  // a toast for an action started from the session sheet was drawn behind it (field report). A
+  // popover joins the same layer, opened *after* the sheet, so the confirmation lands on top.
+  useEffect(() => {
+    const el = hostRef.current as (HTMLDivElement & { showPopover?: () => void; hidePopover?: () => void }) | null
+    if (!el || typeof el.showPopover !== 'function') return
+    try {
+      if (items.length > 0) {
+        // React 19 does not always forward the attribute: set it before the first open.
+        if (!el.hasAttribute('popover')) el.setAttribute('popover', 'manual')
+        if (!el.matches(':popover-open')) el.showPopover()
+      } else if (el.matches(':popover-open')) {
+        el.hidePopover()
+      }
+    } catch {
+      /* a browser without popover support keeps the plain fixed host */
+    }
+  }, [items.length])
+
   const api = useMemo(() => ({ toast }), [toast])
 
   return (
     <ToastContext.Provider value={api}>
       {children}
       <div
+        ref={hostRef}
+        popover="manual"
         aria-live="polite"
         aria-atomic="false"
-        className="pointer-events-none fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-[60] flex flex-col items-center gap-2 px-4 lg:top-auto lg:right-6 lg:bottom-6 lg:left-auto lg:items-end"
+        className="pointer-events-none fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-[60] m-0 flex flex-col items-center gap-2 border-0 bg-transparent p-0 px-4 lg:top-auto lg:right-6 lg:bottom-6 lg:left-auto lg:items-end"
       >
         {items.map((item) => (
           <div
