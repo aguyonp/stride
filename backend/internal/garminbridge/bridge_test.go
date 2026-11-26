@@ -123,6 +123,9 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 	// The ticket is traded for an OAuth1 token first, consumer-signed, form-encoded answer.
 	mux.HandleFunc("GET /oauth-service/oauth/preauthorized", func(w http.ResponseWriter, r *http.Request) {
 		f.record("GET preauthorized")
+		if ua := r.Header.Get("User-Agent"); ua != "com.garmin.android.apps.connectmobile" {
+			t.Errorf("preauthorized UA %q", ua)
+		}
 		auth := r.Header.Get("Authorization")
 		if strings.Contains(auth, "oauth_token=") {
 			t.Errorf("preauthorized is consumer-signed, no token: %q", auth)
@@ -134,6 +137,12 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 	})
 	mux.HandleFunc("POST /oauth-service/oauth/exchange/user/2.0", func(w http.ResponseWriter, r *http.Request) {
 		f.record("POST exchange")
+		if ua := r.Header.Get("User-Agent"); ua != "com.garmin.android.apps.connectmobile" {
+			t.Errorf("exchange UA %q", ua)
+		}
+		if r.Header.Get("DI-Backend") != "" {
+			t.Errorf("the OAuth hops carry no DI-Backend: %q", r.Header.Get("DI-Backend"))
+		}
 		_ = r.ParseForm()
 		// The exchange is signed with the resource-owner token from the hop above.
 		auth := r.Header.Get("Authorization")

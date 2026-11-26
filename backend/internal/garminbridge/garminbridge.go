@@ -149,6 +149,9 @@ type Logger interface {
 const (
 	publicConsumerKey    = "fc3e99d2-118c-44b8-8ae3-03370dde24c0"
 	publicConsumerSecret = "E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF"
+	// oauthUserAgent is the UA of the OAuth endpoints: it must match the Android consumer key, and
+	// the SSO one (GCM-Android…) is not accepted there.
+	oauthUserAgent = "com.garmin.android.apps.connectmobile"
 	// mobileUserAgent is the Garmin Connect Android app: the SSO answers it with the mobile flow.
 	mobileUserAgent = "GCM-Android-5.19; ; 4.4.2; 1.0"
 	// serviceURL is where the SSO sends the ticket once the sign-in succeeds.

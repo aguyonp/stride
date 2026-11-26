@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -283,8 +284,7 @@ func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", hdr)
-	req.Header.Set("DI-Backend", "connectapi.garmin.com")
-	s.headers(req)
+	req.Header.Set("User-Agent", oauthUserAgent)
 	res, err := s.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -299,14 +299,14 @@ func (s *Service) exchange(ctx context.Context, ticket, op string) (*Tokens, err
 	}
 	if res.StatusCode != http.StatusOK {
 		s.log().Warn("🔗 Pont Garmin : échange du ticket refusé", "op", op, "status", res.StatusCode)
-		return nil, ErrCredentials
+		return nil, fmt.Errorf("%w (échange HTTP %d)", ErrCredentials, res.StatusCode)
 	}
 	var payload struct {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int64  `json:"expires_in"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || payload.AccessToken == "" {
-		return nil, ErrCredentials
+		return nil, fmt.Errorf("%w (échange : réponse inattendue, %d octets)", ErrCredentials, len(body))
 	}
 	exp := payload.ExpiresIn
 	if exp <= 0 {
@@ -340,8 +340,7 @@ func (s *Service) preauthorized(ctx context.Context, ticket string) (key, secret
 		return "", "", err
 	}
 	req.Header.Set("Authorization", hdr)
-	req.Header.Set("DI-Backend", "connectapi.garmin.com")
-	s.headers(req)
+	req.Header.Set("User-Agent", oauthUserAgent)
 	res, err := s.client.Do(req)
 	if err != nil {
 		return "", "", err
@@ -356,7 +355,9 @@ func (s *Service) preauthorized(ctx context.Context, ticket string) (key, secret
 	}
 	if res.StatusCode != http.StatusOK {
 		s.log().Warn("🔗 Pont Garmin : ticket de service refusé", "status", res.StatusCode)
-		return "", "", ErrCredentials
+		// The status travels with the error: « 401 » and « 200 but not a token pair » are two
+		// different bugs, and the message is all a field report shows.
+		return "", "", fmt.Errorf("%w (préautorisation HTTP %d)", ErrCredentials, res.StatusCode)
 	}
 	values, err := url.ParseQuery(strings.TrimSpace(string(body)))
 	if err != nil {
