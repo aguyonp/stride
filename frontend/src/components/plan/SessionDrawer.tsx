@@ -1,7 +1,7 @@
 import { CalendarClock, Download, ExternalLink, Loader2, Pencil, Trash2, Watch } from 'lucide-react'
 import { useState } from 'react'
 import { api, isApiError } from '../../api/client'
-import { useIntegrations, usePlanMutations, useProfile } from '../../api/queries'
+import { useGarminBridge, useIntegrations, usePlanMutations, useProfile } from '../../api/queries'
 import { usePlanV3 } from '../../api/queriesV3'
 import { usePlanV31 } from '../../api/queriesV31'
 import type { GarminPush, PlannedSession } from '../../api/types'
@@ -27,7 +27,10 @@ function WatchSection({ s, onGarmin }: { s: PlannedSession; onGarmin: (g: Garmin
   const integ = useIntegrations()
   const { toast } = useToast()
   const [downloading, setDownloading] = useState(false)
-  const garminOn = integ.data?.garmin.connected === true
+  // Two ways to reach the watch: the Personal API key, and the experimental bridge. The button must
+  // follow both — a connected bridge that leaves « Envoyer vers Garmin » greyed out is a dead end.
+  const bridge = useGarminBridge()
+  const garminOn = integ.data?.garmin.connected === true || bridge.data?.state === 'connected'
   const unsupported = s.garmin?.status === 'unsupported'
   const send = () =>
     push.mutate(s.id, {

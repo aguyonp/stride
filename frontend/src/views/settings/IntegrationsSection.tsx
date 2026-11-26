@@ -8,6 +8,7 @@ import { GarminBridgeCard } from '../../components/profile/GarminBridgeCard'
 import { ProviderBadge } from '../../components/profile/ProviderBadge'
 import { StravaConnectButton, stravaUnavailable } from '../../components/profile/StravaConnect'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { Dialog } from '../../components/ui/Dialog'
 import { KeyValue } from '../../components/ui/Misc'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
@@ -80,6 +81,8 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
   const m = useIntegrationMutations()
   const [replace, setReplace] = useState(false)
   const [confirm, setConfirm] = useState(false)
+  // The four steps of the Personal API key live in a dialog: they used to fill the whole card.
+  const [keyOpen, setKeyOpen] = useState(false)
 
   const test = () =>
     m.testGarmin.mutate(undefined, {
@@ -92,53 +95,73 @@ function GarminCard({ g }: { g: Integrations['garmin'] }) {
 
   return (
     <ProviderCard icon={<Watch />} title="Garmin Connect" badge={<ProviderBadge status={g.status} connected={g.connected} />}>
-      {g.connected ? (
-        <>
-          <KeyValue
-            items={[
-              [t('settings.integrations.key'), <span className="font-mono">{g.keyHint ?? '—'}</span>],
-              [t('settings.integrations.tokenUntil'), fmtDateTime(g.tokenExpiresAt)],
-              [t('settings.integrations.lastSync'), g.lastSyncAt ? fmtWhen(g.lastSyncAt) : t('settings.integrations.never')],
-            ]}
-          />
-          <LastError message={g.lastError} />
-          <p className="mt-3 text-xs text-ink-3">{t('settings.integrations.garminLimits')}</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" className="btn btn-ghost" onClick={test} disabled={m.testGarmin.isPending}>
-              {m.testGarmin.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
-              {t('settings.integrations.test')}
-            </button>
-            <button type="button" className="btn btn-ghost" aria-expanded={replace} onClick={() => setReplace((v) => !v)}>
-              {t('settings.integrations.replaceKey')}
-            </button>
-            <button type="button" className="btn btn-danger" onClick={() => setConfirm(true)}>
-              <Unplug className="size-4" aria-hidden="true" />
-              {t('settings.integrations.disconnect')}
-            </button>
-          </div>
-          {replace && (
-            <div className="mt-4 border-t border-line pt-4">
-              <GarminKeyForm
-                submitLabel={t('settings.integrations.replaceKey')}
-                autoFocus
-                onConnected={() => {
-                  setReplace(false)
-                  toast({ title: t('settings.integrations.newKeySaved') })
-                }}
-              />
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="space-y-4">
-          <LastError message={g.lastError} />
-          <GarminGuide />
-          <GarminKeyForm onConnected={() => toast({ title: t('settings.integrations.garminConnected'), description: t('settings.integrations.syncStarting') })} />
-        </div>
-      )}
-      {/* Independent of the Personal API key: the bridge signs in with the user's own Garmin
-          account, so the setup must be reachable whether or not the key is configured. */}
+      {/* The bridge comes first: it is the path that sends sessions to the watch, and it does not
+          depend on the key below. */}
       <GarminBridgeCard />
+
+      <div className="mt-4 border-t border-line pt-3.5">
+        <p className="text-sm font-semibold text-ink">{t('settings.integrations.readTitle')}</p>
+        {g.connected ? (
+          <>
+            <KeyValue
+              items={[
+                [t('settings.integrations.key'), <span className="font-mono">{g.keyHint ?? '—'}</span>],
+                [t('settings.integrations.tokenUntil'), fmtDateTime(g.tokenExpiresAt)],
+                [t('settings.integrations.lastSync'), g.lastSyncAt ? fmtWhen(g.lastSyncAt) : t('settings.integrations.never')],
+              ]}
+            />
+            <LastError message={g.lastError} />
+            <p className="mt-3 text-xs text-ink-3">{t('settings.integrations.garminLimits')}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" className="btn btn-ghost" onClick={test} disabled={m.testGarmin.isPending}>
+                {m.testGarmin.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
+                {t('settings.integrations.test')}
+              </button>
+              <button type="button" className="btn btn-ghost" aria-expanded={replace} onClick={() => setReplace((v) => !v)}>
+                {t('settings.integrations.replaceKey')}
+              </button>
+              <button type="button" className="btn btn-danger" onClick={() => setConfirm(true)}>
+                <Unplug className="size-4" aria-hidden="true" />
+                {t('settings.integrations.disconnect')}
+              </button>
+            </div>
+            {replace && (
+              <div className="mt-4 border-t border-line pt-4">
+                <GarminKeyForm
+                  submitLabel={t('settings.integrations.replaceKey')}
+                  autoFocus
+                  onConnected={() => {
+                    setReplace(false)
+                    toast({ title: t('settings.integrations.newKeySaved') })
+                  }}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <LastError message={g.lastError} />
+            <p className="mt-1 text-xs text-ink-3">{t('settings.integrations.readPitch')}</p>
+            <button type="button" className="btn btn-ghost mt-3" onClick={() => setKeyOpen(true)}>
+              <KeyRound className="size-4" aria-hidden="true" />
+              {t('settings.integrations.setupKey')}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* The four steps and the field only appear when asked for: the card stays readable. */}
+      <Dialog open={keyOpen} onClose={() => setKeyOpen(false)} title={t('settings.integrations.setupKey')} description={t('settings.integrations.readPitch')} size="md">
+        <GarminGuide />
+        <div className="mt-3">
+          <GarminKeyForm
+            onConnected={() => {
+              setKeyOpen(false)
+              toast({ title: t('settings.integrations.garminConnected'), description: t('settings.integrations.syncStarting') })
+            }}
+          />
+        </div>
+      </Dialog>
       <ConfirmDialog
         open={confirm}
         onClose={() => setConfirm(false)}

@@ -34,6 +34,14 @@ test('connects the bridge with a code and sends the sessions of the day', async 
   await card.getByRole('button', { name: 'Verify' }).click()
   await expect(card.getByText('Connected', { exact: true })).toBeVisible()
 
+  // A connected bridge is a connected Garmin: the session drawer must offer the send, not grey it out.
+  await page.goto('/plan')
+  await page.getByText('38 min continu').first().click()
+  const sendBtn = page.getByRole('button', { name: 'Send to Garmin' })
+  await expect(sendBtn).toBeEnabled()
+  await expect(page.getByText(/Garmin isn’t connected/)).toHaveCount(0)
+  await page.keyboard.press('Escape')
+
   // The planning now offers the bulk send, and reports each session.
   await page.goto('/plan')
   await page.getByRole('button', { name: 'Send today’s sessions' }).click()

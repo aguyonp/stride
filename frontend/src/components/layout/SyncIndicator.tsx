@@ -107,7 +107,9 @@ function ActiveJobRow({ job }: { job: JobStatus }) {
 
 export function SyncIndicator() {
   const integ = useIntegrations()
-  const connected = integ.data ? integ.data.garmin.connected || integ.data.strava.connected : true
+  // The indicator doubles as the queue/stream monitor: it stays visible even with nothing connected,
+  // and says so instead of disappearing (the toolbar losing a button looks like a regression).
+  const connected = integ.data ? integ.data.garmin.connected || integ.data.strava.connected : false
   const activeJobs = useActiveJobs()
   const streamLive = useStreamConnected()
   const status = useSyncStatus(connected)
@@ -120,8 +122,6 @@ export function SyncIndicator() {
   const text = label(s, tone, primaryJob)
   const Icon = tone === 'running' ? Loader2 : tone === 'cooldown' ? Timer : tone === 'error' ? CircleAlert : RefreshCw
   const color = tone === 'cooldown' || tone === 'error' ? 'text-warn' : tone === 'running' ? 'text-accent' : 'text-ink-2'
-
-  if (!connected && activeJobs.length === 0) return null
 
   return (
     <Popover
@@ -184,6 +184,14 @@ export function SyncIndicator() {
             </p>
           )}
           {s?.lastLiveAt && <p className="num mt-2 text-xs text-ink-3">{t('layout.sync.lastLive', { when: fmtWhen(s.lastLiveAt) })}</p>}
+          {!connected && integ.isSuccess && (
+            <p className="mt-2 text-xs text-ink-3">
+              {t('layout.sync.noSource')}{' '}
+              <Link href="/settings#integrations" className="font-semibold underline underline-offset-2">
+                {t('layout.sync.connectSource')}
+              </Link>
+            </p>
+          )}
           {connected && (
             <button
               type="button"
