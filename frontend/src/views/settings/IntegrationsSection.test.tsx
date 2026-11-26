@@ -69,6 +69,22 @@ describe('IntegrationsSection — pont Garmin', () => {
     expect(document.querySelector('dialog[open]')).not.toBeNull()
   })
 
+  it('puts the experimental bridge after the stable reading setup', async () => {
+    // Field report: an experimental feature above the stable one reads backwards.
+    const data = userData(1)
+    Object.assign(data.integrations.garmin, { connected: false, status: 'disconnected', keyHint: null, tokenExpiresAt: null, lastError: null })
+    db().data['1'] = data
+    db().garminBridgeEnabled = true
+
+    mounted = await mountWithProviders(<IntegrationsSection />)
+    await waitFor(() => expect(text()).toContain('Lecture des activités'))
+    await waitFor(() => expect(text()).toContain('Envoi de séances (expérimental)'))
+    const read = text().indexOf('Lecture des activités')
+    const bridge = text().indexOf('Envoi de séances (expérimental)')
+    expect(read).toBeGreaterThan(0)
+    expect(bridge).toBeGreaterThan(read)
+  })
+
   it('hides the bridge when the administrator has not opened it', async () => {
     db().garminBridgeEnabled = false
     mounted = await mountWithProviders(<IntegrationsSection />)

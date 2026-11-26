@@ -30,6 +30,16 @@ test('connects the bridge with a code and sends the sessions of the day', async 
   await card.getByRole('button', { name: 'Sign in' }).click()
   // The code step appears in the same card: no external redirect, no helper to install.
   await expect(card.getByText('Code required')).toBeVisible()
+  // The confirmation toast is raised while the modal is open: a native <dialog> sits in the
+  // browser's top layer, above any z-index, so the toast host is a manual popover — otherwise the
+  // confirmation was drawn behind the sheet (field report).
+  const toast = page.locator('[popover="manual"] > div').first()
+  await expect(toast).toBeVisible()
+  // Opened as a popover = painted in the top layer, above the modal's backdrop. (Hit-testing stays
+  // with the modal — inert blocks it — which is why this checks the open state, not elementFromPoint.)
+  expect(
+    await page.evaluate(() => document.querySelector('[popover="manual"]')?.matches(':popover-open')),
+  ).toBe(true)
   await card.getByLabel('Verification code').fill('123456')
   await card.getByRole('button', { name: 'Verify' }).click()
   await expect(card.getByText('Connected', { exact: true })).toBeVisible()
