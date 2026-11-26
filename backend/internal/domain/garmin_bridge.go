@@ -144,26 +144,26 @@ func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op s
 	switch {
 	case errors.Is(err, garminbridge.ErrBlocked):
 		code = "GARMIN_BRIDGE_BLOCKED"
-		title = "Garmin bloque la connexion du pont"
-		detail = "Garmin a répondu 429/427 (protection anti-robot). Réessayez plus tard, ou utilisez le fichier .FIT."
+		title = "Garmin blocks the bridge sign-in"
+		detail = "Garmin answered 429/427 (anti-bot protection). Try again later, or use the .FIT file."
 	case errors.Is(err, garminbridge.ErrExpired):
 		code = "GARMIN_BRIDGE_EXPIRED"
-		title = "Pont Garmin expiré"
-		detail = "La session Garmin n'est plus valide : reconnectez le pont dans Réglages, ou envoyez le fichier .FIT."
+		title = "Garmin bridge expired"
+		detail = "The Garmin session is no longer valid: reconnect the bridge in Settings, or send the .FIT file."
 	case errors.Is(err, garminbridge.ErrCredentials):
 		if op != "code" {
 			return // a wrong password is corrected in place, no history needed
 		}
 		code = "GARMIN_BRIDGE_MFA"
-		title = "Code Garmin refusé"
-		detail = "Le code de vérification n'a pas été accepté. Recommencez la connexion."
+		title = "Garmin code refused"
+		detail = "The verification code was not accepted. Start the sign-in again."
 	default:
 		if op != "envoi" {
 			return
 		}
 		code = "GARMIN_BRIDGE_PUSH"
-		title = "Envoi vers Garmin refusé"
-		detail = errText(err) + " Le fichier .FIT reste disponible."
+		title = "Garmin push refused"
+		detail = errText(err) + " The .FIT file stays available."
 	}
 	s.writeInbox(ctx, uid, inboxInput{
 		Kind:     InboxKindGarminBridge,

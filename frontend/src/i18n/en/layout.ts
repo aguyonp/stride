@@ -126,6 +126,12 @@ const en: Widen<typeof fr> = {
       event: 'Constraint added to your plan',
       other: 'Shared file updated',
     },
+    bridge: {
+      expired: 'Garmin bridge expired',
+      blocked: 'Garmin blocks the bridge sign-in',
+      mfa: 'Garmin code refused',
+      push: 'Garmin push refused',
+    },
     update: {
       title: 'New version available',
       detail: 'Version {version} is published on GitHub.',

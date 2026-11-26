@@ -1211,7 +1211,7 @@ interface StreamShareUpdatedEvent {
 }
 
 /** Notification centre (§21): the persistent memory of the alerts and portal writes. */
-export type InboxKind = 'alert' | 'share' | 'update'
+export type InboxKind = 'alert' | 'share' | 'update' | 'garmin_bridge'
 export type InboxLevel = 'success' | 'info' | 'warn' | 'error'
 export interface InboxEntry {
   id: number

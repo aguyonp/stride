@@ -81,6 +81,21 @@ describe('NotificationBell (centre de notifications)', () => {
     expect(document.body.textContent).toContain('Cadence basse sur la dernière sortie')
   })
 
+  it('localizes a bridge notification from its code', async () => {
+    // The bridge stores an English title; the panel words it from the stable code (§23).
+    const d = userData(1)
+    d.inbox = [
+      { id: 501, kind: 'garmin_bridge', level: 'warn', title: 'Garmin bridge expired', code: 'GARMIN_BRIDGE_EXPIRED',
+        detail: 'The Garmin session is no longer valid.', url: '/settings', createdAt: new Date().toISOString() },
+      ...(d.inbox ?? []),
+    ]
+    db().data['1'] = d
+    mounted = await mountWithProviders(<NotificationBell />)
+    await waitFor(() => expect(document.querySelector(BELL)?.getAttribute('aria-label')).toMatch(/^Notifications, \d+ non lues$/))
+    await clickEl(document.querySelector(BELL))
+    await waitFor(() => expect(document.body.textContent).toContain('Pont Garmin expiré'))
+  })
+
   it('shows an explicit empty state', async () => {
     const d = userData(1)
     d.inbox = []
