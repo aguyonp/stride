@@ -62,7 +62,7 @@ var (
 // they exist and when they expire.
 type Tokens struct {
 	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"` // OAuth1 pair "token:secret", which signs the refresh
+	RefreshToken string    `json:"refresh_token"` // DI pair "client|refresh", which renews the access token
 	CreatedAt    time.Time `json:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	DisplayName  string    `json:"display_name,omitempty"`
@@ -129,10 +129,6 @@ type Options struct {
 	DIBase string
 	// UserAgent identifies the flow; the mobile one is less challenged than a browser UA.
 	UserAgent string
-	// ConsumerKey / ConsumerSecret sign the OAuth1 exchange. The defaults are the public values the
-	// open-source Garmin clients (garth, python-garminconnect) ship, not private credentials.
-	ConsumerKey    string
-	ConsumerSecret string
 	// MFATTL bounds how long a pending sign-in stays usable in memory.
 	MFATTL time.Duration
 	// Log receives one line per state change; it never receives a password, a cookie or a token.
@@ -147,11 +143,7 @@ type Logger interface {
 	Warn(msg string, args ...any)
 }
 
-// Public OAuth consumer credentials of the Garmin Connect apps, as published by the open-source
-// clients (garth's oauth_consumer.json). They identify the client, not a user.
 const (
-	publicConsumerKey    = "fc3e99d2-118c-44b8-8ae3-03370dde24c0"
-	publicConsumerSecret = "E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF"
 	// oauthUserAgent is the UA of the OAuth endpoints: it must match the Android consumer key, and
 	// the SSO one (GCM-Android…) is not accepted there.
 	oauthUserAgent = "com.garmin.android.apps.connectmobile"
@@ -201,12 +193,6 @@ func New(opt Options) *Service {
 	}
 	if opt.UserAgent == "" {
 		opt.UserAgent = mobileUserAgent
-	}
-	if opt.ConsumerKey == "" {
-		opt.ConsumerKey = publicConsumerKey
-	}
-	if opt.ConsumerSecret == "" {
-		opt.ConsumerSecret = publicConsumerSecret
 	}
 	if opt.MFATTL <= 0 {
 		opt.MFATTL = 5 * time.Minute

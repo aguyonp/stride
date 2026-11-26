@@ -20,7 +20,7 @@ func (s *Service) do(ctx context.Context, t *Tokens, method, path string, body [
 	if err != nil || status != http.StatusUnauthorized {
 		return res, status, err
 	}
-	// A 401 means the access token is gone: replay the OAuth1 exchange once, then give up.
+	// A 401 means the access token is gone: renew it once, then give up.
 	fresh, rerr := s.refresh(ctx, t)
 	if rerr != nil {
 		return res, status, rerr

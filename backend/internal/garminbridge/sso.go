@@ -15,7 +15,7 @@ import (
 )
 
 // The sign-in flow, as the Garmin Connect apps perform it: an SSO form on sso.garmin.com, a service
-// ticket, then an OAuth1 → OAuth2 exchange on connectapi. No password is ever kept: it lives in the
+// ticket, then the DI OAuth2 exchange (see di.go). No password is ever kept: it lives in the
 // closure of one POST.
 //
 // Every shape below (CSRF field, ticket, MFA page, ticket exchange) is parsed defensively and the
