@@ -8,6 +8,14 @@ import { assertNoConsoleErrors, trackConsoleErrors } from './helpers'
 test('connects the bridge with a code and sends the sessions of the day', async ({ page }) => {
   const errors = trackConsoleErrors(page)
 
+  // The bridge is off by default: an administrator opens it in Admin › Instance (not in the
+  // invitations tab, where those settings used to be buried).
+  await page.goto('/admin?tab=system')
+  const bridgeSwitch = page.getByRole('switch', { name: 'Allow the Garmin bridge' })
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'false')
+  await bridgeSwitch.click()
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'true')
+
   await page.goto('/settings?tab=integrations')
   // The warning is the first thing read, before any field exists.
   await expect(page.getByText('Workout push (experimental)')).toBeVisible()
@@ -41,6 +49,62 @@ test('connects the bridge with a code and sends the sessions of the day', async 
   await page.goto('/settings?tab=integrations')
   await card.getByRole('button', { name: 'Disconnect' }).click()
   await expect(card.getByText('Disconnected', { exact: true })).toBeVisible()
+
+  assertNoConsoleErrors(errors)
+})
+
+test('says a wrong password is wrong, in the card and not only in a toast', async ({ page }) => {
+  const errors = trackConsoleErrors(page)
+
+  await page.goto('/admin?tab=system')
+  const bridgeSwitch = page.getByRole('switch', { name: 'Allow the Garmin bridge' })
+  await bridgeSwitch.click()
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'true')
+
+  await page.goto('/settings?tab=integrations')
+  const card = page.getByRole('group', { name: 'Workout push (experimental)' })
+  await card.getByRole('button', { name: 'Enable the bridge' }).click()
+  await card.getByLabel('Garmin e-mail').fill('antoine@example.com')
+  // The demo only accepts « motdepasse »: anything else is Garmin's refusal.
+  await card.getByLabel('Garmin password').fill('faux')
+  await card.getByRole('button', { name: 'Sign in' }).click()
+
+  // The refusal lands in the card, where the field is; the password is dropped at once.
+  await expect(card.getByRole('alert').last()).toContainText('Garmin refused this e-mail or password.')
+  await expect(card.getByLabel('Garmin password')).toHaveValue('')
+  await expect(card.getByText('Disconnected', { exact: true })).toBeVisible()
+
+  assertNoConsoleErrors(errors)
+})
+
+test('reconnects an expired session from the notification centre', async ({ page }) => {
+  const errors = trackConsoleErrors(page)
+
+  // Open the bridge, then age the session: the mock database is the server's state in this build,
+  // so patching it is how a real 401 on the API would look.
+  await page.goto('/admin?tab=system')
+  const bridgeSwitch = page.getByRole('switch', { name: 'Allow the Garmin bridge' })
+  await bridgeSwitch.click()
+  await expect(bridgeSwitch).toHaveAttribute('aria-checked', 'true')
+  await page.goto('/settings?tab=integrations')
+  await page.evaluate(() => {
+    const raw = window.sessionStorage.getItem('stride.mock.v2')
+    if (!raw) return
+    const db = JSON.parse(raw) as { data?: Record<string, { garminBridge?: unknown }> }
+    const me = db.data?.['1']
+    if (me) me.garminBridge = { state: 'expired' }
+    window.sessionStorage.setItem('stride.mock.v2', JSON.stringify(db))
+  })
+
+  // The notification centre links to the card that can sign in again…
+  await page.goto('/settings#integrations')
+  const card = page.getByRole('group', { name: 'Workout push (experimental)' })
+  await expect(card.getByText('Expired', { exact: true })).toBeVisible()
+  // …and the flow opens there, with the reason, without replaying the consent.
+  await expect(page.getByRole('dialog')).toHaveAttribute('open', '')
+  await expect(page.getByLabel('Garmin e-mail')).toBeVisible()
+  await expect(card.getByText(/The Garmin session expired/).first()).toBeVisible()
+  await expect(page.getByText('Before you continue')).toHaveCount(0)
 
   assertNoConsoleErrors(errors)
 })

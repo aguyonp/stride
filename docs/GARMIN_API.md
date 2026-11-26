@@ -33,7 +33,13 @@ Reference for `backend/internal/garmin` and `backend/internal/fitdata`. Addition
 
 ### Pont expérimental (API web, non officielle) — §23
 
-`/workout-service/*` n'existe pas sur le palier Personal (404/403). L'envoi de séances passe donc par un gateway isolé et désactivé par défaut (`internal/garminbridge`) qui parle à l'API *web* (`connectapi.garmin.com`) comme l'application officielle : SSO `sso.garmin.com`, ticket de service, échange OAuth1 → OAuth2, puis `POST /workout-service/workout`, `PUT /workout-service/workout/{id}` et `POST /workout-service/schedule/{id}`. Rien de tout cela n'est vérifié contractuellement par Garmin : le paquet est jetable, l'interrupteur est double (env + réglage admin) et le repli `.FIT` (import Garmin Connect Web) reste la voie supportée.
+`/workout-service/*` n'existe pas sur le palier Personal (404/403). L'envoi de séances passe donc par un gateway isolé et désactivé par défaut (`internal/garminbridge`) qui parle à l'API *web* (`connectapi.garmin.com`) comme l'application officielle : SSO `sso.garmin.com` (widget, code MFA), ticket de service, échange d'un jeton **DI OAuth2** sur `diauth.garmin.com`, puis `POST /workout-service/workout`, `PUT /workout-service/workout/{id}` et `POST /workout-service/schedule/{id}`. Rien de tout cela n'est vérifié contractuellement par Garmin : le paquet est jetable, 
+
+Pour diagnostiquer un échec sans partager d'identifiant : `cd backend && go run ./cmd/garmin-probe`. L'outil rejoue exactement le flux du serveur (même paquet), lit le mot de passe sans écho, ne l'écrit nulle part, gère l'étape du code et affiche l'état, l'étape et l'erreur. Il vit dans un paquet `main` séparé : rien n'en est embarqué dans le binaire.
+
+En cas d'échec, l'erreur nomme l'étape (`formulaire`, `identifiants`, `code`, `ticket`, `jetons`, `profil`) et distingue un mot de passe refusé (400) d'une limitation 429, d'un CAPTCHA et d'une page inattendue (502) : le log ne contient jamais l'e-mail, le mot de passe ni un jeton.
+
+l'interrupteur est un réglage admin (`garminBridgeEnabled`, Admin › Instance, désactivé par défaut) et le repli `.FIT` (import Garmin Connect Web) reste la voie supportée.
 
 ### Endpoints en 404 (non exposés par la Personal API — ne pas utiliser)
 `/activity-service/activity/{id}/splits|typedsplits|split_summaries|hrTimeInZones|powerTimeInZones|laps`, `/metrics-service/*` (training status/readiness/maxmet), exports TCX/GPX, `/wellness-service/wellness/floorsChartData/*`.

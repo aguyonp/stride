@@ -817,6 +817,7 @@ Each user can expose their own data to AI assistants (Claude and others) through
 - The quota is admin-tunable and persisted: `PUT /api/admin/mcp/quota {tokenLimit, tokenWindow, ipLimit, ipWindow}` (admin, audit `mcp.quota_update`). Input is **clamped, not rejected** — limits to 1–100 000, windows to 1–1440 — and the stored row is returned (200). The change applies live (`ratelimit.Limiter.SetConfig` restarts both windows, so no counter outlives the settings it was counted under) and survives a restart (`Server.New` loads the row, falling back to the defaults when unreadable).
 - `GET /api/admin/mcp/usage` (admin) → `{ quota, tokens[], requests24h, denied24h, updatedAt }`: one `tokens[]` entry per stored token (`prefix`, `userId`, `displayName`, `enabled`, `lastUsedAt`, `used` in the current window, `denied24h`, `requests24h`), joined with `users`.
 - Usage counters are in-memory (like the provider meter): rolling 24 h in 5-minute buckets (288 slots) per token for requests and denials, plus a global denial ring. A 429 is counted for the token when `Resolve` succeeds (the IP limit is hit or the token window is full), globally only for unknown tokens. `used` never exceeds the limit. Stale entries (revoked tokens whose 24 h rolled out) are swept at each snapshot, so the map is bounded by the live token count. Counters reset on restart; `lastUsedAt` (DB) is the durable signal.
+- One switch component serves every toggle of the app (`components/ui/Toggle.tsx`, a bare `role="switch"` outside any `<label>` — a label around a button forwards the click twice). The user side reuses it for the MCP server switch, the admin side for the release check and the bridge.
 - Frontend: admin tab **MCP** — usage card (24 h totals, per-token table with the current-window load bar) and quota card (four numeric fields, dirty state, save → PUT + toast), both polling every 15 s.
 
 ## 17. 4.4.0 — One-time recovery codes, complete and CI-checked `.env.example`
@@ -920,7 +921,7 @@ Writes happen **in the domain**, next to the toast, so the history exists with n
 
 ### 21.3 Retention
 
-`GET /api/admin/settings` gains `inboxRetentionDays` (default 10, clamped 1..365) and `inboxRetentionMax` (default 50, clamped 1..200). `PUT /api/admin/settings` clamps them instead of rejecting, treats a missing field as « keep the current value » (so the panel that owns one setting never resets the others) and purges the surplus immediately; `PurgeInbox` also runs on the daily maintenance pass. The admin panel exposes it in Admin › Invitations (Registration card, then Notification centre).
+`GET /api/admin/settings` gains `inboxRetentionDays` (default 10, clamped 1..365) and `inboxRetentionMax` (default 50, clamped 1..200). `PUT /api/admin/settings` clamps them instead of rejecting, treats a missing field as « keep the current value » (so the panel that owns one setting never resets the others) and purges the surplus immediately; `PurgeInbox` also runs on the daily maintenance pass. The admin panel exposes it in **Admin › Instance** (the « Centre de notifications » card), not in Invitations: it has nothing to do with who may join.
 
 ### 21.4 Interface
 
@@ -957,7 +958,7 @@ When a release is newer, the route also **writes the notice for every active adm
 
 ### 22.3 The admin switch
 
-`updateCheckEnabled` (default `true`) in `GET/PUT /api/admin/settings`, next to the registration mode, with its card in Admin › Invitations. Disabled: no request, no notice, no banner — the route answers `{current, available: false, disabled: true}` without touching the network. No environment variable was added, so `.env.example` is unchanged (§17.2 stays green).
+`updateCheckEnabled` (default `true`) in `GET/PUT /api/admin/settings`, with its card in **Admin › Instance**, alongside the retention and the bridge: the Invitations tab keeps registration and invitations only. Disabled: no request, no notice, no banner — the route answers `{current, available: false, disabled: true}` without touching the network. No environment variable was added, so `.env.example` is unchanged (§17.2 stays green).
 
 ### 22.4 Interface
 
@@ -976,19 +977,23 @@ A banner in `AppShell`, under the header and above the content, only for `role =
 
 The Personal API (§11.3) is read-only: `/workout-service/*` answers 404/403, so a session could only reach the watch with a cable. 4.7.0 removes the cable without pretending the problem is solved: the **.FIT import through Garmin Connect Web** becomes the documented path, and an **experimental, off by default, isolated gateway** to Garmin's *web* API (the one the official app uses) can push a workout directly for the users who accept the risk.
 
-### 23.1 Two switches, one kill
+### 23.1 One switch, in the admin panel
 
-`STRIDE_GARMIN_BRIDGE` (env, default `false`) is the master: without it the gateway is never built, its routes are not mounted (`404`), no client exists and no request leaves the server. The admin setting `garminBridgeEnabled` (default `false`, Admin › Invitations) is the second half: with the env on and the setting off, the routes answer `409` and the card is not offered. Deleting `internal/garminbridge/`, its five routes and its token rows is the whole decommission.
+`garminBridgeEnabled` (default `false`, **Admin › Instance**) is the only switch. There is no environment variable: an operator who can reach the admin panel does not need a second, hidden switch that requires an edit of `.env` and a restart — and a variable missing from a deployment used to hide the whole feature from the interface, silently.
+
+Off means off: the routes answer `409` (`CONFLICT`, « désactivé par l'administrateur »), `/api/garmin/bridge` answers `{available: false}`, no caller may build a request and the settings card is not rendered. On: the card appears for every user, whether or not they configured the Personal API key — the bridge signs in with their own Garmin account, it does not depend on that key.
+
+Decommissioning remains a code change: delete `internal/garminbridge/`, its five routes and the `garmin_web` rows.
 
 ### 23.2 The gateway (`internal/garminbridge`)
 
 A narrow interface — `Login`, `LoginMFA`, `Status`, `Push`, `Disconnect` — and no import of `domain`, `store` or `workout`: the caller converts a planned session into the Garmin workout JSON (`workout.GarminWorkout`, the same payload the Personal API already used), the gateway only speaks HTTP and OAuth.
 
-- **Sign-in**: `sso.garmin.com` form (CSRF field, then `username`/`password`), the service ticket read from the answer or from the redirect that follows, then the OAuth1 → OAuth2 exchange at `connectapi.garmin.com/oauth-service/oauth/exchange/user/2.0` (HMAC-SHA1, the public consumer credentials the open-source Garmin clients ship). Verification is two calls: the social profile and a one-row workout listing.
+- **Sign-in**: the *widget* form (`GET /sso/embed` for the session cookies, then `/sso/signin` with `embed=true`, CSRF field, `username`/`password`); the code step keeps **its own** CSRF token and `Referer`, and asks Garmin to deliver the code (`POST /sso/verifyMFA/mfaCode`) when the page says nothing was sent yet. The service ticket is then exchanged for a **DI OAuth2** Bearer token (`POST diauth.garmin.com/di-oauth2-service/oauth/token`, Basic auth on the client id, `grant_type=…/grant/service_ticket`, `service_url` = the service the ticket was issued for — `/sso/embed`). The OAuth1 exchange the first versions performed is refused by Garmin. Verification is two calls: the social profile and a one-row workout listing.
 - **MFA**: an answer carrying a code challenge (`verifyMFA`, `MFA_REQUIRED`…) returns `ErrMFARequired` and keeps the SSO session **in memory** for five minutes — cookies are never persisted, so a restart during the code simply asks to start over. A wrong code keeps the challenge open; the session is consumed on success.
 - **Blocked**: `429`, `427` and the CAPTCHA pages map to `ErrBlocked`. The gateway never retries in a loop: the UI says so and points at the .FIT.
 - **Tokens**: only the OAuth tokens are persisted, sealed by the caller with the existing per-user AAD (`garmin_web:<uid>:token`), in their own `provider_connections` row — never in the Personal API fields. The password lives for one request: not stored, not logged, not echoed; a test asserts the sealed blob and the answer contain neither.
-- **Refresh**: a `401` replays the exchange with the stored OAuth1 token once; a failure is `ErrExpired`.
+- **Refresh**: a `401` renews the Bearer token once with `grant_type=refresh_token` and the client id that issued it (both stored together); a failure is `ErrExpired`.
 - **Push**: `PUT` when the workout id is known (or when a workout with the deterministic name exists), `POST` otherwise, then the schedule. The name is `«title» · Stride <sessionId> · <date>`, so a second push updates instead of duplicating. A schedule failure is reported, not hidden.
 
 The endpoints, the consumer credentials and the HTTP client are injectable: the whole flow is tested against `httptest` fixtures, and the CI never reaches Garmin. The live HTML is the one thing fixtures cannot prove — hence the experimental label, the off default and the .FIT fallback.
@@ -1003,20 +1008,39 @@ The endpoints, the consumer credentials and the HTTP client are injectable: the 
 
 `POST /api/plan/push-today` sends the sessions of a day that have steps and are not pushed yet, serially, under the same lock, and answers one result per session (`pushed`, `skipped` with « déjà envoyée » / « pas d'étapes », `failed`, `unsupported`).
 
-### 23.4 Notifications
+### 23.4 Failure taxonomy
 
-Expired session, blocked login and refused push write an entry in the notification centre (§21) with `kind: garmin_bridge`, level `warn`, a stable `code` (`GARMIN_BRIDGE_EXPIRED`, `…_BLOCKED`, `…_PUSH`, `…_MFA`) and a link to the settings. A wrong password or a wrong code stays in the form: it is not history.
+The sign-in has a **state machine that survives a reload**: while a password step has been accepted and a code is owed, `GET /api/garmin/bridge` answers `mfa` (for `MFATTL`, five minutes), so the panel reopens on the code field instead of an empty password form. Reporting `disconnected` there made the code step unreachable — the field report showed two `202` and no way to type the code.
 
-### 23.5 Interface
+A sign-in fails in one of five ways, and they are never conflated:
 
-- **Settings › Integrations › Garmin** gains a card « Envoi de séances (expérimental) »: the warning is readable **before** any field exists; « Activer le pont » opens a consent block (unofficial API, suspension risk, one-shot password, .FIT fallback), then the e-mail/password form, then the code step, then the state (`disconnected | mfa | connected | expired | blocked`, plus « en pause » when the breaker is open) and « Déconnecter ». The card is not rendered at all when the instance does not build the gateway.
+| Cause | Error | HTTP | What it means |
+|---|---|---|---|
+| `429`, `427`, « unusual traffic » | `ErrBlocked` | `429` | Garmin rate-limits the source. Waiting helps. |
+| A CAPTCHA wall: no ticket, no code step, `reCaptcha` wiring | `ErrChallenge` | `429` | Garmin wants a human. Retrying never helps: the `.FIT` file is the answer. |
+| Garmin re-renders the form, or its « invalid username or password » wording | `ErrCredentials` | `400` | Wrong password: correct it in place. |
+| Any other answer (no ticket, no code, no form) | `ErrFlow` | `502` | The flow broke: Garmin changed its HTML, or something rewrote the page. |
+| The admin switch is off | `ErrDisabled` | `409` | Nothing to explain beyond the switch. |
+
+Every error carries its **step** (`formulaire`, `identifiants`, `code`, `ticket`, `jetons`, `profil`), shown in the API message and logged (`etape=…`) without the e-mail, the password or a token. A wrong password is not a block, and a block is not a wrong password: the first field report of §23 was a `429` in 450 ms on every attempt, because the CAPTCHA detector read the `reCaptchaURL` field that **every** Garmin page ships — including the form and the success page. The challenge is therefore only concluded on an answer that carries neither a ticket nor the code step, and never on the form itself.
+
+### 23.5 Notifications
+
+Expired session, blocked login and refused push write an entry in the notification centre (§21) with `kind: garmin_bridge`, level `warn`, a stable `code` (`GARMIN_BRIDGE_EXPIRED`, `…_BLOCKED`, `…_CHALLENGE`, `…_PUSH`, `…_MFA`) and a link to `/settings#integrations` — the card that can sign in again, and the only place that can. A wrong password or a wrong code stays in the form: it is not history.
+
+### 23.6 Interface
+
+- **A failure is written in the card**, under the fields, whatever the cause — a silent `400` was the second field report (« ça n'a pas mis d'erreur »). The card translates the stable HTTP code into its own sentence (refused credentials, rate limit, flow failure), so both languages read correctly; the toast carries the server's own wording, which names the failing step. The password is dropped as soon as any answer arrives, the code field keeps its value on a wrong code, and the code step appears on the `202` itself, without waiting for the next poll.
+- **Reconnection**: an expired session reached from its notification (or from the hash `/settings#integrations`) opens the flow directly, states « la session Garmin a expiré » and drops the consent block — it was given once, and repeating it reads like a first sign-in. Elsewhere the card waits for a click on « Reconnecter ».
+- **The sign-in is a modal, not a module**: the card is a summary (state badge, one button « Activer le pont » / « Saisir le code » / « Reconnecter », the fallback line); consent, credentials and the code open in a `Dialog`. The fields also opt out of the password managers (`autocomplete="new-password"`, `data-1p-ignore`, `data-lpignore`, `data-bwignore`): the credential belongs to Garmin, is used once, and a « save this login? » prompt over the card is noise.
+- **Settings › Integrations › Garmin** gains a card « Envoi de séances (expérimental) », rendered **whether or not the Personal API key is configured** — the bridge signs in with the user's own Garmin account and does not depend on that key. The warning is readable **before** any field exists; « Activer le pont » opens a consent block (unofficial API, suspension risk, one-shot password, .FIT fallback), then the e-mail/password form, then the code step, then the state (`disconnected | mfa | connected | expired | blocked`, plus « en pause » when the breaker is open) and « Déconnecter ». The card is not rendered when the administrator has not opened the bridge (`available: false`).
 - **Planning**: « Envoyer les séances du jour » appears only with a connected bridge (the Personal API cannot push), asks for confirmation, sends and lists the result per session.
 - **.FIT, without a cable**: the session drawer replaces the USB instructions with the three steps (download, import in Garmin Connect Web › Training › Import then « Send to Device », sync the watch) and an « Ouvrir Garmin Connect » link; the file is named `stride-YYYY-MM-DD-<sport>.fit`. This path works with the bridge off, expired or decommissioned.
 
-### 23.6 Tests
+### 23.7 Tests
 
-- `internal/garminbridge` — OAuth1 against the RFC 5849 vector, percent-encoding, sign-in success (password reaches the SSO, nothing survives in the tokens), MFA then code, replayed code refused, credentials refused, `429`/`427`/CAPTCHA, ticket from the redirect, status states, create then update (no duplicate), lookup by name, recreate after a 404, refresh on `401`, expired without refresh, schedule failure, incomplete request, name identity, disconnect.
+- `internal/garminbridge` — a pending code is visible through `Status` (`mfa`) and expires after `MFATTL`; the DI token exchange (Basic auth from the client id, ticket, `service_url` and grant verified, older client ids refused like Garmin), the client id surviving a refresh, sign-in success (password reaches the SSO, nothing survives in the tokens), MFA then code, replayed code refused, credentials refused, `429`/`427`, a CAPTCHA wall told apart from a refusal and a rate limit, an unknown page (flow error, step named), 5xx, ticket from the redirect, the form's `reCaptchaURL` wiring not being read as a block, status states, create then update (no duplicate), lookup by name, recreate after a 404, refresh on `401`, expired without refresh, schedule failure, incomplete request, name identity, disconnect.
 - `internal/domain` — kill switch (no gateway call), publisher choice (personal without tokens), idempotent push through the API, bulk push with skips, breaker after repeated blocks and its reset, expired session → `failed` + notification, disconnect, FIT file name.
-- `internal/domainapi` — routes unmounted without the gateway, `401`/status, wrong password `400`, full login with a fake SSO, sealed blob without the password, disconnect, `409` when the admin switch is off, `push-today` (empty, connected, second run), MFA over HTTP.
+- `internal/domainapi` — routes unmounted without the gateway, `401`/status, wrong password `400`, CAPTCHA `429` with its own sentence and notice, unknown page `502` naming the step, full login with a fake SSO, sealed blob without the password, disconnect, `409` when the admin switch is off, `push-today` (empty, connected, second run), MFA over HTTP.
 - `internal/store` — token round-trip in the `garmin_web` row, the Personal row untouched, the admin switch defaulting to off.
-- Front — `GarminBridgeCard` (no card without the gateway, warning before the form, wrong password cleared, connect/disconnect, MFA, expired), `PushTodayButton` (hidden without a bridge, per-session summary), `e2e/garmin-bridge.spec.ts` (MFA sign-in, bulk send, disconnect, the .FIT checklist replacing the cable).
+- Front — `GarminBridgeCard` (no card without the gateway, warning before the form, wrong password cleared **and explained in an alert**, the code step on a `202` before the poll answers, the code step after a reload, the modal itself, the password-manager opt-out, the reconnection opened by the notification link with no consent, connect/disconnect, MFA, expired), `PushTodayButton` (hidden without a bridge, per-session summary), `e2e/garmin-bridge.spec.ts` (MFA sign-in, bulk send, disconnect, the .FIT checklist replacing the cable).

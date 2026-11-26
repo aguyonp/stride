@@ -103,6 +103,8 @@ export interface UpdateStatus {
 export type GarminBridgeState = 'disconnected' | 'connecting' | 'mfa' | 'verifying' | 'connected' | 'expired' | 'blocked'
 export interface GarminBridgeStatus {
   state: GarminBridgeState
+  /** False when the administrator has not opened the bridge on this instance. */
+  available: boolean
   displayName?: string
   since?: string
   message?: string

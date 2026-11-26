@@ -52,11 +52,9 @@ func Register(mux *http.ServeMux, d Deps) {
 	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(withLang(h))) }
 	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(d.RequireAdmin(h))) }
 
-	if d.Bridge != nil {
-		// Experimental Garmin Connect bridge (§23): mounted only when the gateway was built, so a
-		// decommission is removing the package and these two lines.
-		registerGarminBridge(mux, user, a)
-	}
+	// Experimental Garmin Connect bridge (§23): the routes exist, the admin switch decides what
+	// they answer (409 when off). Removing the package and these two lines decommissions it.
+	registerGarminBridge(mux, user, a)
 	user("GET /api/integrations", a.integrations)
 	user("PUT /api/integrations/garmin", a.putGarmin)
 	user("POST /api/integrations/garmin/test", a.testGarmin)

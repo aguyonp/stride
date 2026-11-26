@@ -97,8 +97,8 @@ type Settings struct {
 	// UpdateCheckEnabled is the GitHub release check (issue #143). A pointer on input so an absent
 	// field keeps the current value, like the retention pair.
 	UpdateCheckEnabled *bool `json:"updateCheckEnabled,omitempty"`
-	// GarminBridgeEnabled is the admin half of the experimental bridge kill switch (§23, #147); the
-	// env variable STRIDE_GARMIN_BRIDGE is the other half. Two switches, both must be true.
+	// GarminBridgeEnabled is the switch of the experimental bridge (§23, #147): off by default, and
+	// the only switch — no environment variable to keep in sync.
 	GarminBridgeEnabled *bool `json:"garminBridgeEnabled,omitempty"`
 }
 

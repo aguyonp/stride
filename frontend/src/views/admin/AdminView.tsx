@@ -1,4 +1,18 @@
-import { DatabaseBackup, Gauge, LayoutDashboard, Link2, ListChecks, MailPlus, MessageSquareText, ScrollText, Users, Webhook, Wrench, type LucideIcon } from 'lucide-react'
+import {
+  DatabaseBackup,
+  Gauge,
+  LayoutDashboard,
+  Link2,
+  ListChecks,
+  MailPlus,
+  MessageSquareText,
+  ScrollText,
+  SlidersHorizontal,
+  type LucideIcon,
+  Users,
+  Webhook,
+  Wrench,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAdminOverview } from '../../api/queries'
 import type { AdminOverview, Me } from '../../api/types'
@@ -8,6 +22,7 @@ import { cn } from '../../lib/cn'
 import { BackupsPanel } from './BackupsPanel'
 import { FeedbackPanel } from './FeedbackPanel'
 import { InvitationsPanel } from './InvitationsPanel'
+import { SystemPanel } from './SystemPanel'
 import { JobsPanel } from './JobsPanel'
 import { LogsPanel } from './LogsPanel'
 import { McpAdminPanel } from './McpAdminPanel'
@@ -18,7 +33,7 @@ import { SharesPanel } from './SharesPanel'
 import { UsersPanel } from './UsersPanel'
 import { t } from '../../i18n'
 
-export type AdminTab = 'overview' | 'users' | 'jobs' | 'shares' | 'feedback' | 'invitations' | 'providers' | 'mcp' | 'logs' | 'maintenance' | 'backups'
+export type AdminTab = 'overview' | 'users' | 'jobs' | 'shares' | 'feedback' | 'invitations' | 'providers' | 'mcp' | 'system' | 'logs' | 'maintenance' | 'backups'
 
 const TABS: { value: AdminTab; label: string; icon: LucideIcon }[] = [
   { value: 'overview', icon: LayoutDashboard, get label() { return t('admin.common.tabs.overview') } },
@@ -29,6 +44,7 @@ const TABS: { value: AdminTab; label: string; icon: LucideIcon }[] = [
   { value: 'invitations', icon: MailPlus, get label() { return t('admin.common.tabs.invitations') } },
   { value: 'providers', icon: Gauge, get label() { return t('admin.common.tabs.providers') } },
   { value: 'mcp', icon: Webhook, get label() { return t('admin.common.tabs.mcp') } },
+  { value: 'system', icon: SlidersHorizontal, get label() { return t('admin.common.tabs.system') } },
   { value: 'logs', icon: ScrollText, get label() { return t('admin.common.tabs.logs') } },
   { value: 'maintenance', icon: Wrench, get label() { return t('admin.common.tabs.maintenance') } },
   { value: 'backups', icon: DatabaseBackup, get label() { return t('admin.common.tabs.backups') } },
@@ -117,6 +133,7 @@ export default function AdminView({ me }: { me: Me }) {
         {tab === 'shares' && <SharesPanel />}
         {tab === 'feedback' && <FeedbackPanel />}
         {tab === 'invitations' && <InvitationsPanel />}
+        {tab === 'system' && <SystemPanel />}
         {tab === 'providers' && <ProvidersPanel />}
         {tab === 'mcp' && <McpAdminPanel />}
         {tab === 'logs' && <LogsPanel />}

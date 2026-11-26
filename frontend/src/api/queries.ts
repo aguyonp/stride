@@ -320,13 +320,7 @@ export function useUpdates(enabled = true) {
 
 /** Experimental Garmin bridge (§23, issue #147): state only, no network call server-side. */
 export function useGarminBridge() {
-  // A 404 means the gateway is not built (bridge switched off at the instance level): no retry.
-  return useQuery({
-    queryKey: qk.garminBridge,
-    queryFn: api.garminBridge,
-    staleTime: 30_000,
-    retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 2,
-  })
+  return useQuery({ queryKey: qk.garminBridge, queryFn: api.garminBridge, staleTime: 30_000 })
 }
 
 /** Login, MFA and disconnect of the bridge; each refreshes the state and the plan. */

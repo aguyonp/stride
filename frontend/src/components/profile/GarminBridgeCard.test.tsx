@@ -13,6 +13,8 @@ setLang('fr', { persist: false })
 const text = () => document.body.textContent ?? ''
 const btn = (label: string) => [...document.querySelectorAll('button')].find((b) => b.textContent?.includes(label)) ?? null
 const inputs = () => Array.from(document.querySelectorAll('input')) as HTMLInputElement[]
+// The consent block is an alert too: join them rather than picking the first.
+const alertText = () => [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent).join(' | ')
 
 describe('GarminBridgeCard (pont expérimental)', () => {
   let mounted: MountedApp | null = null
@@ -23,6 +25,9 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     installDomPolyfills()
     setFlags([])
     resetDb()
+    // The bridge is off by default in the demo: these tests exercise the flow once an
+    // administrator has opened it (the « hidden » test turns it off again).
+    db().garminBridgeEnabled = true
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string, init?: RequestInit) => {
@@ -39,10 +44,10 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     resetDb()
   })
 
-  it('shows nothing when the instance does not build the gateway', async () => {
+  it('shows nothing when the administrator has not opened the bridge', async () => {
     db().garminBridgeEnabled = false
     mounted = await mountWithProviders(<GarminBridgeCard />)
-    // The 404 lands asynchronously: wait for the card to disappear rather than for the request.
+    // The answer lands asynchronously: wait for the card to stay empty rather than for the request.
     await waitFor(() => expect(requests.some((r) => r.includes('/api/garmin/bridge'))).toBe(true))
     await waitFor(() => expect(text()).toBe(''))
   })
@@ -63,15 +68,20 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await setInputValue(inputs()[0], 'antoine@example.com')
     await setInputValue(inputs()[1], 'faux')
     await clickEl(btn('Se connecter'))
-    // Refused: the password is dropped at once and the state does not move.
+    // Refused: the password is dropped at once, the state does not move, and the card says why — a
+    // silent 400 is the field report (« ça n'a pas mis d'erreur »).
     await waitFor(() => expect(inputs()[1]?.value).toBe(''))
     expect(text()).toContain('Déconnecté')
+    // The card owns the sentence (the server's own wording is French and lives in the toast): on a
+    // French UI it says exactly what Garmin answered.
+    await waitFor(() => expect(alertText()).toContain('Garmin a refusé cet e-mail ou ce mot de passe.'))
     expect(userData(1).garminBridge).toBeUndefined()
 
     await setInputValue(inputs()[1], 'motdepasse')
     await clickEl(btn('Se connecter'))
     await waitFor(() => expect(text()).toContain('Connecté'))
-    expect(inputs().length).toBe(0)
+    // The modal closes with an animation: wait for it to leave the DOM, not for a tick.
+    await waitFor(() => expect(inputs().length).toBe(0))
     expect(userData(1).garminBridge?.state).toBe('connected')
 
     await clickEl(btn('Déconnecter'))
@@ -103,6 +113,102 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await waitFor(() => expect(text()).toContain('Connecté'))
   })
 
+  it('shows the code step as soon as a 202 answers, even before the status reloads', async () => {
+    // A status route still answering « disconnected » one moment after the 202: the form must
+    // follow the answer, not wait for the next GET (the field report showed an empty form).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/garmin/bridge') && (init?.method ?? 'GET') === 'GET') {
+          return new Response(JSON.stringify({ state: 'disconnected', available: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        return mockFetch(url, init)
+      }),
+    )
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Déconnecté'))
+    await clickEl(btn('Activer le pont'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+    await setInputValue(inputs()[0], 'mfa@example.com')
+    await setInputValue(inputs()[1], 'motdepasse')
+    await clickEl(btn('Se connecter'))
+
+    await waitFor(() => expect(text()).toContain('Code requis'))
+    expect(text()).toContain('Garmin a envoyé un code')
+    expect(inputs().length).toBe(1)
+  })
+
+  it('keeps the code step after a reload', async () => {
+    // The server keeps the pending sign-in: a reload must land on the code field, not on an empty
+    // password form (Status reported « disconnected », so a pending code was unreachable).
+    userData(1).garminBridge = { state: 'mfa' }
+    db().data['1'] = userData(1)
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Code requis'))
+    expect(inputs().length).toBe(1)
+    expect(btn('Activer le pont')).toBeNull()
+  })
+
+  it('opens a modal instead of growing the card', async () => {
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Déconnecté'))
+
+    // The card stays a summary: no field until the flow is opened.
+    const card = document.querySelector('[role="group"]') as HTMLElement
+    expect(card.querySelector('input')).toBeNull()
+
+    await clickEl(btn('Activer le pont'))
+    const dialog = document.querySelector('dialog')
+    expect(dialog).not.toBeNull()
+    // The consent and the fields live in the modal, and the card did not grow a module.
+    expect(dialog?.textContent).toContain('Avant de continuer')
+    expect(dialog?.querySelectorAll('input').length).toBe(2)
+    expect(card.querySelectorAll(':scope > form').length).toBe(0)
+  })
+
+  it('keeps the one-shot password away from the password managers', async () => {
+    mounted = await mountWithProviders(<GarminBridgeCard />)
+    await waitFor(() => expect(text()).toContain('Déconnecté'))
+    await clickEl(btn('Activer le pont'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+
+    const [, password] = inputs()
+    // A « save this login? » prompt over the card is noise, and this credential belongs to Garmin.
+    expect(password.getAttribute('autocomplete')).toBe('new-password')
+    expect(password.hasAttribute('data-1p-ignore')).toBe(true)
+    expect(password.getAttribute('data-lpignore')).toBe('true')
+    expect(password.hasAttribute('data-bwignore')).toBe(true)
+  })
+
+  it('reopens the flow on an expired session reached from the notification', async () => {
+    // The notification centre links to /settings#integrations: an expired session must land on the
+    // fields, with the reason, and without repeating the consent the user already gave.
+    userData(1).garminBridge = { state: 'expired' }
+    db().data['1'] = userData(1)
+    // The harness resets the URL, so the hash comes through its own argument.
+    mounted = await mountWithProviders(<GarminBridgeCard />, '/settings#integrations')
+    await waitFor(() => expect(text()).toContain('session Garmin a expiré'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+    expect(text()).toContain('E-mail Garmin')
+    // The reason is stated, and the consent block stays out of a reconnection.
+    expect(document.querySelectorAll('[role="alert"]').length).toBeGreaterThan(0)
+    expect(text()).not.toContain('Avant de continuer')
+  })
+
+  it('keeps the reconnection behind a click when nothing links to it', async () => {
+    userData(1).garminBridge = { state: 'expired' }
+    db().data['1'] = userData(1)
+    mounted = await mountWithProviders(<GarminBridgeCard />, '/settings')
+    await waitFor(() => expect(text()).toContain('Expiré'))
+    expect(inputs().length).toBe(0)
+    await clickEl(btn('Reconnecter'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+  })
+
   it('offers a reconnect when the session expired or Garmin blocks', async () => {
     userData(1).garminBridge = { state: 'expired' }
     db().data['1'] = userData(1)
@@ -110,7 +216,11 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await waitFor(() => expect(text()).toContain('Expiré'))
     expect(text()).toContain('session Garmin a expiré')
     expect(btn('Reconnecter')).not.toBeNull()
-    // The fallback is always stated.
-    expect(text()).toContain('importez-le dans Garmin Connect Web')
+    // The fallback is always stated, in one line in the card.
+    expect(text()).toContain('Repli : le fichier .FIT via Garmin Connect Web.')
+    // A reconnection does not replay the consent the user already gave.
+    await clickEl(btn('Reconnecter'))
+    await waitFor(() => expect(inputs().length).toBe(2))
+    expect(text()).not.toContain('Avant de continuer')
   })
 })

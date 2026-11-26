@@ -24,8 +24,7 @@ import (
 // boundary: token storage (encrypted, own provider row), the publisher the domain talks to, the
 // per-user lock, the circuit breaker and the notifications.
 //
-// The whole feature is gated by two switches that must both be true: STRIDE_GARMIN_BRIDGE and the
-// admin setting `garminBridgeEnabled`.
+// The whole feature is gated by one switch, the admin setting `garminBridgeEnabled`.
 
 const (
 	// bridgeProvider is the provider_connections row holding the sealed tokens: never the same row
@@ -71,28 +70,29 @@ func (b bridgeTokens) Delete(ctx context.Context, uid int64) error {
 	return b.s.deps.Store.DeleteBridgeTokens(ctx, uid)
 }
 
-// bridgeService returns the gateway, or nil when either switch is off. A nil gateway is the kill
-// switch: no routes, no client, no network call.
+// bridgeService returns the gateway when the admin switch is on. Off means off: no caller may use
+// the client, and the routes answer 409 rather than 404 — the feature exists, it is disabled.
 func (s *Services) bridgeService(ctx context.Context) *garminbridge.Service {
-	if s.bridge == nil || s.deps.Store == nil {
-		return nil
-	}
-	if !s.deps.Store.GarminBridgeEnabled(ctx) {
+	if s.bridge == nil || s.deps.Store == nil || !s.deps.Store.GarminBridgeEnabled(ctx) {
 		return nil
 	}
 	return s.bridge
 }
 
-// BridgeAvailable reports whether the bridge is switched on for this instance.
+// BridgeAvailable reports whether an administrator switched the bridge on for this instance.
 func (s *Services) BridgeAvailable(ctx context.Context) bool { return s.bridgeService(ctx) != nil }
 
 // BridgeStatus is what the settings card displays. The user switch is the presence of tokens.
+// `Available` tells the interface whether the instance allows the bridge at all, so the card can
+// stay hidden instead of guessing from a 404.
 func (s *Services) BridgeStatus(ctx context.Context, uid int64) garminbridge.Status {
 	svc := s.bridgeService(ctx)
 	if svc == nil {
-		return garminbridge.Status{State: garminbridge.StateDisconnected, Message: "disabled"}
+		return garminbridge.Status{State: garminbridge.StateDisconnected, Available: false}
 	}
-	return svc.Status(ctx, uid)
+	st := svc.Status(ctx, uid)
+	st.Available = true
+	return st
 }
 
 // BridgeLogin starts (or completes) the in-app sign-in. The password is passed straight through and
@@ -104,6 +104,7 @@ func (s *Services) BridgeLogin(ctx context.Context, uid int64, email, password s
 	}
 	res, err := svc.Login(ctx, uid, email, password)
 	if err != nil {
+		s.logBridge(uid, err)
 		s.bridgeFailure(ctx, uid, err, "connexion")
 		return res, err
 	}
@@ -117,7 +118,10 @@ func (s *Services) BridgeLoginMFA(ctx context.Context, uid int64, code string) (
 		return garminbridge.LoginResult{State: garminbridge.StateDisconnected}, garminbridge.ErrDisabled
 	}
 	res, err := svc.LoginMFA(ctx, uid, code)
-	if err != nil && err != garminbridge.ErrBlocked {
+	if err != nil {
+		s.logBridge(uid, err)
+	}
+	if err != nil && !isWall(err) {
 		// A wrong code (or an expired pending session) is a normal retry, not an incident.
 		return res, err
 	}
@@ -137,6 +141,21 @@ func (s *Services) BridgeDisconnect(ctx context.Context, uid int64) error {
 	return svc.Disconnect(ctx, uid)
 }
 
+// isWall reports the answers a retry cannot fix: a rate limit or a CAPTCHA.
+func isWall(err error) bool {
+	return errors.Is(err, garminbridge.ErrBlocked) || errors.Is(err, garminbridge.ErrChallenge)
+}
+
+// logBridge names the failing step of a sign-in. It never logs the e-mail, the password or a token:
+// only the step and the error, which is what makes the next report actionable.
+func (s *Services) logBridge(uid int64, err error) {
+	if err == nil {
+		return
+	}
+	s.deps.Log.Warn("🔗 Pont Garmin : connexion refusée",
+		"user", uid, "etape", garminbridge.StepOf(err), "erreur", err.Error())
+}
+
 // bridgeFailure records an entry in the notification centre for the failures that need the user's
 // attention (expired session, blocked login); the toast stays the immediate signal.
 func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op string) {
@@ -144,12 +163,16 @@ func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op s
 	switch {
 	case errors.Is(err, garminbridge.ErrBlocked):
 		code = "GARMIN_BRIDGE_BLOCKED"
-		title = "Garmin blocks the bridge sign-in"
+		title = "Garmin rate-limits the bridge sign-in"
 		detail = "Garmin answered 429/427 (anti-bot protection). Try again later, or use the .FIT file."
 	case errors.Is(err, garminbridge.ErrExpired):
 		code = "GARMIN_BRIDGE_EXPIRED"
 		title = "Garmin bridge expired"
 		detail = "The Garmin session is no longer valid: reconnect the bridge in Settings, or send the .FIT file."
+	case errors.Is(err, garminbridge.ErrChallenge):
+		code = "GARMIN_BRIDGE_CHALLENGE"
+		title = "Garmin asks for an anti-robot check"
+		detail = "Garmin wants a human check the bridge cannot answer. Send the .FIT file instead."
 	case errors.Is(err, garminbridge.ErrCredentials):
 		if op != "code" {
 			return // a wrong password is corrected in place, no history needed
@@ -166,12 +189,14 @@ func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op s
 		detail = errText(err) + " The .FIT file stays available."
 	}
 	s.writeInbox(ctx, uid, inboxInput{
-		Kind:     InboxKindGarminBridge,
-		Level:    level,
-		Title:    title,
-		Detail:   detail,
-		Code:     code,
-		URL:      "/settings",
+		Kind:   InboxKindGarminBridge,
+		Level:  level,
+		Title:  title,
+		Detail: detail,
+		Code:   code,
+		// Straight to the card that can sign in again: an expired session is fixed there and nowhere
+		// else, and the card opens its flow on that section.
+		URL:      "/settings#integrations",
 		DedupKey: "garmin_bridge:" + code,
 	})
 }
@@ -329,7 +354,7 @@ func (s *Services) noteBridgePushFailure(ctx context.Context, uid int64, err err
 	if !s.usingBridge(ctx, uid) {
 		return
 	}
-	if errors.Is(err, garminbridge.ErrBlocked) || errors.Is(err, garminbridge.ErrExpired) {
+	if isWall(err) || errors.Is(err, garminbridge.ErrExpired) {
 		s.tripBreaker(uid)
 	}
 	s.bridgeFailure(ctx, uid, err, "envoi")

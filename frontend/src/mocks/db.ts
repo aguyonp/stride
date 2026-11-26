@@ -354,7 +354,8 @@ function seed(): MockState {
     registrationMode: has('open') ? 'open' : 'invite',
     inboxRetention: { days: 10, max: 50 },
     updateCheckEnabled: true,
-    garminBridgeEnabled: true,
+    // Off by default, like the product: the demo enables it from Admin › Instance.
+    garminBridgeEnabled: false,
     // The demo runs 4.7.0 with 4.8.0 published: the banner, the notice and « Plus tard » are
     // reachable in the mock build like in a real instance one release behind.
     mockRelease: { latest: '4.8.0', publishedAt: '2026-11-25T10:00:00Z' },

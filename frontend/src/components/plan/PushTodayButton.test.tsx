@@ -45,6 +45,7 @@ describe('PushTodayButton (séances du jour)', () => {
   })
 
   it('sends the sessions of the day and reports each one', async () => {
+    db().garminBridgeEnabled = true
     userData(1).garminBridge = { state: 'connected', displayName: 'Antoine' }
     db().data['1'] = userData(1)
     // One session with steps today, one without, one already pushed.

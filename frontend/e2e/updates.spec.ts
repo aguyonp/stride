@@ -71,7 +71,7 @@ test('« Later » postpones the banner without reading the notice', async ({ pag
 test('the admin switch silences the check', async ({ page }) => {
   const errors = trackConsoleErrors(page)
 
-  await page.goto('/admin?tab=invitations')
+  await page.goto('/admin?tab=system')
   const toggle = page.getByRole('switch', { name: 'Check for new versions' })
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
   await toggle.click()

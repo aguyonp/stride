@@ -4,7 +4,7 @@
 // It exists because the Personal API (§11.3, docs/GARMIN_API.md) is read-only: `/workout-service/*`
 // answers 404/403 there. This bridge is experimental by design: an unofficial API, a real risk of
 // account suspension, and a flow that can break without notice. It is disabled by default, behind
-// two switches (STRIDE_GARMIN_BRIDGE and the admin setting), and it is isolated on purpose:
+// one admin switch, and it is isolated on purpose:
 //
 //   - no import of `domain`, `store` or `workout` — the caller converts a session into the Garmin
 //     workout JSON, this package only speaks HTTP and OAuth;
@@ -42,9 +42,12 @@ const (
 var (
 	// ErrMFARequired means Garmin asked for a code: the caller must call LoginMFA.
 	ErrMFARequired = errors.New("garmin bridge: code de vérification requis")
-	// ErrBlocked covers the anti-bot answers (429, 427) and the CAPTCHA pages: retrying in a loop
+	// ErrBlocked is the anti-bot answer proper (429, 427, « unusual traffic »): retrying in a loop
 	// only makes it worse, so the caller stops and offers the .FIT fallback.
-	ErrBlocked = errors.New("garmin bridge: Garmin bloque cette connexion (429/427), réessayez plus tard ou utilisez le fichier .FIT")
+	ErrBlocked = errors.New("garmin bridge: Garmin limite les tentatives (429/427), réessayez dans un moment ou utilisez le fichier .FIT")
+	// ErrChallenge is a CAPTCHA wall: Garmin wants a human. The bridge cannot solve it, and no
+	// amount of retrying will, so it is told apart from ErrCredentials (« wrong password »).
+	ErrChallenge = errors.New("garmin bridge: Garmin demande une vérification anti-robot que le pont ne peut pas résoudre, utilisez le fichier .FIT")
 	// ErrExpired means the stored tokens no longer work and no refresh could save them.
 	ErrExpired = errors.New("garmin bridge: session Garmin expirée, reconnectez le pont")
 	// ErrNotConnected means no tokens are stored for this user.
@@ -59,7 +62,7 @@ var (
 // they exist and when they expire.
 type Tokens struct {
 	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"` // OAuth1 secret, used to sign the refresh
+	RefreshToken string    `json:"refresh_token"` // DI pair "client|refresh", which renews the access token
 	CreatedAt    time.Time `json:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	DisplayName  string    `json:"display_name,omitempty"`
@@ -80,6 +83,9 @@ type Status struct {
 	Message     string `json:"message,omitempty"`
 	// Locked is the domain's circuit breaker: repeated failures pause the bridge for a while.
 	Locked bool `json:"locked,omitempty"`
+	// Available says whether the instance allows the bridge at all (the administrator switched it
+	// on). False keeps the settings card hidden: nothing to offer, nothing to explain.
+	Available bool `json:"available"`
 }
 
 // PushRequest is one workout to send. Payload is the Garmin workout JSON, built by the caller with
@@ -116,14 +122,13 @@ type Options struct {
 	// APIBase is the host serving /workout-service and /userprofile-service
 	// (https://connectapi.garmin.com).
 	APIBase string
-	// Service is the SSO service parameter Garmin expects for the Connect app.
+	// Service is the SSO service parameter Garmin expects, and the service_url the ticket exchange
+	// must repeat: Garmin binds a ticket to the service it was issued for.
 	Service string
+	// DIBase is the OAuth2 token host (https://diauth.garmin.com).
+	DIBase string
 	// UserAgent identifies the flow; the mobile one is less challenged than a browser UA.
 	UserAgent string
-	// ConsumerKey / ConsumerSecret sign the OAuth1 exchange. The defaults are the public values the
-	// open-source Garmin clients (garth, python-garminconnect) ship, not private credentials.
-	ConsumerKey    string
-	ConsumerSecret string
 	// MFATTL bounds how long a pending sign-in stays usable in memory.
 	MFATTL time.Duration
 	// Log receives one line per state change; it never receives a password, a cookie or a token.
@@ -138,13 +143,12 @@ type Logger interface {
 	Warn(msg string, args ...any)
 }
 
-// Public OAuth consumer credentials of the Garmin Connect apps, as published by the open-source
-// clients (garth's oauth_consumer.json). They identify the client, not a user.
 const (
-	publicConsumerKey    = "fc3e99d2-118c-44b8-8ae3-03370dde24c0"
-	publicConsumerSecret = "E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF"
+	// oauthUserAgent is the UA of the OAuth endpoints: it must match the Android consumer key, and
+	// the SSO one (GCM-Android…) is not accepted there.
+	oauthUserAgent = "com.garmin.android.apps.connectmobile"
 	// mobileUserAgent is the Garmin Connect Android app: the SSO answers it with the mobile flow.
-	mobileUserAgent = "GCM-Android-5.19; ; 4.4.2; 1.0"
+	mobileUserAgent = "GCM-Android-5.23; ; 4.4.2; 1.0"
 	// serviceURL is where the SSO sends the ticket once the sign-in succeeds.
 	serviceURL = "https://connect.garmin.com/modern/"
 )
@@ -164,7 +168,10 @@ type pendingLogin struct {
 	sess   *session
 	csrf   string
 	params url.Values
-	at     time.Time
+	// referer is the URL of the page that asked for the code: a browser posts the code form with
+	// that page as its referer, and Garmin checks it.
+	referer string
+	at      time.Time
 }
 
 // New builds the service.
@@ -179,16 +186,13 @@ func New(opt Options) *Service {
 		opt.APIBase = "https://connectapi.garmin.com"
 	}
 	if opt.Service == "" {
-		opt.Service = serviceURL
+		opt.Service = embedURL(opt)
+	}
+	if opt.DIBase == "" {
+		opt.DIBase = "https://diauth.garmin.com"
 	}
 	if opt.UserAgent == "" {
 		opt.UserAgent = mobileUserAgent
-	}
-	if opt.ConsumerKey == "" {
-		opt.ConsumerKey = publicConsumerKey
-	}
-	if opt.ConsumerSecret == "" {
-		opt.ConsumerSecret = publicConsumerSecret
 	}
 	if opt.MFATTL <= 0 {
 		opt.MFATTL = 5 * time.Minute
@@ -238,6 +242,12 @@ func (s *Service) Status(ctx context.Context, userID int64) Status {
 		return Status{State: StateDisconnected}
 	}
 	if t == nil || t.AccessToken == "" {
+		// The password step was already accepted and the user owes a code: reporting
+		// « disconnected » here made the code step unreachable — the panel redisplayed the password
+		// form while the pending session waited for a code nobody could type.
+		if s.hasPending(userID) {
+			return Status{State: StateMFA}
+		}
 		return Status{State: StateDisconnected}
 	}
 	if !t.ExpiresAt.IsZero() && s.opt.Now().After(t.ExpiresAt) {
@@ -268,6 +278,21 @@ func (s *Service) takePending(userID int64) (*pendingLogin, bool) {
 		return nil, false
 	}
 	return p, true
+}
+
+// hasPending reports a sign-in waiting for its code, and forgets it once stale.
+func (s *Service) hasPending(userID int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.pending[userID]
+	if !ok {
+		return false
+	}
+	if s.opt.Now().Sub(p.at) > s.opt.MFATTL {
+		delete(s.pending, userID)
+		return false
+	}
+	return true
 }
 
 func (s *Service) keepPending(userID int64, p *pendingLogin) {

@@ -21,19 +21,30 @@ import (
 func bridgeFake(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
+	// The real form ships the reCaptcha wiring on every request: it must not be read as a block.
 	mux.HandleFunc("GET /sso/signin", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `<html><input type="hidden" name="_csrf" value="csrf-1"></html>`)
+		fmt.Fprint(w, `<html><script>var reCaptchaURL = "\/sso\/reCaptcha?service=x";</script>`+
+			`<input type="hidden" name="_csrf" value="csrf-1">`)
 	})
 	mux.HandleFunc("POST /sso/signin", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
-		if r.PostFormValue("password") != "correct-horse" {
-			fmt.Fprint(w, `<html><p class="error">Invalid username or password</p></html>`)
+		switch r.PostFormValue("password") {
+		case "correct-horse":
+			// the success path below
+		case "challenge":
+			fmt.Fprint(w, `<html><script>var reCaptchaURL = "\/sso\/reCaptcha?service=x";</script><div class="g-recaptcha"></div></html>`)
+			return
+		case "weird":
+			fmt.Fprint(w, `<html><body>maintenance</body></html>`)
+			return
+		default:
+			fmt.Fprint(w, `<html><script>var reCaptchaURL = "x";</script><p class="error">Invalid username or password</p></html>`)
 			return
 		}
 		fmt.Fprint(w, `<html><script>var response_url = "/sso/redirect?ticket=ST-4f3e2d1c0b9a"</script></html>`)
 	})
-	mux.HandleFunc("POST /oauth-service/oauth/exchange/user/2.0", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"oauth_token":"o1","oauth_token_secret":"s1","oauth2_token":{"access_token":"bearer-1","expires_in":31536000}}`)
+	mux.HandleFunc("POST /di-oauth2-service/oauth/token", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"access_token":"bearer-1","refresh_token":"refresh-1","expires_in":31536000}`)
 	})
 	mux.HandleFunc("GET /userprofile-service/socialProfile", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"displayName":"Antoine"}`)
@@ -58,7 +69,7 @@ func withBridge(t *testing.T, fake *httptest.Server) {
 	prev := bridgeFactory
 	bridgeFactory = func(s *domain.Services) *garminbridge.Service {
 		return garminbridge.New(garminbridge.Options{
-			HTTP: fake.Client(), Store: s.BridgeTokenStore(), SSOBase: fake.URL, APIBase: fake.URL,
+			HTTP: fake.Client(), Store: s.BridgeTokenStore(), SSOBase: fake.URL, APIBase: fake.URL, DIBase: fake.URL,
 		})
 	}
 	t.Cleanup(func() { bridgeFactory = prev })
@@ -75,19 +86,16 @@ func setBridgeSetting(t *testing.T, e *env2, on bool) {
 	}
 }
 
-func TestBridgeRoutesKillSwitch(t *testing.T) {
-	// No gateway: the routes are not mounted at all.
-	e := setup(t)
-	if code, body := e.do(1, "GET", "/api/garmin/bridge", nil, nil); code != http.StatusNotFound {
-		t.Fatalf("status without the gateway: %d %s", code, body)
+// Without a gateway at all (a build that removed the package), the routes answer a plain 200 with
+// `available:false`: nothing to offer, no error to explain.
+func TestBridgeRoutesWithoutGateway(t *testing.T) {
+	e := setup(t) // no bridgeFactory: the domain has no gateway
+	var st garminbridge.Status
+	if code, body := e.do(1, "GET", "/api/garmin/bridge", nil, &st); code != http.StatusOK || st.Available || st.State != "disconnected" {
+		t.Fatalf("status: %d %+v %s", code, st, body)
 	}
-	// `POST /api/plan/push-today` is not mounted either: the mux falls back on the `{id}` patterns
-	// of the plan and answers « method not allowed » rather than running anything.
-	if code, body := e.do(1, "POST", "/api/plan/push-today", m{"date": "2026-11-26"}, nil); code != http.StatusMethodNotAllowed && code != http.StatusNotFound {
-		t.Fatalf("push-today without the gateway: %d %s", code, body)
-	}
-	if code, _ := e.do(1, "POST", "/api/garmin/bridge/login", m{"email": "a@b.c", "password": "x"}, nil); code != http.StatusNotFound {
-		t.Fatalf("login without the gateway: %d", code)
+	if code, _ := e.do(1, "POST", "/api/garmin/bridge/login", m{"email": "a@b.c", "password": "x"}, nil); code != http.StatusConflict {
+		t.Fatalf("login without a gateway: %d", code)
 	}
 }
 
@@ -108,13 +116,13 @@ func TestBridgeRoutesStatusAndSetting(t *testing.T) {
 		}
 		return out
 	}
-	if st := status(); st.State != garminbridge.StateDisconnected || st.Message != "disabled" {
+	if st := status(); st.State != garminbridge.StateDisconnected || st.Available {
 		t.Fatalf("setting off: %+v", st)
 	}
 
 	// Admin switch on: the login flow becomes reachable.
 	setBridgeSetting(t, e, true)
-	if st := status(); st.State != garminbridge.StateDisconnected || st.Message != "" {
+	if st := status(); st.State != garminbridge.StateDisconnected || !st.Available {
 		t.Fatalf("setting on: %+v", st)
 	}
 	// Wrong password: a plain 400, nothing stored.
@@ -225,6 +233,57 @@ func TestPushTodayRoute(t *testing.T) {
 		if r.Status == "pushed" {
 			t.Fatalf("a second push created a workout: %+v", again.Results)
 		}
+	}
+}
+
+// A CAPTCHA wall is not a rate limit: different cause, different sentence, same .FIT fallback.
+func TestBridgeLoginChallengeIsNotARateLimit(t *testing.T) {
+	withBridge(t, bridgeFake(t))
+	e := setup(t)
+	setBridgeSetting(t, e, true)
+
+	code, body := e.do(2, "POST", "/api/garmin/bridge/login", m{"email": "a@b.c", "password": "challenge"}, nil)
+	if code != http.StatusTooManyRequests {
+		t.Fatalf("challenge: %d %s", code, body)
+	}
+	if !strings.Contains(body, "anti-robot") {
+		t.Fatalf("the message must name the challenge: %s", body)
+	}
+	if strings.Contains(body, "429/427") {
+		t.Fatalf("a challenge is not a rate limit: %s", body)
+	}
+	// The history keeps it: it is not a typo the user can fix in place.
+	var inbox struct {
+		Items []struct {
+			Code string `json:"code"`
+		} `json:"items"`
+	}
+	if c, b := e.do(2, "GET", "/api/inbox", nil, &inbox); c != http.StatusOK {
+		t.Fatalf("inbox: %d %s", c, b)
+	}
+	found := false
+	for _, it := range inbox.Items {
+		if it.Code == "GARMIN_BRIDGE_CHALLENGE" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no challenge notice in the centre: %+v", inbox.Items)
+	}
+}
+
+// An unexpected page is a 502 that names the step: « identifiants », not a vague provider error.
+func TestBridgeLoginFlowErrorNamesTheStep(t *testing.T) {
+	withBridge(t, bridgeFake(t))
+	e := setup(t)
+	setBridgeSetting(t, e, true)
+
+	code, body := e.do(2, "POST", "/api/garmin/bridge/login", m{"email": "a@b.c", "password": "weird"}, nil)
+	if code != http.StatusBadGateway {
+		t.Fatalf("flow error: %d %s", code, body)
+	}
+	if !strings.Contains(body, "identifiants") {
+		t.Fatalf("the step must be named: %s", body)
 	}
 }
 
