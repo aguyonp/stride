@@ -61,7 +61,7 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /sso/signin", func(w http.ResponseWriter, r *http.Request) {
 		f.record("GET /sso/signin")
-		fmt.Fprintf(w, `<html><form><input type="hidden" name="_csrf" value="%s"></form></html>`, f.csrf)
+		fmt.Fprint(w, f.signinPage())
 	})
 	mux.HandleFunc("POST /sso/signin", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -148,6 +148,13 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, srv
+}
+
+// signinPage is the form the fake serves. It ships the reCaptcha wiring on every request, like the
+// real page: a detector that reads « captcha » here rejects every single login.
+func (f *fakeGarmin) signinPage() string {
+	return `<html><script>var reCaptchaURL = "\/sso\/reCaptcha?service=https%3A%2Fsso.garmin.com";</script>` +
+		`<form><input type="hidden" name="_csrf" value="` + f.csrf + `"></form></html>`
 }
 
 func (f *fakeGarmin) record(s string) {
@@ -342,7 +349,7 @@ func TestLoginBlocked(t *testing.T) {
 	}{
 		{"429", http.StatusTooManyRequests, `{}`, StateBlocked},
 		{"427", 427, `{}`, StateBlocked},
-		{"captcha page", 200, `<html><div class="g-recaptcha">captcha</div></html>`, StateBlocked},
+		{"unusual traffic", 200, `<html>We have detected unusual traffic from your network</html>`, StateBlocked},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, srv := newFake(t)
@@ -356,6 +363,85 @@ func TestLoginBlocked(t *testing.T) {
 				t.Fatalf("state: %+v", res)
 			}
 		})
+	}
+}
+
+// The sign-in form ships the reCaptcha wiring on every page; reading it as a block made every
+// login answer 429 in ~450 ms without ever sending the password (issue #147, field report).
+func TestLoginFormWiringIsNotABlock(t *testing.T) {
+	f, srv := newFake(t)
+	svc := service(t, f, srv, newMemStore())
+
+	if !strings.Contains(f.signinPage(), "reCaptchaURL") {
+		t.Fatalf("the fixture dropped the wiring this test exists for")
+	}
+	res, err := svc.Login(context.Background(), 1, "antoine@example.com", "s3cret!")
+	if err != nil {
+		t.Fatalf("login must proceed past the form: %v", err)
+	}
+	if res.State != StateConnected || f.gotPassword != "s3cret!" {
+		t.Fatalf("state=%q password_reached=%v", res.State, f.gotPassword != "")
+	}
+}
+
+// A CAPTCHA wall is not a rate limit: it is told apart, and the step is named, so the message can
+// say « Garmin wants a human » instead of « 429 ».
+func TestLoginChallenge(t *testing.T) {
+	f, srv := newFake(t)
+	svc := service(t, f, srv, newMemStore())
+	f.signinCode = 200
+	f.signinBody = `<html><script>var reCaptchaURL = "\/sso\/reCaptcha?service=x";</script><div class="g-recaptcha"></div></html>`
+
+	res, err := svc.Login(context.Background(), 1, "a@b.c", "pw")
+	if !errors.Is(err, ErrChallenge) {
+		t.Fatalf("err: %v", err)
+	}
+	if errors.Is(err, ErrBlocked) {
+		t.Fatalf("a challenge must not be reported as a rate limit")
+	}
+	if res.State != StateBlocked {
+		t.Fatalf("state: %+v", res)
+	}
+	if step := StepOf(err); step != "identifiants" {
+		t.Fatalf("step: %q", step)
+	}
+	if !strings.Contains(err.Error(), "identifiants") {
+		t.Fatalf("the message must name the step: %v", err)
+	}
+}
+
+// An explicit refusal wins over the reCaptcha wiring that the refusal page also carries.
+func TestLoginRefusedWinsOverTheChallengeWiring(t *testing.T) {
+	f, srv := newFake(t)
+	svc := service(t, f, srv, newMemStore())
+	f.signinBody = `<html><script>var reCaptchaURL = "x";</script><p>Invalid username or password</p></html>`
+	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrCredentials) {
+		t.Fatalf("err: %v", err)
+	}
+}
+
+// An unexpected page is a flow failure, not a wrong password: the step says where to look.
+func TestLoginUnexpectedPageIsAFlowError(t *testing.T) {
+	f, srv := newFake(t)
+	svc := service(t, f, srv, newMemStore())
+	f.signinBody = `<html><body>maintenance</body></html>`
+	_, err := svc.Login(context.Background(), 1, "a@b.c", "pw")
+	if !errors.Is(err, ErrFlow) {
+		t.Fatalf("err: %v", err)
+	}
+	if StepOf(err) != "identifiants" {
+		t.Fatalf("step: %q", StepOf(err))
+	}
+}
+
+// The SSO answering 500 is a flow error too: retrying the password would be pointless.
+func TestLoginServerErrorIsAFlowError(t *testing.T) {
+	f, srv := newFake(t)
+	svc := service(t, f, srv, newMemStore())
+	f.signinCode, f.signinBody = http.StatusInternalServerError, `{}`
+	_, err := svc.Login(context.Background(), 1, "a@b.c", "pw")
+	if !errors.Is(err, ErrFlow) {
+		t.Fatalf("err: %v", err)
 	}
 }
 

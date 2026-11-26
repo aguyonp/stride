@@ -1007,20 +1007,34 @@ The endpoints, the consumer credentials and the HTTP client are injectable: the 
 
 `POST /api/plan/push-today` sends the sessions of a day that have steps and are not pushed yet, serially, under the same lock, and answers one result per session (`pushed`, `skipped` with « déjà envoyée » / « pas d'étapes », `failed`, `unsupported`).
 
-### 23.4 Notifications
+### 23.4 Failure taxonomy
 
-Expired session, blocked login and refused push write an entry in the notification centre (§21) with `kind: garmin_bridge`, level `warn`, a stable `code` (`GARMIN_BRIDGE_EXPIRED`, `…_BLOCKED`, `…_PUSH`, `…_MFA`) and a link to the settings. A wrong password or a wrong code stays in the form: it is not history.
+A sign-in fails in one of five ways, and they are never conflated:
 
-### 23.5 Interface
+| Cause | Error | HTTP | What it means |
+|---|---|---|---|
+| `429`, `427`, « unusual traffic » | `ErrBlocked` | `429` | Garmin rate-limits the source. Waiting helps. |
+| A CAPTCHA wall: no ticket, no code step, `reCaptcha` wiring | `ErrChallenge` | `429` | Garmin wants a human. Retrying never helps: the `.FIT` file is the answer. |
+| Garmin re-renders the form, or its « invalid username or password » wording | `ErrCredentials` | `400` | Wrong password: correct it in place. |
+| Any other answer (no ticket, no code, no form) | `ErrFlow` | `502` | The flow broke: Garmin changed its HTML, or something rewrote the page. |
+| The admin switch is off | `ErrDisabled` | `409` | Nothing to explain beyond the switch. |
+
+Every error carries its **step** (`formulaire`, `identifiants`, `code`, `ticket`, `jetons`, `profil`), shown in the API message and logged (`etape=…`) without the e-mail, the password or a token. A wrong password is not a block, and a block is not a wrong password: the first field report of §23 was a `429` in 450 ms on every attempt, because the CAPTCHA detector read the `reCaptchaURL` field that **every** Garmin page ships — including the form and the success page. The challenge is therefore only concluded on an answer that carries neither a ticket nor the code step, and never on the form itself.
+
+### 23.5 Notifications
+
+Expired session, blocked login and refused push write an entry in the notification centre (§21) with `kind: garmin_bridge`, level `warn`, a stable `code` (`GARMIN_BRIDGE_EXPIRED`, `…_BLOCKED`, `…_CHALLENGE`, `…_PUSH`, `…_MFA`) and a link to the settings. A wrong password or a wrong code stays in the form: it is not history.
+
+### 23.6 Interface
 
 - **Settings › Integrations › Garmin** gains a card « Envoi de séances (expérimental) », rendered **whether or not the Personal API key is configured** — the bridge signs in with the user's own Garmin account and does not depend on that key. The warning is readable **before** any field exists; « Activer le pont » opens a consent block (unofficial API, suspension risk, one-shot password, .FIT fallback), then the e-mail/password form, then the code step, then the state (`disconnected | mfa | connected | expired | blocked`, plus « en pause » when the breaker is open) and « Déconnecter ». The card is not rendered when the administrator has not opened the bridge (`available: false`).
 - **Planning**: « Envoyer les séances du jour » appears only with a connected bridge (the Personal API cannot push), asks for confirmation, sends and lists the result per session.
 - **.FIT, without a cable**: the session drawer replaces the USB instructions with the three steps (download, import in Garmin Connect Web › Training › Import then « Send to Device », sync the watch) and an « Ouvrir Garmin Connect » link; the file is named `stride-YYYY-MM-DD-<sport>.fit`. This path works with the bridge off, expired or decommissioned.
 
-### 23.6 Tests
+### 23.7 Tests
 
-- `internal/garminbridge` — OAuth1 against the RFC 5849 vector, percent-encoding, sign-in success (password reaches the SSO, nothing survives in the tokens), MFA then code, replayed code refused, credentials refused, `429`/`427`/CAPTCHA, ticket from the redirect, status states, create then update (no duplicate), lookup by name, recreate after a 404, refresh on `401`, expired without refresh, schedule failure, incomplete request, name identity, disconnect.
+- `internal/garminbridge` — OAuth1 against the RFC 5849 vector, percent-encoding, sign-in success (password reaches the SSO, nothing survives in the tokens), MFA then code, replayed code refused, credentials refused, `429`/`427`, a CAPTCHA wall told apart from a refusal and a rate limit, an unknown page (flow error, step named), 5xx, ticket from the redirect, the form's `reCaptchaURL` wiring not being read as a block, status states, create then update (no duplicate), lookup by name, recreate after a 404, refresh on `401`, expired without refresh, schedule failure, incomplete request, name identity, disconnect.
 - `internal/domain` — kill switch (no gateway call), publisher choice (personal without tokens), idempotent push through the API, bulk push with skips, breaker after repeated blocks and its reset, expired session → `failed` + notification, disconnect, FIT file name.
-- `internal/domainapi` — routes unmounted without the gateway, `401`/status, wrong password `400`, full login with a fake SSO, sealed blob without the password, disconnect, `409` when the admin switch is off, `push-today` (empty, connected, second run), MFA over HTTP.
+- `internal/domainapi` — routes unmounted without the gateway, `401`/status, wrong password `400`, CAPTCHA `429` with its own sentence and notice, unknown page `502` naming the step, full login with a fake SSO, sealed blob without the password, disconnect, `409` when the admin switch is off, `push-today` (empty, connected, second run), MFA over HTTP.
 - `internal/store` — token round-trip in the `garmin_web` row, the Personal row untouched, the admin switch defaulting to off.
 - Front — `GarminBridgeCard` (no card without the gateway, warning before the form, wrong password cleared, connect/disconnect, MFA, expired), `PushTodayButton` (hidden without a bridge, per-session summary), `e2e/garmin-bridge.spec.ts` (MFA sign-in, bulk send, disconnect, the .FIT checklist replacing the cable).

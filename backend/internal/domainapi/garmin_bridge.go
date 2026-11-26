@@ -1,6 +1,7 @@
 package domainapi
 
 import (
+	"errors"
 	"net/http"
 
 	"stride/internal/garminbridge"
@@ -81,22 +82,37 @@ func (a *api) bridgeReply(w http.ResponseWriter, r *http.Request, res garminbrid
 		httpx.JSON(w, http.StatusOK, map[string]any{"state": res.State, "displayName": res.DisplayName})
 		return
 	}
-	switch err {
-	case garminbridge.ErrMFARequired:
+	// errors.Is, not a value switch: the gateway wraps its errors with the failing step.
+	switch {
+	case errors.Is(err, garminbridge.ErrMFARequired):
 		httpx.JSON(w, http.StatusAccepted, map[string]any{"state": res.State})
-	case garminbridge.ErrDisabled:
+	case errors.Is(err, garminbridge.ErrDisabled):
 		httpx.Fail(w, http.StatusConflict, httpx.CodeConflict, "Le pont Garmin est désactivé par l'administrateur.")
-	case garminbridge.ErrBlocked:
+	case errors.Is(err, garminbridge.ErrBlocked):
 		httpx.Fail(w, http.StatusTooManyRequests, httpx.CodeRateLimited,
-			"Garmin bloque cette connexion (429/427). Réessayez plus tard, ou utilisez le fichier .FIT.")
-	case garminbridge.ErrExpired:
+			"Garmin limite les tentatives de connexion (429/427). Réessayez dans un moment, ou utilisez le fichier .FIT.")
+	case errors.Is(err, garminbridge.ErrChallenge):
+		httpx.Fail(w, http.StatusTooManyRequests, httpx.CodeRateLimited,
+			"Garmin demande une vérification anti-robot que le pont ne peut pas résoudre. Utilisez le fichier .FIT.")
+	case errors.Is(err, garminbridge.ErrExpired):
 		httpx.Fail(w, http.StatusUnauthorized, httpx.CodeUnauthorized,
 			"Session Garmin expirée : reconnectez le pont, ou utilisez le fichier .FIT.")
-	case garminbridge.ErrCredentials:
+	case errors.Is(err, garminbridge.ErrCredentials):
 		httpx.Fail(w, http.StatusBadRequest, httpx.CodeBadRequest, "Identifiants ou code refusés par Garmin.")
 	default:
-		httpx.Fail(w, http.StatusBadGateway, httpx.CodeProviderDown, "Garmin n'a pas répondu correctement : "+err.Error())
+		// The step is the actionable part: « formulaire » points at Garmin's HTML, « jetons » at the
+		// OAuth exchange. Without it, every failure looked like a block.
+		httpx.Fail(w, http.StatusBadGateway, httpx.CodeProviderDown,
+			"Garmin n'a pas répondu comme prévu ("+stepLabel(err)+"). Utilisez le fichier .FIT en attendant.")
 	}
+}
+
+// stepLabel names the failing step for the message, or « étape inconnue ».
+func stepLabel(err error) string {
+	if step := garminbridge.StepOf(err); step != "" {
+		return "étape « " + step + " »"
+	}
+	return "étape inconnue"
 }
 
 // pushToday sends the sessions of a day that are worth sending, serially, under the user's lock.

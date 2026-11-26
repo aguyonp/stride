@@ -3,6 +3,7 @@ package garminbridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -29,8 +30,20 @@ var (
 	responseURLRE = regexp.MustCompile(`response_url\s*=\s*"([^"]+)"`)
 	// mfaMarkers say "Garmin wants a code", across the widget and the mobile variants.
 	mfaMarkers = []string{"verifyMFA", "MFA_REQUIRED", "mfa-code", "enterMfaCode", "mfaVerification"}
-	// blockedMarkers are the anti-bot pages that answer 200 with a CAPTCHA.
-	blockedMarkers = []string{"captcha", "unusual traffic", "too many requests"}
+	// blockedMarkers are the anti-bot *answers*: status 200 with a rate-limit message. They are
+	// never matched on the sign-in form, which legitimately ships a `reCaptchaURL` field for the
+	// case where a challenge is asked later — matching it there rejects every single login.
+	blockedMarkers = []string{"unusual traffic", "too many requests"}
+	// challengeMarkers identify a real CAPTCHA wall: the page offers a challenge and, being a
+	// challenge, carries neither a ticket nor the MFA step.
+	challengeMarkers = []string{"/sso/recaptcha", "g-recaptcha", "recaptcha/api.js"}
+	// refusalMarkers are Garmin's own words for a wrong password. They win over the CAPTCHA wiring:
+	// a refusal page ships that wiring too, and « identifiants refusés » is then the true cause.
+	refusalMarkers = []string{
+		"invalid username or password",
+		"username or password you entered is incorrect",
+		"mot de passe ou nom d'utilisateur incorrect",
+	}
 )
 
 // LoginResult is what Login/LoginMFA return: the state reached and, when connected, the profile.
@@ -120,12 +133,17 @@ func (s *Service) signinForm(ctx context.Context, sess *session) (url.Values, er
 	if err != nil {
 		return nil, err
 	}
-	if err := classify(res.StatusCode, body); err != nil {
-		return nil, err
+	// Only the status is judged here: the form always contains reCaptcha wiring, so no body
+	// marker may be read as a block.
+	if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == 427 {
+		return nil, stepErr(stepForm, ErrBlocked)
 	}
 	m := csrfRE.FindSubmatch(body)
 	if m == nil {
-		return nil, ErrCredentials
+		if isChallenge(body) {
+			return nil, stepErr(stepForm, ErrChallenge)
+		}
+		return nil, stepErr(stepForm, ErrFlow)
 	}
 	form := signinParams(s.opt)
 	form.Set("_csrf", string(m[1]))
@@ -136,16 +154,25 @@ func (s *Service) signinForm(ctx context.Context, sess *session) (url.Values, er
 // finishLogin reads the answer of the final password step (or of the MFA step).
 func (s *Service) finishLogin(ctx context.Context, userID int64, sess *session, res *http.Response, body []byte, csrf string) (LoginResult, error) {
 	if err := classify(res.StatusCode, body); err != nil {
-		if err == ErrMFARequired {
+		if errors.Is(err, ErrMFARequired) {
 			s.keepPending(userID, &pendingLogin{sess: sess, csrf: csrf, params: signinParams(s.opt)})
+			return LoginResult{State: StateMFA}, stepErr(stepMFA, err)
 		}
-		return LoginResult{State: stateOfError(err)}, err
+		return LoginResult{State: stateOfError(err)}, stepErr(stepLogin, err)
 	}
-	if !isMFA(body) && !ticketRE.Match(body) && !responseURLRE.Match(body) {
-		// Neither a code challenge nor a ticket: the credentials were refused.
-		return LoginResult{State: StateDisconnected}, ErrCredentials
+	if !isMFA(body) && !ticketRE.Match(body) && !responseURLRE.Match(body) && !ticketRE.MatchString(res.Request.URL.String()) {
+		if !isRefusal(body) && isChallenge(body) {
+			return LoginResult{State: StateBlocked}, stepErr(stepLogin, ErrChallenge)
+		}
+		if !isRefusal(body) && !hasSigninForm(body) {
+			// No ticket, no code, no refusal and no form either: this is not a wrong password,
+			// it is a page the flow does not know.
+			return LoginResult{State: StateDisconnected}, stepErr(stepLogin, ErrFlow)
+		}
+		// The form came back: the credentials were refused.
+		return LoginResult{State: StateDisconnected}, stepErr(stepLogin, ErrCredentials)
 	}
-	ticket, err := s.serviceTicket(ctx, sess, body)
+	ticket, err := s.serviceTicket(ctx, sess, res, body)
 	if err != nil {
 		s.keepPending(userID, &pendingLogin{sess: sess, csrf: csrf, params: signinParams(s.opt)})
 		return LoginResult{State: stateOfError(err)}, err
@@ -153,11 +180,11 @@ func (s *Service) finishLogin(ctx context.Context, userID int64, sess *session, 
 	s.dropPending(userID)
 	tok, err := s.exchange(ctx, ticket, "connexion")
 	if err != nil {
-		return LoginResult{State: StateDisconnected}, err
+		return LoginResult{State: stateOfError(err)}, stepErr(stepTokens, err)
 	}
 	name, err := s.verify(ctx, tok)
 	if err != nil {
-		return LoginResult{State: StateDisconnected}, err
+		return LoginResult{State: stateOfError(err)}, stepErr(stepProfile, err)
 	}
 	tok.DisplayName = name
 	if err := s.opt.Store.Save(ctx, userID, *tok); err != nil {
@@ -168,13 +195,17 @@ func (s *Service) finishLogin(ctx context.Context, userID int64, sess *session, 
 }
 
 // serviceTicket follows the response URL and reads the ticket from where it lands.
-func (s *Service) serviceTicket(ctx context.Context, sess *session, body []byte) (string, error) {
+func (s *Service) serviceTicket(ctx context.Context, sess *session, res *http.Response, body []byte) (string, error) {
 	if m := ticketRE.FindSubmatch(body); m != nil {
 		return string(m[1]), nil
 	}
+	// A redirect straight to the service carries the ticket in the final URL, not in a body.
+	if m := ticketRE.FindStringSubmatch(res.Request.URL.String()); m != nil {
+		return m[1], nil
+	}
 	m := responseURLRE.FindSubmatch(body)
 	if m == nil {
-		return "", ErrCredentials
+		return "", stepErr(stepTicket, ErrFlow)
 	}
 	target := strings.ReplaceAll(string(m[1]), `\/`, `/`)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
@@ -182,23 +213,22 @@ func (s *Service) serviceTicket(ctx context.Context, sess *session, body []byte)
 		return "", err
 	}
 	s.headers(req)
-	res, err := sess.cli.Do(req)
+	hop, err := sess.cli.Do(req)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = res.Body.Close() }()
-	if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == 427 {
-		return "", ErrBlocked
+	defer func() { _ = hop.Body.Close() }()
+	if hop.StatusCode == http.StatusTooManyRequests || hop.StatusCode == 427 {
+		return "", stepErr(stepTicket, ErrBlocked)
 	}
-	// The ticket is in the final URL, or in the body of the last hop.
-	if m := ticketRE.FindStringSubmatch(res.Request.URL.String()); m != nil {
+	rest, _ := readBody(hop)
+	if m := ticketRE.FindStringSubmatch(hop.Request.URL.String()); m != nil {
 		return m[1], nil
 	}
-	rest, _ := readBody(res)
 	if m := ticketRE.FindSubmatch(rest); m != nil {
 		return string(m[1]), nil
 	}
-	return "", ErrCredentials
+	return "", stepErr(stepTicket, ErrFlow)
 }
 
 // exchange turns a service ticket into tokens (or replays the stored OAuth1 token to refresh).
@@ -304,7 +334,9 @@ func (s *Service) verify(ctx context.Context, t *Tokens) (string, error) {
 	return name, nil
 }
 
-// classify maps an SSO answer to the bridge errors.
+// classify maps an SSO answer to the bridge errors. It never guesses a CAPTCHA here: every page of
+// the Garmin app ships the reCaptcha wiring, including the success page, so a challenge is only
+// concluded later, on an answer that carries neither a ticket nor a code step (see finishLogin).
 func classify(status int, body []byte) error {
 	if status == http.StatusTooManyRequests || status == 427 {
 		return ErrBlocked
@@ -319,9 +351,40 @@ func classify(status int, body []byte) error {
 		return ErrMFARequired
 	}
 	if status >= 500 {
-		return ErrCredentials // a broken SSO is not worth a retry loop either
+		// A broken SSO is neither a wrong password nor a block: it is a flow failure, and saying so
+		// is what tells the next person where to look.
+		return ErrFlow
 	}
 	return nil
+}
+
+// hasSigninForm reports the page re-rendering the sign-in form, which is how Garmin answers a
+// refused password (the error text itself is localized and not worth matching).
+func hasSigninForm(body []byte) bool {
+	low := strings.ToLower(string(body))
+	return strings.Contains(low, `name="_csrf"`) && strings.Contains(low, `name="password"`)
+}
+
+// isRefusal reports Garmin's explicit « wrong password » wording.
+func isRefusal(body []byte) bool {
+	low := strings.ToLower(string(body))
+	for _, m := range refusalMarkers {
+		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// isChallenge reports a real CAPTCHA wall (a challenge page, hence with no ticket).
+func isChallenge(body []byte) bool {
+	low := strings.ToLower(string(body))
+	for _, m := range challengeMarkers {
+		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	return false
 }
 
 func isMFA(body []byte) bool {
@@ -335,6 +398,9 @@ func isMFA(body []byte) bool {
 }
 
 func stateOfError(err error) string {
+	if errors.Is(err, ErrChallenge) {
+		return StateBlocked // a wall: no retry, the .FIT fallback stands
+	}
 	switch {
 	case err == ErrMFARequired:
 		return StateMFA

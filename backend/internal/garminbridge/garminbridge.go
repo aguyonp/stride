@@ -42,9 +42,12 @@ const (
 var (
 	// ErrMFARequired means Garmin asked for a code: the caller must call LoginMFA.
 	ErrMFARequired = errors.New("garmin bridge: code de vérification requis")
-	// ErrBlocked covers the anti-bot answers (429, 427) and the CAPTCHA pages: retrying in a loop
+	// ErrBlocked is the anti-bot answer proper (429, 427, « unusual traffic »): retrying in a loop
 	// only makes it worse, so the caller stops and offers the .FIT fallback.
-	ErrBlocked = errors.New("garmin bridge: Garmin bloque cette connexion (429/427), réessayez plus tard ou utilisez le fichier .FIT")
+	ErrBlocked = errors.New("garmin bridge: Garmin limite les tentatives (429/427), réessayez dans un moment ou utilisez le fichier .FIT")
+	// ErrChallenge is a CAPTCHA wall: Garmin wants a human. The bridge cannot solve it, and no
+	// amount of retrying will, so it is told apart from ErrCredentials (« wrong password »).
+	ErrChallenge = errors.New("garmin bridge: Garmin demande une vérification anti-robot que le pont ne peut pas résoudre, utilisez le fichier .FIT")
 	// ErrExpired means the stored tokens no longer work and no refresh could save them.
 	ErrExpired = errors.New("garmin bridge: session Garmin expirée, reconnectez le pont")
 	// ErrNotConnected means no tokens are stored for this user.

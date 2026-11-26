@@ -104,6 +104,7 @@ func (s *Services) BridgeLogin(ctx context.Context, uid int64, email, password s
 	}
 	res, err := svc.Login(ctx, uid, email, password)
 	if err != nil {
+		s.logBridge(uid, err)
 		s.bridgeFailure(ctx, uid, err, "connexion")
 		return res, err
 	}
@@ -117,7 +118,10 @@ func (s *Services) BridgeLoginMFA(ctx context.Context, uid int64, code string) (
 		return garminbridge.LoginResult{State: garminbridge.StateDisconnected}, garminbridge.ErrDisabled
 	}
 	res, err := svc.LoginMFA(ctx, uid, code)
-	if err != nil && err != garminbridge.ErrBlocked {
+	if err != nil {
+		s.logBridge(uid, err)
+	}
+	if err != nil && !isWall(err) {
 		// A wrong code (or an expired pending session) is a normal retry, not an incident.
 		return res, err
 	}
@@ -137,6 +141,21 @@ func (s *Services) BridgeDisconnect(ctx context.Context, uid int64) error {
 	return svc.Disconnect(ctx, uid)
 }
 
+// isWall reports the answers a retry cannot fix: a rate limit or a CAPTCHA.
+func isWall(err error) bool {
+	return errors.Is(err, garminbridge.ErrBlocked) || errors.Is(err, garminbridge.ErrChallenge)
+}
+
+// logBridge names the failing step of a sign-in. It never logs the e-mail, the password or a token:
+// only the step and the error, which is what makes the next report actionable.
+func (s *Services) logBridge(uid int64, err error) {
+	if err == nil {
+		return
+	}
+	s.deps.Log.Warn("🔗 Pont Garmin : connexion refusée",
+		"user", uid, "etape", garminbridge.StepOf(err), "erreur", err.Error())
+}
+
 // bridgeFailure records an entry in the notification centre for the failures that need the user's
 // attention (expired session, blocked login); the toast stays the immediate signal.
 func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op string) {
@@ -144,12 +163,16 @@ func (s *Services) bridgeFailure(ctx context.Context, uid int64, err error, op s
 	switch {
 	case errors.Is(err, garminbridge.ErrBlocked):
 		code = "GARMIN_BRIDGE_BLOCKED"
-		title = "Garmin blocks the bridge sign-in"
+		title = "Garmin rate-limits the bridge sign-in"
 		detail = "Garmin answered 429/427 (anti-bot protection). Try again later, or use the .FIT file."
 	case errors.Is(err, garminbridge.ErrExpired):
 		code = "GARMIN_BRIDGE_EXPIRED"
 		title = "Garmin bridge expired"
 		detail = "The Garmin session is no longer valid: reconnect the bridge in Settings, or send the .FIT file."
+	case errors.Is(err, garminbridge.ErrChallenge):
+		code = "GARMIN_BRIDGE_CHALLENGE"
+		title = "Garmin asks for an anti-robot check"
+		detail = "Garmin wants a human check the bridge cannot answer. Send the .FIT file instead."
 	case errors.Is(err, garminbridge.ErrCredentials):
 		if op != "code" {
 			return // a wrong password is corrected in place, no history needed
@@ -329,7 +352,7 @@ func (s *Services) noteBridgePushFailure(ctx context.Context, uid int64, err err
 	if !s.usingBridge(ctx, uid) {
 		return
 	}
-	if errors.Is(err, garminbridge.ErrBlocked) || errors.Is(err, garminbridge.ErrExpired) {
+	if isWall(err) || errors.Is(err, garminbridge.ErrExpired) {
 		s.tripBreaker(uid)
 	}
 	s.bridgeFailure(ctx, uid, err, "envoi")
