@@ -163,6 +163,7 @@ const en: Widen<typeof fr> = {
     flowFailed: 'Garmin did not answer as expected: the bridge needs an update. The .FIT file stays available.',
     enterCode: 'Enter the code',
     codeRefusedBody: 'Garmin refused this code. Check it, or ask for a new one by starting over.',
+    fallbackShort: 'Fallback: the .FIT file through Garmin Connect Web.',
     codePendingTitle: 'Garmin asks for a code',
     codePendingBody: 'The password was accepted. Enter the verification code Garmin sent by e-mail or in its app.',
     statusFailed: 'Could not read the bridge state.',

@@ -36,10 +36,15 @@ type fakeGarmin struct {
 	schedule     int
 	unauthorized bool // first API call answers 401 once
 
-	gotPassword string
-	signinCalls int
-	exchanges   int
-	calls       []string
+	gotPassword   string
+	signinCalls   int
+	exchanges     int
+	calls         []string
+	signinForm    url.Values
+	signinReferer string
+	mfaForm       url.Values
+	mfaReferer    string
+	mfaQuery      string
 }
 
 func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
@@ -68,13 +73,24 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 		f.mu.Lock()
 		f.signinCalls++
 		f.gotPassword = r.PostFormValue("password")
+		f.signinForm = r.PostForm
+		f.signinReferer = r.Header.Get("Referer")
 		f.mu.Unlock()
 		f.record("POST /sso/signin")
 		w.WriteHeader(f.signinCode)
 		fmt.Fprint(w, f.signinBody)
 	})
+	mux.HandleFunc("GET /sso/embed", func(w http.ResponseWriter, r *http.Request) {
+		f.record("GET /sso/embed")
+		fmt.Fprint(w, `<html><title>GARMIN</title></html>`)
+	})
 	mux.HandleFunc("POST /sso/verifyMFA/loginEnterMfaCode", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		f.mu.Lock()
+		f.mfaForm = r.PostForm
+		f.mfaReferer = r.Header.Get("Referer")
+		f.mfaQuery = r.URL.RawQuery
+		f.mu.Unlock()
 		f.record("POST mfa")
 		w.WriteHeader(f.mfaCode)
 		fmt.Fprint(w, f.mfaBody)
@@ -299,7 +315,7 @@ func TestLoginMFAThenCode(t *testing.T) {
 	f, srv := newFake(t)
 	st := newMemStore()
 	svc := service(t, f, srv, st)
-	f.signinBody = `<html><title>GARMIN Authentication Application</title><div id="mfa-code-entry"></div></html>`
+	f.signinBody = `<html><title>GARMIN Authentication Application</title><input type="hidden" name="_csrf" value="mfa-token-2"><div id="mfa-code-entry"></div></html>`
 
 	_, err := svc.Login(context.Background(), 1, "a@b.c", "pw")
 	if !errors.Is(err, ErrMFARequired) {
@@ -332,7 +348,7 @@ func TestStatusReportsPendingMFA(t *testing.T) {
 	f, srv := newFake(t)
 	st := newMemStore()
 	svc := service(t, f, srv, st)
-	f.signinBody = `<html><title>GARMIN Authentication Application</title><div id="mfa-code-entry"></div></html>`
+	f.signinBody = `<html><title>GARMIN Authentication Application</title><input type="hidden" name="_csrf" value="mfa-token-2"><div id="mfa-code-entry"></div></html>`
 
 	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
 		t.Fatalf("login: %v", err)
@@ -360,7 +376,7 @@ func TestPendingMFAExpires(t *testing.T) {
 		HTTP: srv.Client(), Store: newMemStore(), Now: func() time.Time { return now },
 		SSOBase: srv.URL, APIBase: srv.URL,
 	})
-	f.signinBody = `<html><div id="mfa-code-entry"></div></html>`
+	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><div id="mfa-code-entry"></div></html>`
 	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
 		t.Fatalf("login: %v", err)
 	}
@@ -370,6 +386,46 @@ func TestPendingMFAExpires(t *testing.T) {
 	now = now.Add(10 * time.Minute) // beyond the 5-minute window
 	if got := svc.Status(context.Background(), 1); got.State != StateDisconnected {
 		t.Fatalf("stale pending: %+v", got)
+	}
+}
+
+// The widget flow, as Garmin serves it now: the credential POST is embedded, the code POST carries
+// the token of the page that asked for the code (not the sign-in one), and its referer is that page.
+// Reusing the sign-in token is what made every real code look refused.
+func TestMFAUsesThePageTokenAndReferer(t *testing.T) {
+	f, srv := newFake(t)
+	svc := service(t, f, srv, newMemStore())
+	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><div id="mfa-code-entry"></div></html>`
+
+	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
+		t.Fatalf("login: %v", err)
+	}
+	// The credential POST asks for the embedded widget, not the portal page.
+	if got := f.signinForm.Get("embed"); got != "true" {
+		t.Fatalf("credential embed=%q, want true", got)
+	}
+	if want := "/sso/embed"; !strings.HasSuffix(f.signinReferer, want) {
+		t.Fatalf("credential referer %q, want the embed page", f.signinReferer)
+	}
+	if res, err := svc.LoginMFA(context.Background(), 1, "123456"); err != nil || res.State != StateConnected {
+		t.Fatalf("code: %+v %v", res, err)
+	}
+	if got := f.mfaForm.Get("_csrf"); got != "mfa-token-2" {
+		t.Fatalf("code token %q, want the MFA page token", got)
+	}
+	if got := f.mfaForm.Get("embed"); got != "true" {
+		t.Fatalf("code embed=%q, want true", got)
+	}
+	if got := f.mfaForm.Get("mfa-code"); got != "123456" {
+		t.Fatalf("code %q", got)
+	}
+	// The referer is the page that rendered the form: the sign-in answer.
+	if !strings.Contains(f.mfaReferer, "/sso/signin") {
+		t.Fatalf("code referer %q", f.mfaReferer)
+	}
+	// And the widget parameters ride in the query, never the code.
+	if !strings.Contains(f.mfaQuery, "gauthHost=") || strings.Contains(f.mfaQuery, "mfa-code") {
+		t.Fatalf("code query %q", f.mfaQuery)
 	}
 }
 

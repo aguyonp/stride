@@ -29,7 +29,7 @@ var (
 	// responseURLRE reads the script variable a successful sign-in embeds.
 	responseURLRE = regexp.MustCompile(`response_url\s*=\s*"([^"]+)"`)
 	// mfaMarkers say "Garmin wants a code", across the widget and the mobile variants.
-	mfaMarkers = []string{"verifyMFA", "MFA_REQUIRED", "mfa-code", "enterMfaCode", "mfaVerification"}
+	mfaMarkers = []string{"verifyMFA", "MFA_REQUIRED", "mfa-code", "enterMfaCode", "mfaVerification", "mfaMethod"}
 	// blockedMarkers are the anti-bot *answers*: status 200 with a rate-limit message. They are
 	// never matched on the sign-in form, which legitimately ships a `reCaptchaURL` field for the
 	// case where a challenge is asked later — matching it there rejects every single login.
@@ -75,7 +75,7 @@ func (s *Service) Login(ctx context.Context, userID int64, email, password strin
 	form.Set("password", password)
 	// The widget parameters also ride in the query, as the official apps send them. Only the widget
 	// parameters: the e-mail and the password stay in the body, never in a URL that a proxy logs.
-	res, body, err := s.post(ctx, sess, s.opt.SSOBase+"/sso/signin?"+signinParams(s.opt).Encode(), form)
+	res, body, err := s.post(ctx, sess, s.opt.SSOBase+"/sso/signin?"+signinParams(s.opt).Encode(), embedURL(s.opt), form)
 	if err != nil {
 		return LoginResult{State: StateDisconnected}, err
 	}
@@ -96,14 +96,14 @@ func (s *Service) LoginMFA(ctx context.Context, userID int64, code string) (Logi
 	form := url.Values{}
 	form.Set("mfa-code", code)
 	form.Set("_csrf", p.csrf)
-	form.Set("embed", "false")
+	form.Set("embed", "true")
 	form.Set("fromPage", "setupEnterMfaCode")
 	for k, vs := range p.params {
 		if form.Get(k) == "" {
 			form.Set(k, vs[0])
 		}
 	}
-	res, body, err := s.post(ctx, p.sess, s.opt.SSOBase+"/sso/verifyMFA/loginEnterMfaCode?"+p.params.Encode(), form)
+	res, body, err := s.post(ctx, p.sess, s.opt.SSOBase+"/sso/verifyMFA/loginEnterMfaCode?"+p.params.Encode(), p.referer, form)
 	if err != nil {
 		// Keep the session: a wrong code is worth another try.
 		s.keepPending(userID, p)
@@ -120,20 +120,13 @@ type session struct {
 
 // signinForm loads the form and its CSRF token.
 func (s *Service) signinForm(ctx context.Context, sess *session) (url.Values, error) {
-	params := signinParams(s.opt)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.opt.SSOBase+"/sso/signin?"+params.Encode(), nil)
-	if err != nil {
-		return nil, err
+	// The embed page first: it sets the session cookies the form is bound to, as the widget does.
+	if _, _, err := s.get(ctx, sess, embedURL(s.opt)+"?"+embedParams(s.opt).Encode(), ""); err != nil {
+		return nil, stepErr(stepForm, err)
 	}
-	s.headers(req)
-	res, err := sess.cli.Do(req)
+	res, body, err := s.get(ctx, sess, s.opt.SSOBase+"/sso/signin?"+signinParams(s.opt).Encode(), embedURL(s.opt))
 	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = res.Body.Close() }()
-	body, err := readBody(res)
-	if err != nil {
-		return nil, err
+		return nil, stepErr(stepForm, err)
 	}
 	// Only the status is judged here: the form always contains reCaptcha wiring, so no body
 	// marker may be read as a block.
@@ -149,7 +142,9 @@ func (s *Service) signinForm(ctx context.Context, sess *session) (url.Values, er
 	}
 	form := signinParams(s.opt)
 	form.Set("_csrf", string(m[1]))
-	form.Set("embed", "false")
+	// The widget embeds its form: embed=true is what makes Garmin answer with the widget page, the
+	// one whose MFA step can be completed.
+	form.Set("embed", "true")
 	return form, nil
 }
 
@@ -157,7 +152,16 @@ func (s *Service) signinForm(ctx context.Context, sess *session) (url.Values, er
 func (s *Service) finishLogin(ctx context.Context, userID int64, sess *session, res *http.Response, body []byte, csrf string) (LoginResult, error) {
 	if err := classify(res.StatusCode, body); err != nil {
 		if errors.Is(err, ErrMFARequired) {
-			s.keepPending(userID, &pendingLogin{sess: sess, csrf: csrf, params: signinParams(s.opt)})
+			// The MFA page is a page of its own: its hidden token is not the sign-in one, and it is
+			// the one Garmin checks when the code comes back. Reusing the sign-in token is what made
+			// every code look refused.
+			mfaCSRF := csrf
+			if m := csrfRE.FindSubmatch(body); m != nil {
+				mfaCSRF = string(m[1])
+			}
+			s.keepPending(userID, &pendingLogin{
+				sess: sess, csrf: mfaCSRF, params: signinParams(s.opt), referer: res.Request.URL.String(),
+			})
 			return LoginResult{State: StateMFA}, stepErr(stepMFA, err)
 		}
 		return LoginResult{State: stateOfError(err)}, stepErr(stepLogin, err)
@@ -367,6 +371,7 @@ func classify(status int, body []byte) error {
 func (s *Service) trace(userID int64, step string, res *http.Response, body []byte) {
 	s.log().Warn("🔗 Pont Garmin : réponse inexploitée",
 		"user", userID, "etape", step, "status", res.StatusCode, "octets", len(body),
+		"page", res.Request.URL.Path,
 		"ticket", ticketRE.Match(body), "code_requis", isMFA(body), "formulaire", hasSigninForm(body),
 		"captcha", isChallenge(body), "refus", isRefusal(body))
 }
@@ -426,33 +431,79 @@ func stateOfError(err error) string {
 	}
 }
 
-// signinParams are the fixed SSO parameters of the mobile flow.
+// embedURL is the embed page that hosts the widget form: the sign-in page and the MFA page are both
+// rendered there, and it is the URL every parameter of the flow points at.
+func embedURL(o Options) string { return o.SSOBase + "/sso/embed" }
+
+// signinParams are the fixed SSO parameters of the widget flow. Garmin now serves the *embedded*
+// widget (service = …/sso/embed, embed=true); the older portal shape answered our credential POST
+// with a page whose MFA step could not be completed.
 func signinParams(o Options) url.Values {
 	v := url.Values{}
 	v.Set("id", "gauth-widget")
 	v.Set("embedWidget", "true")
+	v.Set("gauthHost", embedURL(o))
+	v.Set("service", embedURL(o))
+	v.Set("source", embedURL(o))
+	v.Set("redirectAfterAccountLoginUrl", embedURL(o))
+	v.Set("redirectAfterAccountCreationUrl", embedURL(o))
+	return v
+}
+
+// embedParams are the parameters of the embed page itself (no service: it *is* the service).
+func embedParams(o Options) url.Values {
+	v := url.Values{}
+	v.Set("id", "gauth-widget")
+	v.Set("embedWidget", "true")
 	v.Set("gauthHost", o.SSOBase+"/sso")
-	v.Set("service", o.SSOBase+"/sso")
-	v.Set("source", o.SSOBase+"/sso")
-	v.Set("redirectAfterAccountLoginUrl", o.SSOBase+"/sso")
-	v.Set("redirectAfterAccountCreationUrl", o.SSOBase+"/sso")
 	return v
 }
 
 func (s *Service) headers(req *http.Request) {
 	req.Header.Set("User-Agent", s.opt.UserAgent)
+	// The official clients send this on every SSO call; without it the MFA hop looks like a
+	// different client than the one that opened the session.
+	req.Header.Set("NK", "NT")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 }
 
-func (s *Service) post(ctx context.Context, sess *session, target string, form url.Values) (*http.Response, []byte, error) {
+func (s *Service) post(ctx context.Context, sess *session, target, referer string, form url.Values) (*http.Response, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", s.opt.SSOBase)
-	req.Header.Set("Referer", s.opt.SSOBase+"/sso/signin")
+	// A browser posts a form with the page that rendered it as its referer; Garmin checks it on the
+	// MFA hop, where the form lives on the sign-in answer rather than on /sso/signin.
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	} else {
+		req.Header.Set("Referer", target)
+	}
+	s.headers(req)
+	res, err := sess.cli.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = res.Body.Close() }()
+	body, err := readBody(res)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res, body, nil
+}
+
+// get performs a GET with the session's cookies.
+func (s *Service) get(ctx context.Context, sess *session, target, referer string) (*http.Response, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	}
 	s.headers(req)
 	res, err := sess.cli.Do(req)
 	if err != nil {

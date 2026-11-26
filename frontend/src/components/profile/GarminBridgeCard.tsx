@@ -118,42 +118,40 @@ export function GarminBridgeCard() {
       ) : !st ? (
         <Skeleton className="mt-3 h-9 max-w-sm" />
       ) : (
-        <>
-          <div className="mt-3 flex flex-wrap items-center gap-2" role="status">
-            <StateBadge state={state} locked={st.locked} />
-            {state === 'connected' && st.displayName && <span className="text-xs text-ink-2">{st.displayName}</span>}
-            {state === 'connected' && st.since && (
-              <span className="text-xs text-ink-3">{t('settings.bridge.since', { date: fmtDateTime(st.since) })}</span>
-            )}
-            {state === 'connected' ? (
-              <button
-                type="button"
-                className="btn btn-ghost ml-auto h-8 px-2.5 text-xs"
-                onClick={() => m.disconnect.mutate(undefined, { onSuccess: () => toast({ title: t('settings.bridge.disconnected') }) })}
-                disabled={m.disconnect.isPending}
-              >
-                <Unplug className="size-3.5" aria-hidden="true" /> {t('settings.bridge.disconnect')}
-              </button>
-            ) : (
-              <button type="button" className="btn btn-ghost ml-auto h-8 px-2.5 text-xs" onClick={() => setOpen(true)}>
-                {state === 'mfa'
-                  ? t('settings.bridge.enterCode')
-                  : state === 'expired' || state === 'blocked'
-                    ? t('settings.bridge.reconnect')
-                    : t('settings.bridge.enable')}
-              </button>
-            )}
-          </div>
-
-          {(state === 'expired' || state === 'blocked') && (
-            <p role="alert" className="mt-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
-              {state === 'expired' ? t('settings.bridge.expiredBody') : t('settings.bridge.blockedBody')}
-            </p>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <StateBadge state={state} locked={st.locked} />
+          {state === 'connected' && st.displayName && <span className="truncate text-xs text-ink-2">{st.displayName}</span>}
+          {state === 'connected' && st.since && (
+            <span className="hidden text-xs text-ink-3 sm:inline">{t('settings.bridge.since', { date: fmtDateTime(st.since) })}</span>
           )}
-        </>
+          {state === 'connected' ? (
+            <button
+              type="button"
+              className="btn btn-ghost ml-auto h-8 px-2.5 text-xs"
+              onClick={() => m.disconnect.mutate(undefined, { onSuccess: () => toast({ title: t('settings.bridge.disconnected') }) })}
+              disabled={m.disconnect.isPending}
+            >
+              <Unplug className="size-3.5" aria-hidden="true" /> {t('settings.bridge.disconnect')}
+            </button>
+          ) : (
+            <button type="button" className="btn btn-ghost ml-auto h-8 px-2.5 text-xs" onClick={() => setOpen(true)}>
+              {state === 'mfa'
+                ? t('settings.bridge.enterCode')
+                : state === 'expired' || state === 'blocked'
+                  ? t('settings.bridge.reconnect')
+                  : t('settings.bridge.enable')}
+            </button>
+          )}
+        </div>
       )}
 
-      <p className="mt-3 text-xs text-ink-3">{t('settings.bridge.fallback')}</p>
+      <p className="mt-2 text-xs text-ink-3">{t('settings.bridge.fallbackShort')}</p>
+
+      {(state === 'expired' || state === 'blocked') && (
+        <p role="alert" className="mt-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+          {state === 'expired' ? t('settings.bridge.expiredBody') : t('settings.bridge.blockedBody')}
+        </p>
+      )}
 
       <Dialog
         open={open}
@@ -176,6 +174,7 @@ export function GarminBridgeCard() {
                 <li>{t('settings.bridge.consentPassword')}</li>
                 <li>{t('settings.bridge.consentFallback')}</li>
               </ul>
+              <p className="mt-2 text-ink-3">{t('settings.bridge.fallback')}</p>
             </div>
           )}
 

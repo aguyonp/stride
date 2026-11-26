@@ -160,6 +160,7 @@ export default {
     flowFailed: 'Garmin n’a pas répondu comme prévu : le pont doit être mis à jour. Le fichier .FIT reste disponible.',
     enterCode: 'Saisir le code',
     codeRefusedBody: 'Garmin a refusé ce code. Vérifiez-le, ou demandez-en un nouveau en recommençant.',
+    fallbackShort: 'Repli : le fichier .FIT via Garmin Connect Web.',
     codePendingTitle: 'Garmin demande un code',
     codePendingBody: 'Le mot de passe est accepté. Saisissez le code de vérification reçu par e-mail ou dans l’application Garmin.',
     statusFailed: 'Impossible de lire l’état du pont.',

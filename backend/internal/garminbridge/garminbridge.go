@@ -170,7 +170,10 @@ type pendingLogin struct {
 	sess   *session
 	csrf   string
 	params url.Values
-	at     time.Time
+	// referer is the URL of the page that asked for the code: a browser posts the code form with
+	// that page as its referer, and Garmin checks it.
+	referer string
+	at      time.Time
 }
 
 // New builds the service.

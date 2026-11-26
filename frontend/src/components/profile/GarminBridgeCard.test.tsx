@@ -80,7 +80,8 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await setInputValue(inputs()[1], 'motdepasse')
     await clickEl(btn('Se connecter'))
     await waitFor(() => expect(text()).toContain('Connecté'))
-    expect(inputs().length).toBe(0)
+    // The modal closes with an animation: wait for it to leave the DOM, not for a tick.
+    await waitFor(() => expect(inputs().length).toBe(0))
     expect(userData(1).garminBridge?.state).toBe('connected')
 
     await clickEl(btn('Déconnecter'))
@@ -190,7 +191,9 @@ describe('GarminBridgeCard (pont expérimental)', () => {
     await waitFor(() => expect(text()).toContain('Expiré'))
     expect(text()).toContain('session Garmin a expiré')
     expect(btn('Reconnecter')).not.toBeNull()
-    // The fallback is always stated.
-    expect(text()).toContain('importez-le dans Garmin Connect Web')
+    // The fallback is always stated, in one line in the card and in full in the flow.
+    expect(text()).toContain('Repli : le fichier .FIT via Garmin Connect Web.')
+    await clickEl(btn('Reconnecter'))
+    await waitFor(() => expect(text()).toContain('importez-le dans Garmin Connect Web'))
   })
 })
