@@ -281,6 +281,13 @@ const en: Widen<typeof fr> = {
     done: 'Handled',
     unreadSr: 'Unread.',
   },
+  bridge: {
+    card: 'Garmin bridge (experimental)',
+    hint: 'Session push through Garmin Connect’s web API. Unofficial: the risk of a block or an account suspension is each user’s to accept.',
+    toggle: 'Allow the Garmin bridge',
+    on: 'Users can enable the bridge and sign in with their own account; the STRIDE_GARMIN_BRIDGE environment variable is required.',
+    off: 'No bridge route is served: the .FIT (Garmin Connect Web import) stays the only path.',
+  },
   updates: {
     card: 'Updates',
     hint: 'Detects a newer GitHub release than the installed version.',

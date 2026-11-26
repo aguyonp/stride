@@ -32,7 +32,7 @@ open http://localhost:8080
 - **AI coach, streamed**: analyses, plan generation and adaptation over SSE, coach notes from the physio injected first in every prompt.
 - **Notification centre**: a per-user history of the alerts and the physio/coach messages — bell, unread badge, grouped by day, mark read.
 - **Physio / coach portal**: revocable read-only share links with opt-in permissions (directives, remarks, prescribed sessions, events).
-- **Export and sharing**: `.FIT` workout export, Garmin Connect import (and an optional experimental watch push), clinical views by link.
+- **Export and sharing**: `.FIT` workout export with the Garmin Connect Web import checklist, an optional experimental watch push (off by default, unofficial API), clinical views by link.
 - **Per-user MCP server**: expose your own data to AI assistants at `POST /mcp/{token}`, 13 tools scoped to you, with a quota and a call journal.
 - **French / English** interface and AI prompts, following the browser language.
 - **Self-hosted and boring to operate**: SQLite (one writer, one reader), atomic backups with S3 upload, WebAuthn passkeys only, Prometheus metrics, in-app admin control center, release notice when a newer version is published.

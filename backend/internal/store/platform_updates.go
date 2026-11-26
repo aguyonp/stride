@@ -10,6 +10,11 @@ import (
 const (
 	SettingUpdateCheckEnabled = "update_check_enabled"
 	DefaultUpdateCheckEnabled = true
+
+	// SettingGarminBridgeEnabled is the admin half of the experimental Garmin bridge kill switch
+	// (§23): the env variable is the other half, and both must be true.
+	SettingGarminBridgeEnabled = "garmin_bridge_enabled"
+	DefaultGarminBridgeEnabled = false
 )
 
 // UpdateCheckEnabled reads the admin switch; a missing or unreadable value keeps the default.
@@ -22,6 +27,16 @@ func (s *Store) UpdateCheckEnabled(ctx context.Context) bool {
 	if err != nil {
 		return DefaultUpdateCheckEnabled
 	}
+	return b
+}
+
+// GarminBridgeEnabled reads the admin switch of the bridge; a missing value keeps it off.
+func (s *Store) GarminBridgeEnabled(ctx context.Context) bool {
+	v, ok, err := s.Setting(ctx, SettingGarminBridgeEnabled)
+	if err != nil || !ok {
+		return DefaultGarminBridgeEnabled
+	}
+	b, _ := strconv.ParseBool(v)
 	return b
 }
 

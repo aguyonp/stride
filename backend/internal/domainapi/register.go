@@ -18,6 +18,7 @@ import (
 	"stride/internal/auth"
 	"stride/internal/domain"
 	"stride/internal/frfmt"
+	"stride/internal/garminbridge"
 	"stride/internal/httpx"
 	"stride/internal/provider/strava"
 )
@@ -27,6 +28,9 @@ type Deps struct {
 	RequireUser  func(http.Handler) http.Handler
 	RequireAdmin func(http.Handler) http.Handler
 	Log          *slog.Logger
+	// Bridge is set when the experimental Garmin gateway was built (§23, issue #147). Nil keeps its
+	// routes unmounted: the feature is gone, not merely disabled.
+	Bridge *garminbridge.Service
 }
 
 type api struct {
@@ -48,6 +52,11 @@ func Register(mux *http.ServeMux, d Deps) {
 	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(withLang(h))) }
 	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, d.RequireUser(d.RequireAdmin(h))) }
 
+	if d.Bridge != nil {
+		// Experimental Garmin Connect bridge (§23): mounted only when the gateway was built, so a
+		// decommission is removing the package and these two lines.
+		registerGarminBridge(mux, user, a)
+	}
 	user("GET /api/integrations", a.integrations)
 	user("PUT /api/integrations/garmin", a.putGarmin)
 	user("POST /api/integrations/garmin/test", a.testGarmin)

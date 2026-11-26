@@ -49,6 +49,10 @@ type Config struct {
 
 	// AllowPrivateEgress lets user-supplied URLs (LLM base URL, webhooks) reach private networks.
 	AllowPrivateEgress bool
+	// GarminBridge is the master switch of the experimental Garmin Connect bridge (§23, issue #147).
+	// Off by default: the feature speaks to an unofficial API, with a real risk of account
+	// suspension. The admin setting must also be on.
+	GarminBridge bool
 
 	SyncHour      int
 	SyncJitterMin time.Duration
@@ -134,6 +138,9 @@ func Load() (Config, error) {
 	}
 	if c.AllowPrivateEgress, err = strconv.ParseBool(get("STRIDE_ALLOW_PRIVATE_EGRESS", "false")); err != nil {
 		return Config{}, fmt.Errorf("STRIDE_ALLOW_PRIVATE_EGRESS must be true|false")
+	}
+	if c.GarminBridge, err = strconv.ParseBool(get("STRIDE_GARMIN_BRIDGE", "false")); err != nil {
+		return Config{}, fmt.Errorf("STRIDE_GARMIN_BRIDGE must be true|false")
 	}
 	c.S3 = S3Seed{Endpoint: os.Getenv("STRIDE_S3_ENDPOINT"), Region: get("STRIDE_S3_REGION", "us-east-1"), Bucket: os.Getenv("STRIDE_S3_BUCKET"),
 		Prefix: os.Getenv("STRIDE_S3_PREFIX"), AccessKeyID: os.Getenv("STRIDE_S3_ACCESS_KEY_ID"), SecretAccessKey: os.Getenv("STRIDE_S3_SECRET_ACCESS_KEY")}

@@ -20,6 +20,7 @@ import (
 	"stride/internal/env"
 	"stride/internal/frfmt"
 	"stride/internal/garmin"
+	"stride/internal/garminbridge"
 	"stride/internal/observability"
 	"stride/internal/provider/strava"
 	"stride/internal/provider/weather"
@@ -52,16 +53,24 @@ type Services struct {
 	// Now is overridable in tests.
 	Now func() time.Time
 
-	mu       sync.Mutex
-	clients  map[int64]*garmin.Client
-	running  map[int64]bool
-	syncJobs map[int64]string
-	subsOnce sync.Once
-	sf       singleflight.Group
-	queue    *queue.Manager
-	egress   *http.Client
-	llmHTTP  *http.Client
+	mu      sync.Mutex
+	clients map[int64]*garmin.Client
+	// bridge is the experimental Garmin Connect gateway (§23); nil keeps the feature off.
+	bridge *garminbridge.Service
+	// garminBreaker pauses a user after repeated bridge failures, guard: breakerMu.
+	garminBreaker map[int64]*breakerState
+	running       map[int64]bool
+	syncJobs      map[int64]string
+	subsOnce      sync.Once
+	sf            singleflight.Group
+	queue         *queue.Manager
+	egress        *http.Client
+	llmHTTP       *http.Client
 }
+
+// SetGarminBridge installs the experimental gateway (§23). Called once at boot, with the service
+// built on BridgeTokenStore; a nil gateway keeps the bridge off.
+func (s *Services) SetGarminBridge(b *garminbridge.Service) { s.bridge = b }
 
 func New(d Deps) (*Services, error) {
 	if d.Store == nil || d.Cache == nil || d.Sealer == nil {

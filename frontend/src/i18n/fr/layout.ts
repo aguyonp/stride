@@ -123,6 +123,12 @@ export default {
       event: 'Contrainte ajoutée à ton planning',
       other: 'Mise à jour du dossier partagé',
     },
+    bridge: {
+      expired: 'Pont Garmin expiré',
+      blocked: 'Garmin bloque la connexion du pont',
+      mfa: 'Code Garmin refusé',
+      push: 'Envoi vers Garmin refusé',
+    },
     update: {
       title: 'Nouvelle version disponible',
       detail: 'La version {version} est publiée sur GitHub.',

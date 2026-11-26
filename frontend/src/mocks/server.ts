@@ -62,6 +62,7 @@ function adminSettings() {
     inboxRetentionDays: db().inboxRetention.days,
     inboxRetentionMax: db().inboxRetention.max,
     updateCheckEnabled: db().updateCheckEnabled,
+    garminBridgeEnabled: db().garminBridgeEnabled,
   }
 }
 
@@ -521,17 +522,82 @@ route('DELETE', /^\/api\/admin\/invitations\/(\d+)$/, ({ params }) => {
 })
 route('GET', /^\/api\/admin\/settings$/, () => json(adminSettings()))
 route('PUT', /^\/api\/admin\/settings$/, ({ init }) => {
-  const body = parse<{ registrationMode?: string; inboxRetentionDays?: number; inboxRetentionMax?: number; updateCheckEnabled?: boolean }>(init)
+  const body = parse<{ registrationMode?: string; inboxRetentionDays?: number; inboxRetentionMax?: number; updateCheckEnabled?: boolean; garminBridgeEnabled?: boolean }>(init)
   // A field left out keeps its current value (the retention panel never resets the mode).
   const mode = body?.registrationMode ?? db().registrationMode
   if (mode !== 'open' && mode !== 'invite') return err(400, 'BAD_REQUEST', 'Mode d’inscription invalide.')
   db().registrationMode = mode
   // Retention is clamped, not rejected, and a missing field keeps its current value (like the API).
   if (body?.updateCheckEnabled !== undefined) db().updateCheckEnabled = !!body.updateCheckEnabled
+  if (body?.garminBridgeEnabled !== undefined) db().garminBridgeEnabled = !!body.garminBridgeEnabled
   const r = db().inboxRetention
   if (body?.inboxRetentionDays) r.days = Math.min(365, Math.max(1, Math.round(body.inboxRetentionDays)))
   if (body?.inboxRetentionMax) r.max = Math.min(200, Math.max(1, Math.round(body.inboxRetentionMax)))
   return json(adminSettings())
+})
+
+/* Experimental Garmin bridge (§23, issue #147): the flow, without any Garmin behind it. */
+const bridgeState = () => {
+  const me = currentUser()
+  return me ? userData(me.id).garminBridge : undefined
+}
+const setBridge = (state: { state: string; displayName?: string; since?: string; locked?: boolean } | undefined) => {
+  const me = currentUser()
+  if (!me) return
+  const data = userData(me.id)
+  data.garminBridge = state
+  db().data[String(me.id)] = data
+}
+route('GET', /^\/api\/garmin\/bridge$/, () => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  if (!db().garminBridgeEnabled) return err(404, 'NOT_FOUND', 'Route inconnue.')
+  return json(bridgeState() ?? { state: 'disconnected' })
+})
+route('POST', /^\/api\/garmin\/bridge\/login$/, ({ init }) => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  if (!db().garminBridgeEnabled) return json({ state: 'disconnected' }, 409)
+  const b = parse<{ email?: string; password?: string }>(init)
+  // The demo account: anything else is a wrong password.
+  if (!b?.email || b.password !== 'motdepasse') return err(400, 'BAD_REQUEST', 'Identifiants ou code refusés par Garmin.')
+  if (b.email.startsWith('mfa')) {
+    setBridge({ state: 'mfa' })
+    return json({ state: 'mfa' }, 202)
+  }
+  setBridge({ state: 'connected', displayName: 'Antoine', since: new Date().toISOString() })
+  return json({ state: 'connected', displayName: 'Antoine' })
+})
+route('POST', /^\/api\/garmin\/bridge\/mfa$/, ({ init }) => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  const b = parse<{ code?: string }>(init)
+  if (b?.code !== '123456') return err(400, 'BAD_REQUEST', 'Identifiants ou code refusés par Garmin.')
+  setBridge({ state: 'connected', displayName: 'Antoine', since: new Date().toISOString() })
+  return json({ state: 'connected', displayName: 'Antoine' })
+})
+route('DELETE', /^\/api\/garmin\/bridge$/, () => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  setBridge(undefined)
+  return new Response(null, { status: 204 })
+})
+route('POST', /^\/api\/plan\/push-today$/, ({ init, url }) => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  const date = parse<{ date?: string }>(init)?.date || url.searchParams.get('date') || new Date().toISOString().slice(0, 10)
+  const sessions = userData(me.id).plan.filter((p) => p.date === date)
+  const connected = bridgeState()?.state === 'connected'
+  const results = sessions.map((p) => {
+    const steps = (p.steps ?? []).length
+    if (!steps) return { sessionId: p.id, title: p.title, status: 'skipped', message: 'Pas d’étapes structurées à envoyer.' }
+    if (p.garmin?.status === 'pushed') return { sessionId: p.id, title: p.title, status: 'skipped', message: 'Déjà envoyée.', workoutId: p.garmin.workoutId ?? undefined }
+    if (!connected) return { sessionId: p.id, title: p.title, status: 'failed', message: 'Pont non connecté.' }
+    p.garmin = { status: 'pushed', workoutId: 9000 + p.id, pushedAt: new Date().toISOString(), error: null }
+    return { sessionId: p.id, title: p.title, status: 'pushed', workoutId: 9000 + p.id }
+  })
+  db().data[String(me.id)] = userData(me.id)
+  return json({ date, results })
 })
 
 /* Release check (§22, issue #143): admin only, cached server-side in the real instance. */

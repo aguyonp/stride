@@ -25,6 +25,9 @@ const (
 	InboxKindAlert  = "alert"
 	InboxKindShare  = "share"
 	InboxKindUpdate = "update"
+	// InboxKindGarminBridge is the experimental Garmin Connect bridge (§23): expired session,
+	// blocked login, refused push. The panel links it to the settings.
+	InboxKindGarminBridge = "garmin_bridge"
 )
 
 const (

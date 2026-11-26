@@ -18,6 +18,7 @@ import (
 	"stride/internal/domain"
 	"stride/internal/domainapi"
 	"stride/internal/feedback"
+	"stride/internal/garminbridge"
 	"stride/internal/httpx"
 	"stride/internal/mcp"
 	"stride/internal/observability"
@@ -34,13 +35,15 @@ type Deps struct {
 	Feedback *feedback.Handler
 	Domain   *domain.Services
 	// MCP is the per-user MCP server (POST /mcp/{token} + /api/mcp* management).
-	MCP     *mcp.Server
-	Log     *slog.Logger
-	Logs    *applog.Log
-	HTTPS   bool
-	Static  http.Handler
-	SSE     *sse.Hub
-	Metrics *observability.Metrics
+	MCP    *mcp.Server
+	Log    *slog.Logger
+	Logs   *applog.Log
+	HTTPS  bool
+	Static http.Handler
+	// GarminBridge is the experimental gateway (§23); nil unmounts its routes.
+	GarminBridge *garminbridge.Service
+	SSE          *sse.Hub
+	Metrics      *observability.Metrics
 }
 
 func New(d Deps) http.Handler {
@@ -77,6 +80,7 @@ func New(d Deps) http.Handler {
 		RequireUser:  d.Auth.RequireUser,
 		RequireAdmin: d.Auth.RequireAdmin,
 		Log:          d.Log,
+		Bridge:       d.GarminBridge,
 	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.Fail(w, http.StatusNotFound, httpx.CodeNotFound, "Route d'API inconnue.")

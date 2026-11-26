@@ -1,4 +1,4 @@
-import { CalendarClock, Download, Loader2, Pencil, Trash2, Watch } from 'lucide-react'
+import { CalendarClock, Download, ExternalLink, Loader2, Pencil, Trash2, Watch } from 'lucide-react'
 import { useState } from 'react'
 import { api, isApiError } from '../../api/client'
 import { useIntegrations, usePlanMutations, useProfile } from '../../api/queries'
@@ -18,7 +18,7 @@ import { useSessionEditor } from './PlannedSessionDialog'
 import { StepsView } from './StepsView'
 import { MorphedNote, MorphTrigger } from './morph/MorphActions'
 import { PrescribedByTag } from '../share/ShareMarkers'
-import { lazyRecord, t, tx } from '../../i18n'
+import { lazyRecord, t } from '../../i18n'
 
 const SOURCE_LABEL = lazyRecord(['manual', 'llm', 'import', 'share'] as const, (k) => t(`plan.drawer.source.${k}`))
 
@@ -82,11 +82,20 @@ function WatchSection({ s, onGarmin }: { s: PlannedSession; onGarmin: (g: Garmin
           {t('plan.drawer.sendGarmin')}
         </button>
       </div>
-      <div className="mt-3 space-y-1.5">
+      <div className="mt-3 space-y-2">
         <GarminStatus s={s} />
-        <p className="text-xs text-ink-3">
-          {tx('plan.drawer.fitHelp', { path: <code className="rounded bg-track px-1">GARMIN/NewFiles</code> })}
-        </p>
+        {/* The cable is gone: the .FIT goes through Garmin Connect Web (§23, issue #147). */}
+        <div className="rounded-xl bg-track/50 p-3">
+          <p className="text-xs text-ink-2">{t('plan.drawer.fitHelp')}</p>
+          <ol className="mt-1.5 space-y-0.5 text-xs text-ink-3">
+            <li>{t('plan.drawer.fitStep1')}</li>
+            <li>{t('plan.drawer.fitStep2')}</li>
+            <li>{t('plan.drawer.fitStep3')}</li>
+          </ol>
+          <a className="btn btn-ghost mt-2 h-8 px-2.5 text-xs" href="https://connect.garmin.com/modern/workouts" target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="size-3.5" aria-hidden="true" /> {t('plan.drawer.openConnect')}
+          </a>
+        </div>
       </div>
     </section>
   )

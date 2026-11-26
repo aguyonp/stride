@@ -11,7 +11,7 @@ setLang('fr', { persist: false })
 describe('InvitationsPanel — centre de notifications', () => {
   let mounted: MountedApp | null = null
   let putBody: Record<string, unknown> | null = null
-  let stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50, updateCheckEnabled: true }
+  let stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50, updateCheckEnabled: true, garminBridgeEnabled: false }
 
   // The invitation card also has a number field: the retention ones are the first two.
   const numInputs = () => (Array.from(document.querySelectorAll('input[type="number"]')) as HTMLInputElement[]).slice(0, 2)
@@ -20,7 +20,7 @@ describe('InvitationsPanel — centre de notifications', () => {
 
   beforeEach(() => {
     putBody = null
-    stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50, updateCheckEnabled: true }
+    stored = { registrationMode: 'invite', inboxRetentionDays: 10, inboxRetentionMax: 50, updateCheckEnabled: true, garminBridgeEnabled: false }
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
@@ -32,6 +32,7 @@ describe('InvitationsPanel — centre de notifications', () => {
           stored = {
             registrationMode: String(putBody.registrationMode ?? stored.registrationMode),
             updateCheckEnabled: putBody.updateCheckEnabled === undefined ? stored.updateCheckEnabled : !!putBody.updateCheckEnabled,
+            garminBridgeEnabled: putBody.garminBridgeEnabled === undefined ? stored.garminBridgeEnabled : !!putBody.garminBridgeEnabled,
             inboxRetentionDays: Math.min(365, Math.max(1, Number(putBody.inboxRetentionDays ?? stored.inboxRetentionDays))),
             inboxRetentionMax: Math.min(200, Math.max(1, Number(putBody.inboxRetentionMax ?? stored.inboxRetentionMax))),
           }
@@ -76,6 +77,20 @@ describe('InvitationsPanel — centre de notifications', () => {
 
     await clickEl(document.querySelector('button[role="switch"]'))
     await waitFor(() => expect(putBody).toMatchObject({ updateCheckEnabled: true }))
+  })
+
+  it('opens the experimental Garmin bridge, off by default', async () => {
+    mounted = await mountWithProviders(<InvitationsPanel />)
+    await waitFor(() => expect(document.body.textContent).toContain('Pont Garmin (expérimental)'))
+    const switches = () => Array.from(document.querySelectorAll('button[role="switch"]')) as HTMLButtonElement[]
+    // The update check is on, the bridge is off: two switches, two defaults.
+    await waitFor(() => expect(switches().map((b) => b.getAttribute('aria-checked'))).toEqual(['true', 'false']))
+    expect(document.body.textContent).toContain('Aucune route du pont n’est servie')
+
+    await clickEl(switches()[1])
+    await waitFor(() => expect(putBody).toMatchObject({ garminBridgeEnabled: true }))
+    await waitFor(() => expect(switches()[1].getAttribute('aria-checked')).toBe('true'))
+    expect(document.body.textContent).toContain('variable d’environnement STRIDE_GARMIN_BRIDGE requise')
   })
 
   it('refuses out-of-range values before the call', async () => {

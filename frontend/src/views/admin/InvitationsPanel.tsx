@@ -1,4 +1,4 @@
-import { Ban, BellRing, Copy, DoorOpen, Download, Loader2, Mail, Plus, TriangleAlert } from 'lucide-react'
+import { Ban, BellRing, Copy, DoorOpen, Download, Loader2, Mail, Plus, TriangleAlert, Watch } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useAdminInvitations, useAdminMutations, useAdminSettings } from '../../api/queries'
 import type { Invitation, InvitationCreated, RegistrationMode } from '../../api/types'
@@ -30,6 +30,7 @@ export function InvitationsPanel() {
     <div className="space-y-5">
       <RegistrationCard />
       <UpdatesCard />
+      <BridgeCard />
       <RetentionCard />
       <CreateInvitationCard />
       <InvitationList />
@@ -107,6 +108,44 @@ function UpdatesCard() {
             aria-label={t('admin.updates.check')}
             disabled={m.updateSettings.isPending}
             onClick={() => m.updateSettings.mutate({ updateCheckEnabled: !on })}
+            className={cn('relative h-6 w-11 flex-none rounded-full transition-colors', on ? 'bg-accent' : 'bg-line-strong')}
+          >
+            <span className={cn('absolute top-0.5 size-5 rounded-full bg-surface transition-all', on ? 'left-[1.375rem]' : 'left-0.5')} />
+          </button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Experimental Garmin bridge (issue #147): the admin half of the kill switch. It only opens the
+ * door — each user still has to activate the bridge and sign in for their own account.
+ */
+function BridgeCard() {
+  const settings = useAdminSettings()
+  const m = useAdminMutations()
+  const cur = settings.data
+  const on = cur?.garminBridgeEnabled ?? false
+  return (
+    <Card title={t('admin.bridge.card')} icon={<Watch className="size-4" />} subtitle={t('admin.bridge.hint')}>
+      {settings.isError ? (
+        <ErrorView error={settings.error} onRetry={() => void settings.refetch()} />
+      ) : !cur ? (
+        <Skeleton className="h-16 max-w-md" />
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{t('admin.bridge.toggle')}</p>
+            <p className="text-xs text-ink-3">{on ? t('admin.bridge.on') : t('admin.bridge.off')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            aria-label={t('admin.bridge.toggle')}
+            disabled={m.updateSettings.isPending}
+            onClick={() => m.updateSettings.mutate({ garminBridgeEnabled: !on })}
             className={cn('relative h-6 w-11 flex-none rounded-full transition-colors', on ? 'bg-accent' : 'bg-line-strong')}
           >
             <span className={cn('absolute top-0.5 size-5 rounded-full bg-surface transition-all', on ? 'left-[1.375rem]' : 'left-0.5')} />

@@ -48,6 +48,18 @@ function entryTitle(e: InboxEntry): string {
     }
   }
   if (e.kind === 'update') return t('layout.inbox.update.title')
+  if (e.kind === 'garmin_bridge') {
+    switch (e.code) {
+      case 'GARMIN_BRIDGE_EXPIRED':
+        return t('layout.inbox.bridge.expired')
+      case 'GARMIN_BRIDGE_BLOCKED':
+        return t('layout.inbox.bridge.blocked')
+      case 'GARMIN_BRIDGE_MFA':
+        return t('layout.inbox.bridge.mfa')
+      default:
+        return t('layout.inbox.bridge.push')
+    }
+  }
   return e.title
 }
 
@@ -56,6 +68,11 @@ function entryDetail(e: InboxEntry): string {
   if (e.kind === 'share') {
     const date = e.date ? t('layout.inbox.sessionOf', { date: fmtDateLong(e.date) }) : ''
     return [e.detail, date].filter(Boolean).join(' · ')
+  }
+  if (e.kind === 'garmin_bridge') {
+    // The stored detail is the English text of the failure: the code is what the panel localizes,
+    // so keep the detail as-is and let the wording of the title carry the meaning.
+    return e.detail
   }
   if (e.kind === 'update') return t('layout.inbox.update.detail', { version: e.code ?? '' })
   return e.detail
