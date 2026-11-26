@@ -1,6 +1,7 @@
 package garminbridge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,8 @@ var (
 	csrfRE = regexp.MustCompile(`name="_csrf"\s+value="([^"]+)"`)
 	// responseURLRE reads the script variable a successful sign-in embeds.
 	responseURLRE = regexp.MustCompile(`response_url\s*=\s*"([^"]+)"`)
+	// mfaVarRE reads the inline variables the widget page uses to drive its MFA step.
+	mfaVarRE = regexp.MustCompile(`var\s+(customerGuid|mfaMethod|locale|clientId|codeSentTo)\s*=\s*"([^"]*)"\s*;`)
 	// mfaMarkers say "Garmin wants a code", across the widget and the mobile variants.
 	mfaMarkers = []string{"verifyMFA", "MFA_REQUIRED", "mfa-code", "enterMfaCode", "mfaVerification", "mfaMethod"}
 	// blockedMarkers are the anti-bot *answers*: status 200 with a rate-limit message. They are
@@ -162,6 +165,10 @@ func (s *Service) finishLogin(ctx context.Context, userID int64, sess *session, 
 			s.keepPending(userID, &pendingLogin{
 				sess: sess, csrf: mfaCSRF, params: signinParams(s.opt), referer: res.Request.URL.String(),
 			})
+			// The widget does not send the e-mail itself: its page calls /sso/verifyMFA/mfaCode when
+			// the user asks for a code, and the mail only leaves then. Without this call the flow
+			// waits forever for a code nobody received.
+			s.requestMFACode(ctx, userID, sess, body, res.Request.URL.String())
 			return LoginResult{State: StateMFA}, stepErr(stepMFA, err)
 		}
 		return LoginResult{State: stateOfError(err)}, stepErr(stepLogin, err)
@@ -363,6 +370,52 @@ func classify(status int, body []byte) error {
 		return ErrFlow
 	}
 	return nil
+}
+
+// requestMFACode asks Garmin to deliver the code, exactly as the widget's « Request a new code »
+// link does. Best effort: a failure here does not fail the sign-in, it just leaves the user waiting
+// for a mail Garmin may not have sent.
+func (s *Service) requestMFACode(ctx context.Context, userID int64, sess *session, page []byte, pageURL string) {
+	vars := map[string]string{}
+	for _, m := range mfaVarRE.FindAllSubmatch(page, -1) {
+		vars[string(m[1])] = string(m[2])
+	}
+	method := strings.ToLower(vars["mfaMethod"])
+	if method != "email" && method != "sms" {
+		return // an authenticator app needs no delivery
+	}
+	if vars["codeSentTo"] != "" {
+		return // Garmin already sent it during the credential POST
+	}
+	payload, err := json.Marshal(map[string]string{
+		"customerGuid": vars["customerGuid"],
+		"mfaMethod":    vars["mfaMethod"],
+		"locale":       vars["locale"],
+	})
+	if err != nil {
+		return
+	}
+	target := s.opt.SSOBase + "/sso/verifyMFA/mfaCode?clientId=" + url.QueryEscape(vars["clientId"])
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(payload))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Referer", pageURL)
+	s.headers(req)
+	res, err := sess.cli.Do(req)
+	if err != nil {
+		s.log().Warn("🔗 Pont Garmin : demande de code impossible", "user", userID, "err", err.Error())
+		return
+	}
+	defer func() { _ = res.Body.Close() }()
+	_, _ = readBody(res)
+	if res.StatusCode >= 400 {
+		s.log().Warn("🔗 Pont Garmin : demande de code refusée", "user", userID, "status", res.StatusCode)
+		return
+	}
+	s.log().Info("🔗 Pont Garmin : code demandé à Garmin", "user", userID, "methode", method)
 }
 
 // trace writes what Garmin actually answered when a sign-in stops, in booleans and a status: enough

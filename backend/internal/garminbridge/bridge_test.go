@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,15 +37,19 @@ type fakeGarmin struct {
 	schedule     int
 	unauthorized bool // first API call answers 401 once
 
-	gotPassword   string
-	signinCalls   int
-	exchanges     int
-	calls         []string
-	signinForm    url.Values
-	signinReferer string
-	mfaForm       url.Values
-	mfaReferer    string
-	mfaQuery      string
+	gotPassword        string
+	signinCalls        int
+	exchanges          int
+	calls              []string
+	signinForm         url.Values
+	signinReferer      string
+	mfaForm            url.Values
+	mfaReferer         string
+	mfaQuery           string
+	codeRequest        int
+	codeRequestQ       string
+	codeRequestBody    []byte
+	codeRequestReferer string
 }
 
 func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
@@ -83,6 +88,16 @@ func newFake(t *testing.T) (*fakeGarmin, *httptest.Server) {
 	mux.HandleFunc("GET /sso/embed", func(w http.ResponseWriter, r *http.Request) {
 		f.record("GET /sso/embed")
 		fmt.Fprint(w, `<html><title>GARMIN</title></html>`)
+	})
+	mux.HandleFunc("POST /sso/verifyMFA/mfaCode", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.codeRequest++
+		f.codeRequestQ = r.URL.RawQuery
+		f.codeRequestBody, _ = io.ReadAll(r.Body)
+		f.codeRequestReferer = r.Header.Get("Referer")
+		f.mu.Unlock()
+		f.record("POST mfaCode")
+		fmt.Fprint(w, `{}`)
 	})
 	mux.HandleFunc("POST /sso/verifyMFA/loginEnterMfaCode", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -376,7 +391,7 @@ func TestPendingMFAExpires(t *testing.T) {
 		HTTP: srv.Client(), Store: newMemStore(), Now: func() time.Time { return now },
 		SSOBase: srv.URL, APIBase: srv.URL,
 	})
-	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><div id="mfa-code-entry"></div></html>`
+	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><script>var customerGuid = "guid-1"; var mfaMethod = "email"; var locale = "fr-FR"; var clientId = "client-1"; var codeSentTo = "";</script><div id="mfa-code-entry"></div></html>`
 	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
 		t.Fatalf("login: %v", err)
 	}
@@ -395,7 +410,7 @@ func TestPendingMFAExpires(t *testing.T) {
 func TestMFAUsesThePageTokenAndReferer(t *testing.T) {
 	f, srv := newFake(t)
 	svc := service(t, f, srv, newMemStore())
-	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><div id="mfa-code-entry"></div></html>`
+	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><script>var customerGuid = "guid-1"; var mfaMethod = "email"; var locale = "fr-FR"; var clientId = "client-1"; var codeSentTo = "";</script><div id="mfa-code-entry"></div></html>`
 
 	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
 		t.Fatalf("login: %v", err)
@@ -426,6 +441,54 @@ func TestMFAUsesThePageTokenAndReferer(t *testing.T) {
 	// And the widget parameters ride in the query, never the code.
 	if !strings.Contains(f.mfaQuery, "gauthHost=") || strings.Contains(f.mfaQuery, "mfa-code") {
 		t.Fatalf("code query %q", f.mfaQuery)
+	}
+}
+
+// Garmin's widget does not deliver the code by itself: its page calls /sso/verifyMFA/mfaCode when the
+// user asks for one. Without that call the user waits for a mail nobody sent.
+func TestMFACodeIsRequestedWhenNothingWasSent(t *testing.T) {
+	f, srv := newFake(t)
+	svc := service(t, f, srv, newMemStore())
+	f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><script>var customerGuid = "guid-1"; var mfaMethod = "email"; var locale = "fr-FR"; var clientId = "client-1"; var codeSentTo = "";</script></html>`
+
+	if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
+		t.Fatalf("login: %v", err)
+	}
+	if f.codeRequest != 1 {
+		t.Fatalf("code requests: %d, want 1", f.codeRequest)
+	}
+	if !strings.Contains(f.codeRequestQ, "clientId=client-1") {
+		t.Fatalf("query %q", f.codeRequestQ)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(f.codeRequestBody, &payload); err != nil {
+		t.Fatalf("payload %s: %v", f.codeRequestBody, err)
+	}
+	if payload["customerGuid"] != "guid-1" || payload["mfaMethod"] != "email" || payload["locale"] != "fr-FR" {
+		t.Fatalf("payload %+v", payload)
+	}
+	if !strings.Contains(f.codeRequestReferer, "/sso/signin") {
+		t.Fatalf("referer %q", f.codeRequestReferer)
+	}
+}
+
+// …and stays silent when Garmin already sent it, or when an authenticator app is used.
+func TestMFACodeIsNotRequestedTwice(t *testing.T) {
+	for _, tc := range []struct{ name, vars string }{
+		{"already sent", `var mfaMethod = "email"; var codeSentTo = "f***@gmail.com"; var clientId = "c";`},
+		{"authenticator", `var mfaMethod = "totp"; var clientId = "c";`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, srv := newFake(t)
+			svc := service(t, f, srv, newMemStore())
+			f.signinBody = `<html><input type="hidden" name="_csrf" value="mfa-token-2"><script>` + tc.vars + `</script></html>`
+			if _, err := svc.Login(context.Background(), 1, "a@b.c", "pw"); !errors.Is(err, ErrMFARequired) {
+				t.Fatalf("login: %v", err)
+			}
+			if f.codeRequest != 0 {
+				t.Fatalf("code requested %d times, want 0", f.codeRequest)
+			}
+		})
 	}
 }
 

@@ -45,14 +45,16 @@ func main() {
 
 	fmt.Println("\n→ connexion…")
 	res, err := svc.Login(ctx, 1, email, password)
-	report(res, err)
-	if err != nil || res.State != garminbridge.StateMFA {
+	// A code challenge is not a failure: it is the next step. (The first version returned here and
+	// closed before anyone could type the code Garmin had just sent.)
+	if res.State == garminbridge.StateMFA {
+		fmt.Println("état    : mfa — Garmin demande un code")
+		code := prompt("\nCode reçu (e-mail ou application), puis Entrée : ")
+		fmt.Println("\n→ vérification du code…")
+		res, err = svc.LoginMFA(ctx, 1, code)
+		report(res, err)
 		return
 	}
-
-	code := prompt("\nCode reçu (e-mail ou application) : ")
-	fmt.Println("\n→ vérification du code…")
-	res, err = svc.LoginMFA(ctx, 1, code)
 	report(res, err)
 }
 
