@@ -26,6 +26,12 @@ open http://localhost:8080
 
 ## Highlights
 
+**4.8.0**
+- Release banner for administrators: a newer GitHub release than the running binary is announced under the header, with « See on GitHub » and « Later », and kept as a notice in the notification centre.
+- The check runs on the server, once per instance (6 h cache, 1 h after a failure), through the egress guard: the users' addresses never reach GitHub, and a failure is silent.
+- SemVer only: pre-releases, `dev` builds and a version ahead of the release announce nothing; the link is built from the constant repository, never from the API payload.
+- Admin › Invitations gains the switch `updateCheckEnabled` (no request, no notice, no banner when off).
+
 **4.7.0**
 - Notification centre: a bell in the header keeps a persistent, per-user history of the alerts and the physio/coach messages — unread badge, history grouped by day, mark one or all as read, click to open the session. The toasts stay the immediate signal; this is what survives a reload.
 - Fed in the domain (no tab needed) by the analysis alerts and every portal write (directive, remark, prescribed session, constraint), deduplicated so an edit updates its entry instead of stacking one, and localized from a stable code (French / English).

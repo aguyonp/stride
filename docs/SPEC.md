@@ -934,3 +934,40 @@ A bell in the header (before the search button) with an unread badge capped at `
 - `frontend/src/components/layout/NotificationBell.test.tsx` — badge, grouped history, localized share titles, navigation and read marking, « mark all », empty state.
 - `frontend/src/views/admin/InvitationsPanel.test.tsx` — stored values, range validation before the call, saved values.
 - `frontend/e2e/inbox.spec.ts` — real browser: bell and badge, panel content, entry → session, mark all, admin retention card.
+
+## 22. 4.8.0 — Detecting a new release
+
+Issue #143. A published release was invisible: the version only showed in the admin overview and in `GET /api/version`, so a self-hoster could run a two-month-old binary without knowing. The banner and the notification are for administrators only — they are the ones who deploy.
+
+### 22.1 Server-side check (`internal/updates`)
+
+`GET https://api.github.com/repos/aguyonp/stride/releases/latest` through `egress.Client` (§6), so a redirect or a forged answer can never reach a private address:
+
+- `User-Agent: stride-update-check`, `Accept: application/vnd.github+json`, 5 s timeout on the request and 64 KiB on the body.
+- A **constant** repository (`aguyonp/stride`): the link shown to the user is built from it and the validated tag, never from `html_url` — an arbitrary URL is neither followed nor displayed.
+- **SemVer comparison** (`version.go`): `4.7.0` and `v4.7.0` are accepted, a missing patch means `.0`, and `available` is true only when the stable release is **strictly newer**. Pre-releases, drafts, build metadata (`4.8.0-rc1`) and a running version ahead of the release announce nothing. A build without a version (`dev`, the default of a local build) reports the release but never announces it.
+- **Cache**: one answer for the whole instance, success 6 h, failure 1 h, refreshed under a mutex — the first caller pays the request, the others read the cache. A network error, a 403/429 or a malformed payload is never an error for the caller: no banner, no notification, one log line, retry after the failure TTL.
+- « No stable release yet » (only pre-releases published) is an answer, not a failure: cached like a success.
+
+### 22.2 `GET /api/updates` (administrators)
+
+`RequireAdmin`; a regular user gets `403`, an anonymous caller `401`, and neither triggers a GitHub call. Answer: `{current, latest, available, url, publishedAt, checkedAt, notificationId, read}` plus `disabled` when the check is off.
+
+When a release is newer, the route also **writes the notice for every active administrator**, not only for the caller: each admin finds it on the next load from any device. It is one entry per admin and per version — `dedup_key = update:<version>` — and re-checking **keeps the read state** (a release notice is not news again, unlike an alert), so the banner does not come back after being read. Reading it from the centre, on the device or in the notification panel, hides the banner; the entry stays in the history.
+
+### 22.3 The admin switch
+
+`updateCheckEnabled` (default `true`) in `GET/PUT /api/admin/settings`, next to the registration mode, with its card in Admin › Invitations. Disabled: no request, no notice, no banner — the route answers `{current, available: false, disabled: true}` without touching the network. No environment variable was added, so `.env.example` is unchanged (§17.2 stays green).
+
+### 22.4 Interface
+
+A banner in `AppShell`, under the header and above the content, only for `role === 'admin'` and only when `available && !read`: the release number, the running version, « See on GitHub » (`target=_blank`, `rel=noopener noreferrer`) and « Later ». Opening the release marks the notice read and hides the banner; « Later » hides it for the visit (`sessionStorage`), keeps the notice unread, and a later release shows up again.
+
+### 22.5 Tests
+
+- `internal/updates/updates_test.go` — version rules (patch/minor/major, equal, older, `v` prefix, pre-release, build metadata, two parts, `dev`, garbage), newer/equal/older/dev through `httptest`, `prerelease: true`, 403/429/5xx/malformed/empty tag, the success and failure TTLs, recovery after a failure, and the constant URL (a `html_url` pointing elsewhere is ignored).
+- `internal/admin/updates_test.go` — `401`/`403` without a GitHub call, the full status for an admin, the entry written once per admin and per version, read state kept on re-check, the switch stopping everything, a dev build announcing nothing, GitHub down answering `200` without a banner.
+- `internal/domain/inbox_test.go` — dedup by version, read state preserved on rewrite, a newer version becoming unread again.
+- `frontend/src/components/layout/UpdateBanner.test.tsx` — banner and wording for an admin, « See on GitHub » marking read, « Later » hiding without reading, hidden once read or up to date, no call at all for a regular user.
+- `frontend/src/views/admin/InvitationsPanel.test.tsx` — the switch and its two states.
+- `frontend/e2e/updates.spec.ts` — real browser: the banner, the recorded `window.open` URL, « Later », the notice in the centre, and the switch silencing the banner.

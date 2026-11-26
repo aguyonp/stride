@@ -46,6 +46,7 @@ export const qk = {
   activitiesRange: (from: string, to: string) => ['activities', 'range', from, to] as const,
   activityOlder: (date: string, before: string) => ['activities', 'older', date, before] as const,
   inbox: ['inbox'] as const,
+  updates: ['updates'] as const,
   activity: (id: number) => ['activity', id] as const,
   report: (kind: 'activity' | 'day', ref: number | string, include: string) => ['report', kind, ref, include] as const,
   day: (date: string) => ['day', date] as const,
@@ -306,6 +307,14 @@ export function useOlderActivity(date: string, before: string, enabled = true) {
     queryFn: () => api.activities({ to: date, before, limit: 1 }),
     enabled: enabled && date !== '' && before !== '',
   })
+}
+
+/**
+ * Release check (§22, issue #143), administrators only: the server caches the GitHub answer for
+ * six hours, so a page load costs nothing.
+ */
+export function useUpdates(enabled = true) {
+  return useQuery({ queryKey: qk.updates, queryFn: api.updates, enabled, staleTime: 10 * 60_000 })
 }
 
 /** Notification centre (§21, issue #142): 50 newest entries and the unread badge. */

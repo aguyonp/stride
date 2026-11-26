@@ -108,6 +108,7 @@ import type {
   ShareRemarkInput,
   McpStatus,
   InboxPage,
+  UpdateStatus,
   McpToken,
   McpQuota,
   McpUsage,
@@ -471,6 +472,7 @@ export const api = {
 
   /* 4.3.0 endpoints (§MCP) */
   mcpStatus: () => json<McpStatus>('/api/mcp'),
+  updates: () => json<UpdateStatus>('/api/updates'),
   inbox: (limit = 50) => json<InboxPage>(`/api/inbox${qs({ limit })}`),
   markInboxRead: (ids: number[]) => json<{ unread: number }>('/api/inbox/read', { method: 'POST', body: { ids } }),
   markInboxAllRead: () => json<{ unread: number }>('/api/inbox/read-all', { method: 'POST', body: {} }),

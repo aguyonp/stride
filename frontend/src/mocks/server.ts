@@ -55,10 +55,18 @@ const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const origin = () => (typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
 
-/** Admin settings payload: registration mode plus the notification-centre retention. */
+/** Admin settings payload: registration mode, notification-centre retention and the release check. */
 function adminSettings() {
-  return { registrationMode: db().registrationMode, inboxRetentionDays: db().inboxRetention.days, inboxRetentionMax: db().inboxRetention.max }
+  return {
+    registrationMode: db().registrationMode,
+    inboxRetentionDays: db().inboxRetention.days,
+    inboxRetentionMax: db().inboxRetention.max,
+    updateCheckEnabled: db().updateCheckEnabled,
+  }
 }
+
+/** The running mock version, and the release the fake GitHub answers. */
+const MOCK_VERSION = '4.7.0'
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } })
@@ -513,16 +521,46 @@ route('DELETE', /^\/api\/admin\/invitations\/(\d+)$/, ({ params }) => {
 })
 route('GET', /^\/api\/admin\/settings$/, () => json(adminSettings()))
 route('PUT', /^\/api\/admin\/settings$/, ({ init }) => {
-  const body = parse<{ registrationMode?: string; inboxRetentionDays?: number; inboxRetentionMax?: number }>(init)
+  const body = parse<{ registrationMode?: string; inboxRetentionDays?: number; inboxRetentionMax?: number; updateCheckEnabled?: boolean }>(init)
   // A field left out keeps its current value (the retention panel never resets the mode).
   const mode = body?.registrationMode ?? db().registrationMode
   if (mode !== 'open' && mode !== 'invite') return err(400, 'BAD_REQUEST', 'Mode d’inscription invalide.')
   db().registrationMode = mode
   // Retention is clamped, not rejected, and a missing field keeps its current value (like the API).
+  if (body?.updateCheckEnabled !== undefined) db().updateCheckEnabled = !!body.updateCheckEnabled
   const r = db().inboxRetention
   if (body?.inboxRetentionDays) r.days = Math.min(365, Math.max(1, Math.round(body.inboxRetentionDays)))
   if (body?.inboxRetentionMax) r.max = Math.min(200, Math.max(1, Math.round(body.inboxRetentionMax)))
   return json(adminSettings())
+})
+
+/* 4.8.0 release check (§22, issue #143): admin only, cached server-side in the real instance. */
+route('GET', /^\/api\/updates$/, () => {
+  const me = currentUser()
+  if (!me) return err(401, 'UNAUTHORIZED', 'Session expirée.')
+  if (me.role !== 'admin') return err(403, 'FORBIDDEN', 'Accès réservé aux administrateurs.')
+  if (!db().updateCheckEnabled) return json({ current: MOCK_VERSION, available: false, disabled: true })
+  const rel = db().mockRelease
+  if (!rel) return json({ current: MOCK_VERSION, available: false })
+  // The notice lands in the centre once, like the server does for every admin.
+  const data = userData(me.id)
+  data.inbox = data.inbox ?? []
+  let notice = data.inbox.find((e) => e.kind === 'update' && e.code === rel.latest)
+  if (!notice) {
+    notice = {
+      id: Math.max(0, ...data.inbox.map((e) => e.id)) + 1, kind: 'update', level: 'info',
+      title: 'New version available', code: rel.latest, detail: rel.publishedAt,
+      url: `https://github.com/aguyonp/stride/releases/tag/${rel.latest}`,
+      createdAt: new Date().toISOString(),
+    }
+    data.inbox = [notice, ...data.inbox]
+  }
+  db().data[String(me.id)] = data
+  return json({
+    current: MOCK_VERSION, latest: rel.latest, available: true,
+    url: `https://github.com/aguyonp/stride/releases/tag/${rel.latest}`, publishedAt: rel.publishedAt,
+    checkedAt: new Date().toISOString(), notificationId: notice.id, read: !!notice.readAt,
+  })
 })
 
 /* 4.7.0 notification centre (§21, issue #142). */

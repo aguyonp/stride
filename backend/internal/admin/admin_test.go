@@ -31,7 +31,7 @@ type testEnv struct {
 	deleted []int64
 }
 
-func setup(t *testing.T) *testEnv {
+func setup(t *testing.T, opts ...func(*Deps)) *testEnv {
 	t.Helper()
 	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "admin.db"))
 	if err != nil {
@@ -49,7 +49,11 @@ func setup(t *testing.T) *testEnv {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	New(Deps{Store: st, Cache: e.cache, Meter: apimeter.NewLocal(apimeter.Options{Log: log}), Auth: svc, PublicURL: "https://stride.example/", Log: log}).Register(mux)
+	d := Deps{Store: st, Cache: e.cache, Meter: apimeter.NewLocal(apimeter.Options{Log: log}), Auth: svc, PublicURL: "https://stride.example/", Log: log}
+	for _, o := range opts {
+		o(&d)
+	}
+	New(d).Register(mux)
 	e.h = mux
 	return e
 }
@@ -73,6 +77,16 @@ func (e *testEnv) user(name string) (int64, string) {
 		e.t.Fatal(err)
 	}
 	return u.ID, token
+}
+
+// count runs a COUNT(*) query against the read pool (the notification-centre assertions).
+func (e *testEnv) count(query string) int64 {
+	e.t.Helper()
+	var n int64
+	if err := e.st.R.QueryRow(query).Scan(&n); err != nil {
+		e.t.Fatal(err)
+	}
+	return n
 }
 
 func (e *testEnv) do(token, method, path, body string) (int, []byte) {
@@ -185,7 +199,7 @@ func TestSettingsMeterAndCacheFlush(t *testing.T) {
 	_, adminTok := e.user("admin")
 	// The notification-centre retention ships with the defaults (issue #142).
 	if code, body := e.do(adminTok, "GET", "/api/admin/settings", ""); code != 200 ||
-		string(bytes.TrimSpace(body)) != `{"registrationMode":"invite","inboxRetentionDays":10,"inboxRetentionMax":50}` {
+		string(bytes.TrimSpace(body)) != `{"registrationMode":"invite","inboxRetentionDays":10,"inboxRetentionMax":50,"updateCheckEnabled":true}` {
 		t.Fatalf("settings: %d %s", code, body)
 	}
 	if code, _ := e.do(adminTok, "PUT", "/api/admin/settings", `{"registrationMode":"public"}`); code != http.StatusBadRequest {

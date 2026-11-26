@@ -11,6 +11,7 @@ import { FeelingSheet } from '../feeling/FeelingSheet'
 import { ManualActivityDialog } from '../session/ManualActivityDialog'
 import { Ambient } from './Ambient'
 import { AppHeader } from './AppHeader'
+import { UpdateBanner } from './UpdateBanner'
 import { BottomNav } from './BottomNav'
 import { CommandPalette } from './CommandPalette'
 import { EventStreamController } from './EventStreamController'
@@ -72,6 +73,7 @@ export function AppShell({ me, minimal, children }: { me: Me | null; minimal?: b
       </a>
       <Ambient />
       <AppHeader me={full ? me : null} />
+      {full && <UpdateBanner me={me} />}
       <main
         id="main"
         className={cn('mx-auto w-full max-w-[1440px] px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6 lg:pb-14', full ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-[calc(2.5rem+env(safe-area-inset-bottom))]')}

@@ -86,8 +86,23 @@ export interface InvitationCreated {
   code: string
   link: string
 }
+/** Release check (§22, issue #143): the newest stable GitHub release against this binary. */
+export interface UpdateStatus {
+  current: string
+  latest?: string
+  available: boolean
+  url?: string
+  publishedAt?: string
+  checkedAt?: string
+  disabled?: boolean
+  notificationId?: number
+  read?: boolean
+}
+
 export interface AdminSettings {
   registrationMode: RegistrationMode
+  /** GitHub release check (issue #143). */
+  updateCheckEnabled: boolean
   /** Notification-centre retention (issue #142): days kept, and entries per user. */
   inboxRetentionDays: number
   inboxRetentionMax: number

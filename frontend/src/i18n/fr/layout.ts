@@ -96,6 +96,12 @@ export default {
     lastLive: 'Dernier appel live : {when}',
     syncNow: 'Synchroniser maintenant',
   },
+  updates: {
+    title: 'Nouvelle version disponible',
+    body: 'Stride {version} est publiée (tu es en {current}).',
+    open: 'Voir sur GitHub',
+    later: 'Plus tard',
+  },
   inbox: {
     title: 'Notifications',
     bell: 'Notifications',

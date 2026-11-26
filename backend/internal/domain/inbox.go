@@ -11,6 +11,7 @@ package domain
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +77,9 @@ type inboxInput struct {
 	// DedupKey is stable per (kind, target): refreshing the same target updates the entry
 	// instead of stacking a duplicate.
 	DedupKey string
+	// KeepRead keeps the read state on refresh. An alert that fires again is news (it becomes
+	// unread); a release notice is not (§22): re-checking must not bring the banner back.
+	KeepRead bool
 }
 
 // Inbox lists the newest entries of the user, newest first. before is the id of the last entry of
@@ -232,12 +236,15 @@ func (s *Services) writeInbox(ctx context.Context, uid int64, in inboxInput) *In
 	key := strings.TrimSpace(in.DedupKey)
 	// A refreshed entry moves back to the top of the list and becomes unread again; its id (and
 	// therefore its place in an open page) never changes.
-	const q = `INSERT INTO inbox_entries (user_id, kind, level, title, code, detail, url, dedup_key, activity_id, date, created_at, read_at)
+	q := `INSERT INTO inbox_entries (user_id, kind, level, title, code, detail, url, dedup_key, activity_id, date, created_at, read_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 		ON CONFLICT(user_id, dedup_key) WHERE dedup_key <> '' DO UPDATE SET
 			kind = excluded.kind, level = excluded.level, title = excluded.title, code = excluded.code,
 			detail = excluded.detail, url = excluded.url, activity_id = excluded.activity_id,
-			date = excluded.date, created_at = excluded.created_at, read_at = NULL`
+			date = excluded.date, created_at = excluded.created_at`
+	if !in.KeepRead {
+		q += `, read_at = NULL`
+	}
 	res, err := s.db().ExecContext(ctx, q, uid, in.Kind, level, title, in.Code, detail, in.URL, key, activityID, date, now.Unix())
 	if err != nil {
 		s.log.Warn("⚠️ Centre de notifications : écriture impossible", "err", err.Error(), "kind", in.Kind)
@@ -272,6 +279,34 @@ func (s *Services) writeInbox(ctx context.Context, uid int64, in inboxInput) *In
 		s.log.Warn("⚠️ Centre de notifications : purge impossible", "err", err.Error())
 	}
 	return entry
+}
+
+// WriteUpdateInbox records the release notice for one user (SPEC §22, issue #143). The dedup key
+// carries the version: one entry per admin and per version, whatever the number of checks.
+func (s *Services) WriteUpdateInbox(ctx context.Context, uid int64, version, publishedAt, url string) *InboxEntry {
+	return s.writeInbox(ctx, uid, inboxInput{
+		Kind:     InboxKindUpdate,
+		Level:    "info",
+		Title:    "New version available",
+		Code:     version,
+		Detail:   publishedAt,
+		URL:      url,
+		DedupKey: "update:" + version,
+		KeepRead: true,
+	})
+}
+
+// UpdateInboxEntry returns the caller's entry for a version, nil when there is none.
+func (s *Services) UpdateInboxEntry(ctx context.Context, uid int64, version string) (*InboxEntry, error) {
+	row := s.rdb().QueryRowContext(ctx, `SELECT `+inboxColumns+` FROM inbox_entries WHERE user_id = ? AND dedup_key = ?`, uid, "update:"+version)
+	e, err := scanInbox(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
 }
 
 func (s *Services) publishInboxUpdated(uid int64, unread int) {

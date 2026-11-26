@@ -124,6 +124,42 @@ func TestWriteInboxRefreshesTheSameTarget(t *testing.T) {
 	}
 }
 
+// The release notice (§22, issue #143): one entry per version, and re-checking never brings the
+// banner back once the admin read it.
+func TestWriteUpdateInboxKeepsTheReadState(t *testing.T) {
+	ctx := context.Background()
+	s := inboxServices(t)
+	url := "https://github.com/aguyonp/stride/releases/tag/4.8.0"
+
+	first := s.WriteUpdateInbox(ctx, 1, "4.8.0", "2026-11-25T10:00:00Z", url)
+	if first == nil || first.ID == 0 || first.Kind != InboxKindUpdate || first.Code != "4.8.0" || first.URL != url {
+		t.Fatalf("first write: %+v", first)
+	}
+	if _, err := s.MarkAllInboxRead(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	// A later check rewrites the same version: same row, still read.
+	s.Now = func() time.Time { return time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC) }
+	again := s.WriteUpdateInbox(ctx, 1, "4.8.0", "2026-11-25T10:00:00Z", url)
+	if again == nil || again.ID != first.ID {
+		t.Fatalf("rewrite: %+v (first %+v)", again, first)
+	}
+	page, err := s.Inbox(ctx, 1, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Unread != 0 || page.Items[0].ReadAt == nil {
+		t.Fatalf("after rewrite: %+v", page)
+	}
+	// A newer release is news again.
+	if e := s.WriteUpdateInbox(ctx, 1, "4.9.0", "2026-12-01T10:00:00Z", ""); e == nil || e.ID == first.ID || e.Code != "4.9.0" {
+		t.Fatalf("next version: %+v", e)
+	}
+	if page, _ = s.Inbox(ctx, 1, 0, 0); len(page.Items) != 2 || page.Unread != 1 {
+		t.Fatalf("two versions: %+v", page)
+	}
+}
+
 func TestInboxMarkReadAndPagination(t *testing.T) {
 	ctx := context.Background()
 	s := inboxServices(t)

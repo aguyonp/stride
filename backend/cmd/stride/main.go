@@ -32,6 +32,7 @@ import (
 	"stride/internal/cache"
 	"stride/internal/database"
 	"stride/internal/domain"
+	"stride/internal/egress"
 	"stride/internal/env"
 	"stride/internal/feedback"
 	"stride/internal/httpapi"
@@ -44,6 +45,7 @@ import (
 	"stride/internal/secret"
 	"stride/internal/sse"
 	"stride/internal/store"
+	"stride/internal/updates"
 	"stride/internal/web"
 )
 
@@ -250,7 +252,10 @@ func run() error {
 		Static: web.New(),
 		Admin: admin.New(admin.Deps{Store: st, Cache: kv, Meter: meter, Auth: authSvc, PublicURL: cfg.PublicURL, Log: log,
 			Domain: dom, SSE: sseHub, Logs: logs, DBPath: cfg.DBPath, Runtime: admin.RuntimeFromEnv(cfg, cacheBackend),
-			StartedAt: startedAt, Maintenance: purgeExpired(st, dom, logs), Backups: backups}),
+			StartedAt: startedAt, Maintenance: purgeExpired(st, dom, logs), Backups: backups,
+			// Release check (§22): one 5 s call per TTL through the egress guard, never the
+			// users' addresses at GitHub.
+			Updates: updates.New(egress.Client(cfg.AllowPrivateEgress, 5*time.Second))}),
 		SSE:      sseHub,
 		Metrics:  metrics,
 		Feedback: feedback.New(feedback.Deps{DB: st.DB, Auth: authSvc, Log: log}),

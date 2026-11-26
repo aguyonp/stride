@@ -17,11 +17,13 @@ import (
 	"stride/internal/applog"
 	"stride/internal/auth"
 	"stride/internal/backup"
+	"stride/internal/buildinfo"
 	"stride/internal/cache"
 	"stride/internal/domain"
 	"stride/internal/httpx"
 	"stride/internal/sse"
 	"stride/internal/store"
+	"stride/internal/updates"
 )
 
 type Deps struct {
@@ -44,6 +46,8 @@ type Deps struct {
 	Maintenance func(context.Context) (map[string]int64, error)
 	// Backups serves « Backups & S3 » (optional).
 	Backups *backup.Service
+	// Updates detects a newer release on GitHub (optional: nil disables GET /api/updates).
+	Updates *updates.Service
 }
 
 type Handler struct {
@@ -90,6 +94,9 @@ type Settings struct {
 	// Notification centre retention (issue #142): days of history and entries kept per user.
 	InboxRetentionDays int `json:"inboxRetentionDays"`
 	InboxRetentionMax  int `json:"inboxRetentionMax"`
+	// UpdateCheckEnabled is the GitHub release check (issue #143). A pointer on input so an absent
+	// field keeps the current value, like the retention pair.
+	UpdateCheckEnabled *bool `json:"updateCheckEnabled,omitempty"`
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -101,6 +108,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/invitations", a(http.HandlerFunc(h.createInvitation)))
 	mux.Handle("DELETE /api/admin/invitations/{id}", a(http.HandlerFunc(h.revokeInvitation)))
 	mux.Handle("GET /api/admin/settings", a(http.HandlerFunc(h.getSettings)))
+	mux.Handle("GET /api/updates", a(http.HandlerFunc(h.updates)))
 	mux.Handle("PUT /api/admin/settings", a(http.HandlerFunc(h.putSettings)))
 	mux.Handle("GET /api/admin/meter", a(http.HandlerFunc(h.meter)))
 	mux.Handle("POST /api/admin/cache/flush", a(http.HandlerFunc(h.flushCache)))
@@ -363,7 +371,42 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	days, max := h.d.Store.InboxRetention(r.Context())
-	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max})
+	enabled := h.d.Store.UpdateCheckEnabled(r.Context())
+	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max, UpdateCheckEnabled: &enabled})
+}
+
+// updates answers the release check for an administrator (issue #143). The check is cached on the
+// server: one GitHub request per TTL whatever the number of admins or devices, and a failure is
+// never an error here — the banner simply does not appear.
+func (h *Handler) updates(w http.ResponseWriter, r *http.Request) {
+	current := buildinfo.Version
+	if h.d.Updates == nil || !h.d.Store.UpdateCheckEnabled(r.Context()) {
+		httpx.JSON(w, http.StatusOK, updates.Status{Current: current, Disabled: h.d.Updates != nil})
+		return
+	}
+	st := h.d.Updates.Check(r.Context(), current)
+	if !st.Available {
+		httpx.JSON(w, http.StatusOK, st)
+		return
+	}
+	// One entry per admin and per version: the notice must exist for every admin, not only for the
+	// one whose browser happened to load the page first.
+	if h.d.Domain != nil && st.Latest != "" {
+		ids, err := h.d.Store.AdminUserIDs(r.Context())
+		if err != nil {
+			h.d.Log.Warn("⚠️ Liste des administrateurs indisponible", "err", err.Error())
+		}
+		for _, uid := range ids {
+			h.d.Domain.WriteUpdateInbox(r.Context(), uid, st.Latest, st.PublishedAt, st.URL)
+		}
+		// The caller's own entry drives the banner: it disappears once read.
+		if u, ok := auth.UserFrom(r.Context()); ok {
+			if e, err := h.d.Domain.UpdateInboxEntry(r.Context(), u.ID, st.Latest); err == nil && e != nil {
+				st.Notification, st.Read = e.ID, e.ReadAt != nil
+			}
+		}
+	}
+	httpx.JSON(w, http.StatusOK, st)
 }
 
 func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
@@ -403,6 +446,15 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Release check (issue #143): a pointer tells « absent » from « false ».
+	enabled := h.d.Store.UpdateCheckEnabled(r.Context())
+	if body.UpdateCheckEnabled != nil {
+		enabled = *body.UpdateCheckEnabled
+		if err := h.d.Store.SetSetting(r.Context(), store.SettingUpdateCheckEnabled, strconv.FormatBool(enabled), h.d.Now()); err != nil {
+			h.internal(w, r, "Mise à jour des réglages", err)
+			return
+		}
+	}
 	if h.d.Domain != nil {
 		if n, err := h.d.Domain.PurgeInbox(r.Context()); err != nil {
 			h.d.Log.Warn("⚠️ Purge du centre de notifications impossible", "err", err.Error())
@@ -410,8 +462,8 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 			h.d.Log.Info("🧹 Centre de notifications purgé", "adminId", admin(r).ID, "removed", n)
 		}
 	}
-	h.d.Log.Info("⚙️ Réglages modifiés", "adminId", admin(r).ID, "mode", mode, "inboxDays", days, "inboxMax", max)
-	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max})
+	h.d.Log.Info("⚙️ Réglages modifiés", "adminId", admin(r).ID, "mode", mode, "inboxDays", days, "inboxMax", max, "updateCheck", enabled)
+	httpx.JSON(w, http.StatusOK, Settings{RegistrationMode: mode, InboxRetentionDays: days, InboxRetentionMax: max, UpdateCheckEnabled: &enabled})
 }
 
 func (h *Handler) meter(w http.ResponseWriter, _ *http.Request) {

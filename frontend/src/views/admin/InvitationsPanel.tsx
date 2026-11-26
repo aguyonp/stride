@@ -1,4 +1,4 @@
-import { Ban, BellRing, Copy, DoorOpen, Loader2, Mail, Plus, TriangleAlert } from 'lucide-react'
+import { Ban, BellRing, Copy, DoorOpen, Download, Loader2, Mail, Plus, TriangleAlert } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useAdminInvitations, useAdminMutations, useAdminSettings } from '../../api/queries'
 import type { Invitation, InvitationCreated, RegistrationMode } from '../../api/types'
@@ -29,6 +29,7 @@ export function InvitationsPanel() {
   return (
     <div className="space-y-5">
       <RegistrationCard />
+      <UpdatesCard />
       <RetentionCard />
       <CreateInvitationCard />
       <InvitationList />
@@ -73,6 +74,44 @@ function RegistrationCard() {
               : t('admin.invitations.openHint')}
           </p>
         </>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Release check (issue #143): the switch that stops every GitHub call, banner and notice. On by
+ * default; an air-gapped instance turns it off and nothing leaves the server.
+ */
+function UpdatesCard() {
+  const settings = useAdminSettings()
+  const m = useAdminMutations()
+  const cur = settings.data
+  const on = cur?.updateCheckEnabled ?? true
+  return (
+    <Card title={t('admin.updates.card')} icon={<Download className="size-4" />} subtitle={t('admin.updates.hint')}>
+      {settings.isError ? (
+        <ErrorView error={settings.error} onRetry={() => void settings.refetch()} />
+      ) : !cur ? (
+        <Skeleton className="h-16 max-w-md" />
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{t('admin.updates.check')}</p>
+            <p className="text-xs text-ink-3">{on ? t('admin.updates.on') : t('admin.updates.off')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            aria-label={t('admin.updates.check')}
+            disabled={m.updateSettings.isPending}
+            onClick={() => m.updateSettings.mutate({ updateCheckEnabled: !on })}
+            className={cn('relative h-6 w-11 flex-none rounded-full transition-colors', on ? 'bg-accent' : 'bg-line-strong')}
+          >
+            <span className={cn('absolute top-0.5 size-5 rounded-full bg-surface transition-all', on ? 'left-[1.375rem]' : 'left-0.5')} />
+          </button>
+        </div>
       )}
     </Card>
   )
